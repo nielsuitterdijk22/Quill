@@ -1,0 +1,569 @@
+/* ============================================================================
+   Quill design system
+   ----------------------------------------------------------------------------
+   Shared dark theme ported from Forge so Quill, Forge, and Yaly stay visually
+   identical. Tokens first, then base, layout shell, and components. Keep this
+   the single source of truth for Quill's look; extend with new component
+   classes rather than inlining styles in components.
+   ========================================================================== */
+
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel2: #1d212b;
+  --line: #272c38;
+  --text: #e7eaf0;
+  --muted: #9aa3b2;
+  --accent: #7c5cff;
+  --accent-soft: #b9acff;
+  --green: #3fb950;
+  --red: #f0506e;
+  --amber: #d29922;
+
+  --radius-sm: 6px;
+  --radius: 9px;
+  --radius-lg: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ok {
+  color: var(--green);
+}
+.danger {
+  color: var(--red);
+}
+.warn {
+  color: var(--amber);
+}
+
+/* ---- app shell -------------------------------------------------------------- */
+.app {
+  display: grid;
+  grid-template-columns: 212px 1fr;
+  min-height: 100vh;
+}
+
+.side {
+  background: #0c0e12;
+  border-right: 1px solid var(--line);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  font-size: 16px;
+  margin: 2px 6px 16px;
+}
+.brand .dot {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--accent), #4ad);
+}
+
+.org {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 0 2px 14px;
+  font-size: 12px;
+}
+.org .who {
+  color: var(--muted);
+}
+.org b {
+  display: block;
+  margin-top: 2px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.nav a.active {
+  background: var(--panel2);
+  color: var(--text);
+}
+.nav a:hover {
+  color: var(--text);
+}
+.nav a .ic {
+  width: 16px;
+  display: inline-block;
+  text-align: center;
+}
+.nav a .tag {
+  margin-left: auto;
+}
+
+.side .foot {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 10px 6px;
+  border-top: 1px solid var(--line);
+}
+
+.main {
+  padding: 22px 26px;
+  max-width: 1100px;
+}
+
+/* ---- typography & page header ---------------------------------------------- */
+h1 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  gap: 12px;
+}
+.top h1 {
+  margin: 0;
+}
+
+.crumbs {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.crumbs a:hover {
+  color: var(--text);
+}
+
+.subtle {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---- pills, tags, badges --------------------------------------------------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pill b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tag {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.badge.green,
+.badge.active {
+  color: var(--green);
+  border-color: #1f3d29;
+  background: #10261a;
+}
+.badge.amber,
+.badge.susp {
+  color: var(--amber);
+  border-color: #3d3318;
+  background: #241f10;
+}
+.badge.red {
+  color: var(--red);
+  border-color: #3d1f27;
+  background: #26101a;
+}
+.badge.accent {
+  color: var(--accent-soft);
+  border-color: #2d2a4d;
+  background: #16142b;
+}
+
+/* ---- stat cards ------------------------------------------------------------ */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+.card .k {
+  font-size: 12px;
+  color: var(--muted);
+}
+.card .v {
+  font-size: 26px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.card .v small {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ---- panels ---------------------------------------------------------------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.panel h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ---- list rows (repos, items) ---------------------------------------------- */
+.row-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: inherit;
+}
+.row-item:last-child {
+  border-bottom: none;
+}
+.row-item:hover {
+  background: var(--panel2);
+}
+.row-item .spacer {
+  flex: 1;
+}
+.row-item .nm {
+  font-weight: 600;
+}
+.row-item .sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- tables ---------------------------------------------------------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  text-align: left;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+tr:last-child td {
+  border-bottom: none;
+}
+tbody tr:hover {
+  background: var(--panel2);
+}
+
+/* ---- buttons --------------------------------------------------------------- */
+.btn {
+  font: 12px/1 inherit;
+  padding: 7px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #222634;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.btn:hover {
+  border-color: var(--accent);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover {
+  opacity: 0.9;
+}
+.btn.link {
+  border-color: #2d2a4d;
+  color: var(--accent-soft);
+}
+.btn.ghost {
+  background: transparent;
+}
+.btn.danger {
+  color: var(--red);
+}
+
+/* ---- forms ----------------------------------------------------------------- */
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field > span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+input,
+textarea,
+select {
+  width: 100%;
+  background: #10131a;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: 13px/1.45 inherit;
+}
+textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.check input {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+/* ---- empty / banner -------------------------------------------------------- */
+.empty {
+  padding: 18px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.banner {
+  background: #241f10;
+  border: 1px solid #3d3318;
+  color: var(--amber);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+
+/* ---- centered auth / connect screens --------------------------------------- */
+.center-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% -10%,
+    #1a1540 0%,
+    var(--bg) 70%
+  );
+}
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 32px 28px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+.auth-brand .dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #4ad);
+  flex: none;
+}
+.auth-tagline {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.auth-error {
+  background: #26101a;
+  border: 1px solid #3d1f27;
+  color: var(--red);
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.auth-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+}
+.auth-submit:hover {
+  opacity: 0.9;
+}
+.auth-hint {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ---- foot button (sidebar sign out) ---------------------------------------- */
+.logout-btn {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: 12px/1 inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.logout-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.copy {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+/* ---- misc layout helpers --------------------------------------------------- */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 6px 12px;
+}
+.kv .k {
+  color: var(--muted);
+}
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
