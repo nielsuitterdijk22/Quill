@@ -1,0 +1,80 @@
+# Quill — developer tasks.
+# Run `make help` for the list.
+
+COMPOSE := docker compose -f deploy/compose/docker-compose.yml
+
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+## ---- local stack ----------------------------------------------------------
+
+.PHONY: up
+up: ## Start the full local stack (Forgejo + Postgres + api + web)
+	$(COMPOSE) up -d --build
+
+.PHONY: down
+down: ## Stop the local stack
+	$(COMPOSE) down
+
+.PHONY: logs
+logs: ## Tail stack logs
+	$(COMPOSE) logs -f
+
+.PHONY: ps
+ps: ## Show stack status
+	$(COMPOSE) ps
+
+## ---- backend --------------------------------------------------------------
+
+.PHONY: be-run
+be-run: ## Run the backend API locally
+	cd backend && go run ./cmd/api
+
+.PHONY: be-build
+be-build: ## Build the backend
+	cd backend && go build ./...
+
+.PHONY: be-test
+be-test: ## Run backend tests
+	cd backend && go test ./...
+
+.PHONY: be-fmt
+be-fmt: ## Format Go code
+	cd backend && gofmt -w .
+
+.PHONY: be-vet
+be-vet: ## Vet Go code
+	cd backend && go vet ./...
+
+## ---- frontend -------------------------------------------------------------
+
+.PHONY: fe-install
+fe-install: ## Install frontend dependencies
+	cd frontend && npm install
+
+.PHONY: fe-dev
+fe-dev: ## Run the frontend dev server (http://localhost:3001)
+	cd frontend && npm run dev
+
+.PHONY: fe-build
+fe-build: ## Build the frontend
+	cd frontend && npm run build
+
+.PHONY: fe-lint
+fe-lint: ## Lint the frontend
+	cd frontend && npm run lint
+
+## ---- aggregate ------------------------------------------------------------
+
+.PHONY: build
+build: be-build fe-build ## Build backend and frontend
+
+.PHONY: test
+test: be-test ## Run all tests
+
+.PHONY: lint
+lint: be-vet fe-lint ## Lint backend and frontend
