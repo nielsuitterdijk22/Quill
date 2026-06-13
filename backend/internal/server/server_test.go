@@ -15,7 +15,7 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	return New(cfg, logging.New("error", "text"))
+	return New(cfg, logging.New("error", "text"), nil)
 }
 
 func TestHealthz(t *testing.T) {
