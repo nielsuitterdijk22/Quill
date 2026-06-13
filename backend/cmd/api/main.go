@@ -19,6 +19,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/logging"
 	"github.com/nielsuitterdijk22/quill/internal/server"
+	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
 func main() {
@@ -41,7 +42,22 @@ func run() error {
 		"addr", cfg.HTTPAddr,
 	)
 
-	srv := server.New(cfg, logger)
+	// Apply schema migrations before opening the pool for serving traffic.
+	logger.Info("applying database migrations")
+	if err := store.Migrate(cfg.DatabaseURL); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 15*time.Second)
+	st, err := store.New(setupCtx, cfg.DatabaseURL)
+	cancelSetup()
+	if err != nil {
+		return fmt.Errorf("connect store: %w", err)
+	}
+	defer st.Close()
+	logger.Info("database ready")
+
+	srv := server.New(cfg, logger, st)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

@@ -1,0 +1,14 @@
+BEGIN;
+
+DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS repositories;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS teams;
+DROP TABLE IF EXISTS org_members;
+DROP TABLE IF EXISTS organizations;
+DROP TABLE IF EXISTS auth_identities;
+DROP TABLE IF EXISTS users;
+
+DROP FUNCTION IF EXISTS set_updated_at();
+
+COMMIT;

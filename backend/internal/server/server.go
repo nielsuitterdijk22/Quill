@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
+	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
 // Version is the API version reported by the /api/v1/meta endpoint.
@@ -20,14 +21,17 @@ const Version = "0.1.0"
 type Server struct {
 	cfg    *config.Config
 	logger *slog.Logger
+	store  *store.Store
 	router chi.Router
 }
 
-// New constructs a Server with middleware and routes configured.
-func New(cfg *config.Config, logger *slog.Logger) *Server {
+// New constructs a Server with middleware and routes configured. store may be
+// nil in tests that only exercise handlers which don't touch the database.
+func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,
+		store:  st,
 		router: chi.NewRouter(),
 	}
 	s.setupMiddleware()
