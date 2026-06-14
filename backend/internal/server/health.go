@@ -28,10 +28,30 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMeta reports basic service metadata, useful as a frontend connectivity check.
-func (s *Server) handleMeta(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"name":    "quill",
 		"version": Version,
 		"env":     s.cfg.Env,
+		"forgejo": s.forgejoStatus(r),
 	})
+}
+
+// forgejoStatus reports whether Forgejo is configured and, if so, reachable. The
+// reachability probe is best-effort with a short timeout so /meta stays fast.
+func (s *Server) forgejoStatus(r *http.Request) map[string]any {
+	status := map[string]any{
+		"configured": s.forgejo != nil && s.forgejo.Enabled(),
+		"reachable":  false,
+	}
+	if s.forgejo == nil || !s.forgejo.Enabled() {
+		return status
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if version, err := s.forgejo.Version(ctx); err == nil {
+		status["reachable"] = true
+		status["version"] = version
+	}
+	return status
 }
