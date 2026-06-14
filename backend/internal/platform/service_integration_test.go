@@ -231,3 +231,56 @@ func TestOrgAccessRequiresMembership(t *testing.T) {
 		t.Fatalf("expected ErrNotFound for unknown org, got %v", err)
 	}
 }
+
+func TestBrowseAuthorizationAndAvailability(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := makeUser(t, st, "alice")
+	outsider := makeUser(t, st, "mallory")
+	if _, err := svc.CreateOrg(ctx, owner, platform.CreateOrgInput{Slug: "acme"}); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := svc.CreateRepo(ctx, actor(owner), "acme", platform.CreateRepoInput{Slug: "widget"}); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	// A member can read repository metadata (no git backend needed).
+	if _, err := svc.GetRepo(ctx, actor(owner), "acme", "widget"); err != nil {
+		t.Fatalf("member GetRepo: %v", err)
+	}
+
+	// Non-members are denied before any git lookup.
+	if _, err := svc.GetRepo(ctx, actor(outsider), "acme", "widget"); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("outsider GetRepo: expected ErrForbidden, got %v", err)
+	}
+	if _, _, err := svc.ListBranches(ctx, actor(outsider), "acme", "widget"); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("outsider ListBranches: expected ErrForbidden, got %v", err)
+	}
+	if _, _, err := svc.GetContents(ctx, actor(outsider), "acme", "widget", "", ""); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("outsider GetContents: expected ErrForbidden, got %v", err)
+	}
+
+	// With Forgejo disabled, git reads for a member surface ErrUnavailable.
+	if _, _, err := svc.ListBranches(ctx, actor(owner), "acme", "widget"); !errors.Is(err, platform.ErrUnavailable) {
+		t.Fatalf("member ListBranches without git: expected ErrUnavailable, got %v", err)
+	}
+	if _, _, err := svc.GetContents(ctx, actor(owner), "acme", "widget", "", ""); !errors.Is(err, platform.ErrUnavailable) {
+		t.Fatalf("member GetContents without git: expected ErrUnavailable, got %v", err)
+	}
+
+	// Unknown repo resolves to ErrNotFound for an authorized member.
+	if _, err := svc.GetRepo(ctx, actor(owner), "acme", "ghost"); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown repo, got %v", err)
+	}
+}
+
+func TestCreateOrgRejectsReservedSlug(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	creator := makeUser(t, st, "alice")
+	for _, reserved := range []string{"new", "settings", "api"} {
+		if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: reserved}); !errors.Is(err, platform.ErrInvalidInput) {
+			t.Fatalf("reserved slug %q: expected ErrInvalidInput, got %v", reserved, err)
+		}
+	}
+}

@@ -1,0 +1,237 @@
+package server
+
+import (
+	"encoding/base64"
+	"net/http"
+	"sort"
+	"strconv"
+	"time"
+	"unicode/utf8"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/httpx"
+)
+
+// This file holds the read-only repository browsing endpoints added in PR 5:
+// repo detail, branches, commits, and directory/file contents. They translate
+// the platform service's Forgejo-backed reads into clean JSON for the frontend.
+
+// maxInlineFileBytes caps how large a file may be before the API stops returning
+// its decoded contents (the frontend shows a "too large to display" notice).
+const maxInlineFileBytes = 512 << 10
+
+// branchResponse is the public JSON shape for a git branch.
+type branchResponse struct {
+	Name          string    `json:"name"`
+	Protected     bool      `json:"protected"`
+	CommitSHA     string    `json:"commitSha"`
+	CommitMessage string    `json:"commitMessage"`
+	CommitDate    time.Time `json:"commitDate"`
+}
+
+// commitResponse is the public JSON shape for a commit log entry.
+type commitResponse struct {
+	SHA         string    `json:"sha"`
+	Message     string    `json:"message"`
+	AuthorName  string    `json:"authorName"`
+	AuthorLogin string    `json:"authorLogin,omitempty"`
+	Date        time.Time `json:"date"`
+}
+
+// contentEntryResponse is one entry in a directory listing.
+type contentEntryResponse struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+}
+
+// contentFileResponse is a single file's metadata plus its decoded text content
+// when the file is textual and small enough to inline.
+type contentFileResponse struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	SHA      string `json:"sha"`
+	Size     int64  `json:"size"`
+	IsBinary bool   `json:"isBinary"`
+	TooLarge bool   `json:"tooLarge"`
+	Content  string `json:"content,omitempty"`
+}
+
+// contentsResponse is the discriminated result of the contents endpoint.
+type contentsResponse struct {
+	Type    string                 `json:"type"` // "dir" | "file"
+	Path    string                 `json:"path"`
+	Entries []contentEntryResponse `json:"entries,omitempty"`
+	File    *contentFileResponse   `json:"file,omitempty"`
+}
+
+// handleGetRepo returns a single repository's metadata.
+func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	repo, err := s.platform.GetRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not load repository")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, newRepoResponse(repo))
+}
+
+// handleListBranches returns a repository's git branches.
+func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	repo, branches, err := s.platform.ListBranches(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not list branches")
+		return
+	}
+	out := make([]branchResponse, 0, len(branches))
+	for _, b := range branches {
+		out = append(out, branchResponse{
+			Name:          b.Name,
+			Protected:     b.Protected,
+			CommitSHA:     b.Commit.ID,
+			CommitMessage: b.Commit.Message,
+			CommitDate:    b.Commit.Timestamp,
+		})
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"repository":    newRepoResponse(repo),
+		"defaultBranch": repo.DefaultBranch,
+		"branches":      out,
+	})
+}
+
+// handleListCommits returns a repository's commit log at an optional ref/path.
+func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	repo, commits, err := s.platform.ListCommits(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), q.Get("ref"), q.Get("path"), limit)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list commits")
+		return
+	}
+	out := make([]commitResponse, 0, len(commits))
+	for _, c := range commits {
+		entry := commitResponse{
+			SHA:        c.SHA,
+			Message:    c.Commit.Message,
+			AuthorName: c.Commit.Author.Name,
+			Date:       c.Commit.Author.Date,
+		}
+		if c.Author != nil {
+			entry.AuthorLogin = c.Author.Login
+		}
+		out = append(out, entry)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"repository": newRepoResponse(repo),
+		"commits":    out,
+	})
+}
+
+// handleGetContents returns a directory listing or a single file at path/ref.
+func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	q := r.URL.Query()
+	path := q.Get("path")
+	repo, contents, err := s.platform.GetContents(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), path, q.Get("ref"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not load contents")
+		return
+	}
+
+	resp := contentsResponse{Path: path}
+	if contents.IsDir {
+		resp.Type = "dir"
+		resp.Entries = newContentEntries(contents.Entries)
+	} else {
+		resp.Type = "file"
+		resp.File = newContentFile(contents.File)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"repository": newRepoResponse(repo),
+		"contents":   resp,
+	})
+}
+
+// newContentEntries converts and sorts directory entries: directories first,
+// then files, each alphabetically (case-insensitive) for a stable tree view.
+func newContentEntries(entries []forgejo.ContentEntry) []contentEntryResponse {
+	out := make([]contentEntryResponse, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, contentEntryResponse{
+			Name: e.Name,
+			Path: e.Path,
+			Type: e.Type,
+			Size: e.Size,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		di, dj := out[i].Type == "dir", out[j].Type == "dir"
+		if di != dj {
+			return di
+		}
+		return lowerName(out[i].Name) < lowerName(out[j].Name)
+	})
+	return out
+}
+
+// newContentFile builds a file response, decoding the base64 payload into text
+// when the file is small enough and valid UTF-8; binary or oversized files carry
+// flags instead of content.
+func newContentFile(e *forgejo.ContentEntry) *contentFileResponse {
+	f := &contentFileResponse{
+		Name: e.Name,
+		Path: e.Path,
+		SHA:  e.SHA,
+		Size: e.Size,
+	}
+	if e.Size > maxInlineFileBytes {
+		f.TooLarge = true
+		return f
+	}
+	if e.Content == nil {
+		return f
+	}
+	raw, err := base64.StdEncoding.DecodeString(*e.Content)
+	if err != nil {
+		f.IsBinary = true
+		return f
+	}
+	if !utf8.Valid(raw) {
+		f.IsBinary = true
+		return f
+	}
+	f.Content = string(raw)
+	return f
+}
+
+func lowerName(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}

@@ -96,9 +96,19 @@ func (s *Server) setupRoutes() {
 			r.Route("/orgs", func(r chi.Router) {
 				r.Get("/", s.handleListOrgs)
 				r.Post("/", s.handleCreateOrg)
-				r.Get("/{slug}", s.handleGetOrg)
-				r.Get("/{slug}/repos", s.handleListRepos)
-				r.Post("/{slug}/repos", s.handleCreateRepo)
+				r.Route("/{slug}", func(r chi.Router) {
+					r.Get("/", s.handleGetOrg)
+					r.Route("/repos", func(r chi.Router) {
+						r.Get("/", s.handleListRepos)
+						r.Post("/", s.handleCreateRepo)
+						r.Route("/{repo}", func(r chi.Router) {
+							r.Get("/", s.handleGetRepo)
+							r.Get("/branches", s.handleListBranches)
+							r.Get("/commits", s.handleListCommits)
+							r.Get("/contents", s.handleGetContents)
+						})
+					})
+				})
 			})
 		})
 	})

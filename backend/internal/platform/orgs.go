@@ -28,8 +28,8 @@ type CreateOrgInput struct {
 func (s *Service) CreateOrg(ctx context.Context, creatorID uuid.UUID, in CreateOrgInput) (db.Organization, error) {
 	slug := normalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)
-	if !slugRe.MatchString(slug) {
-		return db.Organization{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.' and start alphanumeric", ErrInvalidInput)
+	if !validSlug(slug) {
+		return db.Organization{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 	}
 	if name == "" {
 		name = slug

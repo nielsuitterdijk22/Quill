@@ -83,18 +83,18 @@ export default async function DashboardPage() {
       <div className="panel">
         <h2>
           Organizations
-          <span className="tag">PR 4 · forgejo</span>
+          <span className="tag">PR 5 · browse</span>
         </h2>
         {orgs.length === 0 ? (
           <div className="empty">
-            No organizations yet. Each org is mirrored into Forgejo and gets a
-            default owning team. Repository and org creation is live on the API
-            (<span className="mono">POST /api/v1/orgs</span>); browsing UI lands
-            in PR 5.
+            No organizations yet. Create one from{" "}
+            <a href="/orgs">Organizations</a> — each is mirrored into Forgejo and
+            gets a default owning team, then you can add repositories and browse
+            their code.
           </div>
         ) : (
           orgs.map((o) => (
-            <div className="row-item" key={o.id}>
+            <a className="row-item" key={o.id} href={`/orgs/${o.slug}`}>
               <span className="nm">{o.name}</span>
               <span className="sub">
                 · {reposByOrg.get(o.slug)?.length ?? 0} repos
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
               ) : (
                 <span className="tag">local</span>
               )}
-            </div>
+            </a>
           ))
         )}
       </div>
