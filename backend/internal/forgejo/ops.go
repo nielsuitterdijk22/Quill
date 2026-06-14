@@ -2,17 +2,20 @@ package forgejo
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // ---- types -----------------------------------------------------------------
 
 // User is a Forgejo user account.
 type User struct {
-	ID    int64  `json:"id"`
-	Login string `json:"login"`
-	Email string `json:"email"`
+	ID       int64  `json:"id"`
+	Login    string `json:"login"`
+	Email    string `json:"email"`
+	FullName string `json:"full_name"`
 }
 
 // Org is a Forgejo organization. The REST API exposes the handle as both "name"
@@ -145,4 +148,18 @@ func (c *Client) GetRepo(ctx context.Context, owner, name string) (Repo, error) 
 // DeleteRepo removes a repository by owner and name.
 func (c *Client) DeleteRepo(ctx context.Context, owner, name string) error {
 	return c.do(ctx, http.MethodDelete, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name), nil, nil)
+}
+
+// CreateFile commits a new file at path on a branch (empty branch = default
+// branch). content is raw bytes; the API expects base64 so it is encoded here.
+func (c *Client) CreateFile(ctx context.Context, owner, repo, path string, content []byte, message, branch string) error {
+	body := map[string]string{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString(content),
+	}
+	if branch != "" {
+		body["branch"] = branch
+	}
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/contents/" + escapeContentsPath(strings.Trim(path, "/"))
+	return c.do(ctx, http.MethodPost, p, body, nil)
 }

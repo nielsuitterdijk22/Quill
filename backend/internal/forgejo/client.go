@@ -58,6 +58,15 @@ func NotFound(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound
 }
 
+// StatusCode returns the HTTP status of an APIError, or 0 if err is not one.
+func StatusCode(err error) int {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Status
+	}
+	return 0
+}
+
 // ---- request plumbing ------------------------------------------------------
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
@@ -97,6 +106,28 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		}
 	}
 	return nil
+}
+
+// getRaw performs a GET and returns the raw response body. It is used for
+// endpoints that return text rather than JSON (e.g. a pull request's unified
+// diff). The body is capped to guard against unexpectedly large payloads.
+func (c *Client) getRaw(ctx context.Context, path string, limit int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1"+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("forgejo GET %s: %w", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &APIError{Status: resp.StatusCode, Method: http.MethodGet, Path: path, Message: readError(resp.Body)}
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, limit))
 }
 
 // readError extracts Forgejo's { "message": ... } error envelope, falling back to

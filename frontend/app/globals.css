@@ -771,3 +771,295 @@ select:focus {
   margin-top: -8px;
   margin-bottom: 14px;
 }
+
+/* ---- pull requests (PR 6) -------------------------------------------------- */
+
+/* Open/Closed state filter tabs on the PR list. */
+.state-tabs {
+  display: inline-flex;
+  gap: 4px;
+}
+.state-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px solid transparent;
+}
+.state-tabs a:hover {
+  color: var(--text);
+}
+.state-tabs a.active {
+  color: var(--text);
+  background: var(--panel2);
+  border-color: var(--line);
+}
+.state-tabs .ic {
+  color: var(--muted);
+}
+
+/* PR list rows. */
+.pr-row {
+  gap: 12px;
+}
+.pr-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pr-comments {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 10px;
+}
+
+/* +adds / -dels counter. */
+.diffstat {
+  display: inline-flex;
+  gap: 8px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+.diffstat .add {
+  color: var(--green);
+}
+.diffstat .del {
+  color: var(--red);
+}
+
+/* PR detail header. */
+.pr-title-row {
+  margin-top: 4px;
+}
+.pr-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+}
+.pr-title .pr-num {
+  color: var(--muted);
+  font-weight: 400;
+}
+.pr-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 18px;
+  font-size: 13px;
+}
+.pr-meta .spacer {
+  flex: 1;
+}
+
+/* Merge box. */
+.merge-box {
+  padding: 16px 18px;
+  margin-bottom: 22px;
+}
+.merge-box.merged {
+  border-color: #34244f;
+  background: #1b1530;
+}
+.merge-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.merge-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.merge-dot.ok {
+  background: var(--green);
+}
+.merge-dot.warn {
+  background: var(--amber);
+}
+.merge-dot.done {
+  background: var(--accent);
+}
+.merge-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+.merge-form select {
+  width: auto;
+  min-width: 220px;
+}
+
+/* Section headings on the PR detail page. */
+h2.section {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 22px 0 12px;
+}
+
+/* Conversation thread. */
+.convo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.pr-comment {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+}
+.pr-comment-head {
+  padding: 9px 14px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.pr-comment-body {
+  padding: 12px 14px;
+}
+.pr-comment-body pre {
+  margin: 0;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.comment-form {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 14px;
+}
+.comment-form .form-actions {
+  margin-top: 10px;
+}
+
+/* New-PR branch selectors. */
+.branch-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.branch-row .field {
+  flex: 1;
+  margin-bottom: 0;
+}
+.branch-arrow {
+  color: var(--muted);
+  padding-bottom: 10px;
+}
+
+/* Diff view. */
+.diff {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.diff-file {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.diff-file-head .spacer {
+  flex: 1;
+}
+.diff-file-head .path {
+  color: var(--text);
+}
+.diff-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f1115;
+  background: var(--muted);
+}
+.diff-status.added {
+  background: var(--green);
+}
+.diff-status.deleted {
+  background: var(--red);
+}
+.diff-status.renamed,
+.diff-status.modified {
+  background: var(--amber);
+}
+.diff-binary {
+  padding: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #10131a;
+}
+.diff-table td.ln {
+  width: 1%;
+  min-width: 40px;
+  padding: 0 8px;
+  text-align: right;
+  color: var(--muted);
+  background: #0c0e12;
+  border-right: 1px solid var(--line);
+  user-select: none;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.diff-table td.code {
+  padding: 0 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-table .code .sign {
+  display: inline-block;
+  width: 1ch;
+  color: var(--muted);
+}
+.diff-table tr.hunk td.code {
+  color: var(--accent-soft);
+  background: #161a26;
+}
+.diff-table tr.hunk td.ln {
+  background: #161a26;
+}
+.diff-table tr.dl.add td.code {
+  background: rgba(63, 185, 80, 0.12);
+}
+.diff-table tr.dl.add .sign {
+  color: var(--green);
+}
+.diff-table tr.dl.del td.code {
+  background: rgba(240, 80, 110, 0.12);
+}
+.diff-table tr.dl.del .sign {
+  color: var(--red);
+}
