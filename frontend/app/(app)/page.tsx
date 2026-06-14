@@ -59,12 +59,12 @@ export default async function DashboardPage() {
       <div className="panel">
         <h2>
           Getting started
-          <span className="tag">PR 1 · scaffold</span>
+          <span className="tag">PR 3 · auth</span>
         </h2>
         <div className="empty">
-          The platform shell is live. Foundation work lands next: Postgres schema
-          &amp; store, pluggable auth, the Forgejo integration layer, then org and
-          repository browsing.
+          You&apos;re signed in. Local username/password auth is live behind a
+          pluggable provider (OIDC drops in later). Next up: the Forgejo
+          integration layer, then org and repository browsing.
         </div>
       </div>
 

@@ -71,6 +71,11 @@ make fe-dev
 
 The dashboard shows the backend version when it can reach `:8080`.
 
+Open `http://localhost:3001`, click **Create one**, and register. The first
+account created becomes the admin. Auth uses a local username/password provider
+that issues Quill JWTs; set `QUILL_JWT_SECRET` in production (required) and
+optionally `QUILL_JWT_TTL` (default 24h).
+
 ## Development
 
 ```bash
@@ -93,7 +98,7 @@ Foundation-first; each item is one focused PR.
 
 - [x] **PR 1 — Scaffold & dev harness**
 - [x] **PR 2 — Postgres schema & store** (migrations, sqlc, core tables)
-- [ ] **PR 3 — Auth abstraction + local provider** (JWT, middleware, login)
+- [x] **PR 3 — Auth abstraction + local provider** (JWT, middleware, login)
 - [ ] **PR 4 — Forgejo integration** (admin client, provisioning, identity map)
 - [ ] **PR 5 — Org & repo browsing** (orgs, repos, file tree, branches, commits)
 - [ ] **PR 6 — Pull requests** (list/create/view, diff, review, merge)
