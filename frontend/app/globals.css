@@ -1063,3 +1063,121 @@ h2.section {
 .diff-table tr.dl.del .sign {
   color: var(--red);
 }
+
+/* ---- reviews & branch policies (PR 7) -------------------------------------- */
+.btn.small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+/* Policy gate banner inside the merge box. */
+.gate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.gate-row.warn {
+  background: #241f10;
+  border: 1px solid #3d3318;
+}
+.gate-row.ok {
+  background: #112417;
+  border: 1px solid #1d3a26;
+}
+
+/* Review entries in the conversation. */
+.pr-comment.review {
+  border-left: 3px solid var(--accent);
+}
+.pr-comment.review .pr-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pr-comment.review .pr-comment-head .spacer {
+  flex: 1;
+}
+
+/* Review submission form. */
+.review-form {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.review-form-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.review-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* Settings / branch policies. */
+.settings-head {
+  margin-bottom: 18px;
+}
+.settings-title {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+.policy-area {
+  display: grid;
+  gap: 18px;
+}
+.policy-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.policy-table th,
+.policy-table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  vertical-align: middle;
+}
+.policy-table th {
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.policy-table tr:last-child td {
+  border-bottom: none;
+}
+.policy-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.policy-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.inline-form {
+  display: inline;
+  margin: 0;
+}
+.policy-form-panel h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+.policy-form-panel .check {
+  margin-bottom: 10px;
+}

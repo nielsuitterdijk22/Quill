@@ -31,6 +31,19 @@ type AuthIdentity struct {
 	UpdatedAt  time.Time   `json:"updatedAt"`
 }
 
+type BranchPolicy struct {
+	ID                    uuid.UUID `json:"id"`
+	RepoID                uuid.UUID `json:"repoId"`
+	Pattern               string    `json:"pattern"`
+	RequiredApprovals     int32     `json:"requiredApprovals"`
+	DismissStaleApprovals bool      `json:"dismissStaleApprovals"`
+	RequireUpToDate       bool      `json:"requireUpToDate"`
+	BlockForcePush        bool      `json:"blockForcePush"`
+	RequirePullRequest    bool      `json:"requirePullRequest"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+}
+
 type OrgMember struct {
 	OrgID     uuid.UUID `json:"orgId"`
 	UserID    uuid.UUID `json:"userId"`

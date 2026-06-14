@@ -333,3 +333,136 @@ func hasEntry(entries []forgejo.ContentEntry, name string) bool {
 	}
 	return false
 }
+
+// TestForgejoBranchProtectionAndReviews exercises the Forgejo surface Quill's
+// branch policies rely on: branch protection upsert/get/delete and pull-request
+// review submission/listing. It touches only Forgejo (no Quill Postgres), so it
+// is safe to run alongside the demo database.
+func TestForgejoBranchProtectionAndReviews(t *testing.T) {
+	c := newClient(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	orgName := "quill-itest-bp-" + suffix
+	repoName := "quill-itest-bpr-" + suffix
+	authorName := "quill-itest-bpa-" + suffix
+	reviewerName := "quill-itest-bpv-" + suffix
+
+	if _, err := c.CreateOrg(ctx, forgejo.CreateOrgOptions{Name: orgName, Visibility: "private"}); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	t.Cleanup(func() { _ = c.DeleteOrg(context.Background(), orgName) })
+	if _, err := c.CreateOrgRepo(ctx, orgName, forgejo.CreateRepoOptions{
+		Name:          repoName,
+		Private:       true,
+		AutoInit:      true,
+		DefaultBranch: "main",
+	}); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	t.Cleanup(func() { _ = c.DeleteRepo(context.Background(), orgName, repoName) })
+
+	// Branch protection: require one approval and forbid direct pushes to main.
+	if err := c.UpsertBranchProtection(ctx, orgName, repoName, forgejo.BranchProtectionOptions{
+		BranchName:             "main",
+		EnablePush:             false,
+		RequiredApprovals:      1,
+		DismissStaleApprovals:  true,
+		BlockOnRejectedReviews: true,
+	}); err != nil {
+		t.Fatalf("upsert branch protection: %v", err)
+	}
+	prot, ok, err := c.GetBranchProtection(ctx, orgName, repoName, "main")
+	if err != nil {
+		t.Fatalf("get branch protection: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected branch protection to exist")
+	}
+	if prot.RequiredApprovals != 1 || prot.EnablePush {
+		t.Fatalf("unexpected protection: approvals=%d enablePush=%v", prot.RequiredApprovals, prot.EnablePush)
+	}
+
+	// Upsert again with new settings to prove the update (PATCH) path works.
+	if err := c.UpsertBranchProtection(ctx, orgName, repoName, forgejo.BranchProtectionOptions{
+		BranchName:        "main",
+		EnablePush:        false,
+		RequiredApprovals: 2,
+	}); err != nil {
+		t.Fatalf("update branch protection: %v", err)
+	}
+	prot, _, err = c.GetBranchProtection(ctx, orgName, repoName, "main")
+	if err != nil {
+		t.Fatalf("get updated protection: %v", err)
+	}
+	if prot.RequiredApprovals != 2 {
+		t.Fatalf("expected 2 required approvals after update, got %d", prot.RequiredApprovals)
+	}
+
+	// A PR author and a separate reviewer (Forgejo forbids self-approval and
+	// requires reviewers to have repo access).
+	for _, u := range []string{authorName, reviewerName} {
+		if _, err := c.CreateUser(ctx, forgejo.CreateUserOptions{
+			Username: u,
+			Email:    u + "@quill.test",
+			Password: "Quill-Itest-" + suffix,
+		}); err != nil {
+			t.Fatalf("create user %s: %v", u, err)
+		}
+		user := u
+		t.Cleanup(func() { _ = c.DeleteUser(context.Background(), user, true) })
+		if err := c.AddCollaborator(ctx, orgName, repoName, u, "write"); err != nil {
+			t.Fatalf("add collaborator %s: %v", u, err)
+		}
+	}
+
+	if err := c.CreateBranch(ctx, orgName, repoName, "feature", "main"); err != nil {
+		t.Fatalf("create branch: %v", err)
+	}
+	if err := c.CreateFile(ctx, orgName, repoName, "feature.txt", []byte("change\n"), "Add feature.txt", "feature"); err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	pr, err := c.CreatePull(ctx, orgName, repoName, authorName, forgejo.CreatePullOptions{
+		Title: "Feature",
+		Head:  "feature",
+		Base:  "main",
+	})
+	if err != nil {
+		t.Fatalf("create pull: %v", err)
+	}
+
+	// The reviewer approves; the review must come back in the listing.
+	review, err := c.CreateReview(ctx, orgName, repoName, pr.Number, reviewerName, forgejo.CreateReviewOptions{
+		Event: forgejo.ReviewApproved,
+		Body:  "LGTM",
+	})
+	if err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+	if review.State != forgejo.ReviewApproved {
+		t.Fatalf("expected APPROVED review, got %q", review.State)
+	}
+	reviews, err := c.ListReviews(ctx, orgName, repoName, pr.Number)
+	if err != nil {
+		t.Fatalf("list reviews: %v", err)
+	}
+	if !hasApprovalFrom(reviews, reviewerName) {
+		t.Fatalf("expected an APPROVED review from %q, got %+v", reviewerName, reviews)
+	}
+
+	// Deleting protection should leave none behind.
+	if err := c.DeleteBranchProtection(ctx, orgName, repoName, "main"); err != nil {
+		t.Fatalf("delete branch protection: %v", err)
+	}
+	if _, ok, err := c.GetBranchProtection(ctx, orgName, repoName, "main"); err != nil || ok {
+		t.Fatalf("expected protection gone, ok=%v err=%v", ok, err)
+	}
+}
+
+func hasApprovalFrom(reviews []forgejo.Review, login string) bool {
+	for _, r := range reviews {
+		if r.State == forgejo.ReviewApproved && r.User != nil && r.User.Login == login {
+			return true
+		}
+	}
+	return false
+}

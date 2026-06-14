@@ -102,7 +102,7 @@ Foundation-first; each item is one focused PR.
 - [x] **PR 4 — Forgejo integration** (admin client, provisioning, identity map)
 - [x] **PR 5 — Org & repo browsing** (orgs, repos, file tree, branches, commits)
 - [x] **PR 6 — Pull requests** (list/create/view, diff, review, merge)
-- [ ] **PR 7 — Branch policies** (protected branches, required reviews/checks)
+- [x] **PR 7 — Branch policies** (protected branches, required reviews, merge gate)
 - [ ] **PR 8 — Pipelines** (runner integration, runs, logs, status checks)
 
 ## License

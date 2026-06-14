@@ -336,3 +336,107 @@ func pullNumber(w http.ResponseWriter, r *http.Request) (int, bool) {
 	}
 	return n, true
 }
+
+// reviewResponse is the public JSON shape for a pull-request review.
+type reviewResponse struct {
+	ID          int64     `json:"id"`
+	State       string    `json:"state"`
+	Body        string    `json:"body"`
+	Author      *userRef  `json:"author"`
+	Stale       bool      `json:"stale"`
+	Dismissed   bool      `json:"dismissed"`
+	SubmittedAt time.Time `json:"submittedAt"`
+}
+
+func newReviewResponse(rv forgejo.Review) reviewResponse {
+	return reviewResponse{
+		ID:          rv.ID,
+		State:       rv.State,
+		Body:        rv.Body,
+		Author:      newUserRef(rv.User),
+		Stale:       rv.Stale,
+		Dismissed:   rv.Dismissed,
+		SubmittedAt: rv.SubmittedAt,
+	}
+}
+
+// policyGateResponse describes whether a branch policy permits merging a PR.
+type policyGateResponse struct {
+	Applies           bool   `json:"applies"`
+	Pattern           string `json:"pattern,omitempty"`
+	RequiredApprovals int    `json:"requiredApprovals"`
+	Approvals         int    `json:"approvals"`
+	ChangesRequested  int    `json:"changesRequested"`
+	Blocked           bool   `json:"blocked"`
+	Reason            string `json:"reason,omitempty"`
+}
+
+func newPolicyGate(state platform.ReviewState) policyGateResponse {
+	gate := policyGateResponse{
+		Approvals:        state.Approvals,
+		ChangesRequested: state.ChangesRequested,
+		Blocked:          state.Blocked,
+		Reason:           state.Reason,
+	}
+	if state.Policy != nil {
+		gate.Applies = true
+		gate.Pattern = state.Policy.Pattern
+		gate.RequiredApprovals = int(state.Policy.RequiredApprovals)
+	}
+	return gate
+}
+
+type createReviewRequest struct {
+	Event string `json:"event"`
+	Body  string `json:"body"`
+}
+
+// handleListPullReviews returns a pull request's reviews and the policy gate
+// evaluated against its base branch.
+func (s *Server) handleListPullReviews(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, ok := pullNumber(w, r)
+	if !ok {
+		return
+	}
+	reviews, state, err := s.platform.ReviewsAndState(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list reviews")
+		return
+	}
+	out := make([]reviewResponse, 0, len(reviews))
+	for _, rv := range reviews {
+		out = append(out, newReviewResponse(rv))
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"reviews": out,
+		"gate":    newPolicyGate(state),
+	})
+}
+
+// handleCreatePullReview submits a review on a pull request.
+func (s *Server) handleCreatePullReview(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, ok := pullNumber(w, r)
+	if !ok {
+		return
+	}
+	var req createReviewRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	review, err := s.platform.CreatePullReview(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number, req.Event, req.Body)
+	if err != nil {
+		s.writePlatformError(w, err, "could not submit review")
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{"review": newReviewResponse(review)})
+}

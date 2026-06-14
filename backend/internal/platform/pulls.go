@@ -28,6 +28,13 @@ type CreatePullInput struct {
 // validMergeMethods are the merge strategies Quill accepts.
 var validMergeMethods = map[string]bool{"merge": true, "squash": true, "rebase": true}
 
+// validReviewEvents are the review actions Quill accepts.
+var validReviewEvents = map[string]bool{
+	forgejo.ReviewApproved:       true,
+	forgejo.ReviewRequestChanges: true,
+	forgejo.ReviewComment:        true,
+}
+
 // ListPulls returns a repository's pull requests filtered by state ("open",
 // "closed", or "all").
 func (s *Service) ListPulls(ctx context.Context, actor Actor, orgSlug, repoSlug, state string) (db.Repository, []forgejo.PullRequest, error) {
@@ -132,7 +139,9 @@ func (s *Service) CreatePullComment(ctx context.Context, actor Actor, orgSlug, r
 }
 
 // MergePull merges a pull request using method ("merge", "squash", or "rebase")
-// and returns the refreshed pull request.
+// and returns the refreshed pull request. Before merging it enforces any branch
+// policy governing the PR's base branch (required approvals, no outstanding
+// change requests) — the authoritative gate for the PR flow.
 func (s *Service) MergePull(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, method string) (db.Repository, forgejo.PullRequest, error) {
 	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
 	if err != nil {
@@ -144,15 +153,158 @@ func (s *Service) MergePull(ctx context.Context, actor Actor, orgSlug, repoSlug 
 	if !validMergeMethods[method] {
 		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: merge method must be merge, squash or rebase", ErrInvalidInput)
 	}
-	asUser := s.actingForgejoUser(ctx, owner, name, actor)
-	if err := s.forgejo.MergePull(ctx, owner, name, number, asUser, forgejo.MergePullOptions{Do: method}); err != nil {
-		return db.Repository{}, forgejo.PullRequest{}, translateForgejoWrite(err)
-	}
 	pr, err := s.forgejo.GetPull(ctx, owner, name, number)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, translateForgejoRead(err)
 	}
-	return repo, pr, nil
+	if err := s.enforceMergeGate(ctx, repo, owner, name, pr); err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	asUser := s.actingForgejoUser(ctx, owner, name, actor)
+	if err := s.forgejo.MergePull(ctx, owner, name, number, asUser, forgejo.MergePullOptions{Do: method}); err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, translateForgejoWrite(err)
+	}
+	merged, err := s.forgejo.GetPull(ctx, owner, name, number)
+	if err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, translateForgejoRead(err)
+	}
+	return repo, merged, nil
+}
+
+// ReviewState is the merge-readiness of a pull request against the policy that
+// governs its base branch.
+type ReviewState struct {
+	Policy           *db.BranchPolicy
+	Approvals        int
+	ChangesRequested int
+	Blocked          bool
+	Reason           string
+}
+
+// ReviewsAndState returns a pull request's reviews together with the policy gate
+// evaluated against its base branch — what the frontend needs to render review
+// status and the merge box in a single call.
+func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) ([]forgejo.Review, ReviewState, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return nil, ReviewState{}, err
+	}
+	pr, err := s.forgejo.GetPull(ctx, owner, name, number)
+	if err != nil {
+		return nil, ReviewState{}, translateForgejoRead(err)
+	}
+	reviews, err := s.forgejo.ListReviews(ctx, owner, name, number)
+	if err != nil {
+		return nil, ReviewState{}, translateForgejoRead(err)
+	}
+	policies, err := s.store.ListBranchPoliciesByRepo(ctx, repo.ID)
+	if err != nil {
+		return nil, ReviewState{}, fmt.Errorf("load branch policies: %w", err)
+	}
+	state := gateFromReviews(matchBranchPolicy(policies, pr.Base.Ref), pr.User, reviews)
+	return reviews, state, nil
+}
+
+// enforceMergeGate returns ErrPolicyViolation when a branch policy blocks merging
+// pr, and nil when the merge is allowed (including when no policy applies).
+func (s *Service) enforceMergeGate(ctx context.Context, repo db.Repository, owner, name string, pr forgejo.PullRequest) error {
+	policies, err := s.store.ListBranchPoliciesByRepo(ctx, repo.ID)
+	if err != nil {
+		return fmt.Errorf("load branch policies: %w", err)
+	}
+	policy := matchBranchPolicy(policies, pr.Base.Ref)
+	if policy == nil {
+		return nil
+	}
+	reviews, err := s.forgejo.ListReviews(ctx, owner, name, pr.Number)
+	if err != nil {
+		return translateForgejoRead(err)
+	}
+	state := gateFromReviews(policy, pr.User, reviews)
+	if state.Blocked {
+		return fmt.Errorf("%w: %s", ErrPolicyViolation, state.Reason)
+	}
+	return nil
+}
+
+// gateFromReviews computes the merge-readiness verdict for a policy against a
+// pull request's reviews. A nil policy means no gate applies (never blocked).
+func gateFromReviews(policy *db.BranchPolicy, author *forgejo.User, reviews []forgejo.Review) ReviewState {
+	if policy == nil {
+		return ReviewState{}
+	}
+	approvals, changesRequested := summarizeReviews(reviews, author, policy.DismissStaleApprovals)
+	state := ReviewState{Policy: policy, Approvals: approvals, ChangesRequested: changesRequested}
+	switch {
+	case changesRequested > 0:
+		state.Blocked = true
+		state.Reason = "changes have been requested and must be resolved"
+	case approvals < int(policy.RequiredApprovals):
+		state.Blocked = true
+		state.Reason = fmt.Sprintf("%d of %d required approvals", approvals, policy.RequiredApprovals)
+	}
+	return state
+}
+
+// summarizeReviews tallies the latest non-dismissed review per user (excluding
+// the PR author). Stale approvals are ignored when the policy dismisses them.
+func summarizeReviews(reviews []forgejo.Review, author *forgejo.User, dismissStale bool) (approvals, changesRequested int) {
+	type latest struct {
+		state string
+		stale bool
+	}
+	authorLogin := ""
+	if author != nil {
+		authorLogin = author.Login
+	}
+	byUser := map[string]latest{}
+	for _, rv := range reviews {
+		if rv.User == nil || rv.Dismissed {
+			continue
+		}
+		if rv.State != forgejo.ReviewApproved && rv.State != forgejo.ReviewRequestChanges {
+			continue
+		}
+		if rv.User.Login == authorLogin {
+			continue
+		}
+		// Reviews arrive in submission order; the last one wins.
+		byUser[rv.User.Login] = latest{state: rv.State, stale: rv.Stale}
+	}
+	for _, l := range byUser {
+		switch l.state {
+		case forgejo.ReviewApproved:
+			if dismissStale && l.stale {
+				continue
+			}
+			approvals++
+		case forgejo.ReviewRequestChanges:
+			changesRequested++
+		}
+	}
+	return approvals, changesRequested
+}
+
+// pull request, attributed to the actor.
+func (s *Service) CreatePullReview(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, event, body string) (forgejo.Review, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return forgejo.Review{}, err
+	}
+	event = strings.ToUpper(strings.TrimSpace(event))
+	if !validReviewEvents[event] {
+		return forgejo.Review{}, fmt.Errorf("%w: review must approve, request changes, or comment", ErrInvalidInput)
+	}
+	body = strings.TrimSpace(body)
+	if event == forgejo.ReviewComment && body == "" {
+		return forgejo.Review{}, fmt.Errorf("%w: a comment review requires a body", ErrInvalidInput)
+	}
+	asUser := s.actingForgejoUser(ctx, owner, name, actor)
+	review, err := s.forgejo.CreateReview(ctx, owner, name, number, asUser, forgejo.CreateReviewOptions{Event: event, Body: body})
+	if err != nil {
+		return forgejo.Review{}, translateForgejoWrite(err)
+	}
+	return review, nil
 }
 
 // actingForgejoUser resolves the actor's Forgejo login and ensures they have

@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation";
 
-import { getPull, getPullComments, getPullDiff } from "../../../../../../lib/api";
+import {
+  getPull,
+  getPullComments,
+  getPullDiff,
+  getPullReviews,
+  type PolicyGate,
+} from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
 import {
   BrowseError,
@@ -8,9 +14,23 @@ import {
   fmtDate,
   shortSha,
 } from "../../../../../../components/repo";
-import { DiffStat, DiffView, PullStateBadge } from "../../../../../../components/pulls";
+import {
+  DiffStat,
+  DiffView,
+  PullStateBadge,
+  ReviewStateBadge,
+} from "../../../../../../components/pulls";
 import { CommentForm } from "./CommentForm";
 import { MergeBox } from "./MergeBox";
+import { ReviewForm } from "./ReviewForm";
+
+const NO_GATE: PolicyGate = {
+  applies: false,
+  requiredApprovals: 0,
+  approvals: 0,
+  changesRequested: 0,
+  blocked: false,
+};
 
 // PullDetailPage shows a pull request's header, merge controls, conversation,
 // and the parsed diff of its changes.
@@ -39,12 +59,15 @@ export default async function PullDetailPage({
   }
 
   const { repository: repo, pull } = prRes.data;
-  const [commentsRes, diffRes] = await Promise.all([
+  const [commentsRes, diffRes, reviewsRes] = await Promise.all([
     getPullComments(token, params.org, params.repo, number),
     getPullDiff(token, params.org, params.repo, number),
+    getPullReviews(token, params.org, params.repo, number),
   ]);
   const comments = commentsRes.ok ? commentsRes.data.comments : [];
   const files = diffRes.ok ? diffRes.data.files : [];
+  const reviews = reviewsRes.ok ? reviewsRes.data.reviews : [];
+  const gate = reviewsRes.ok ? reviewsRes.data.gate : NO_GATE;
   const isOpen = pull.state === "open" && !pull.merged;
 
   return (
@@ -99,6 +122,7 @@ export default async function PullDetailPage({
           repo={params.repo}
           number={number}
           mergeable={pull.mergeable}
+          gate={gate}
         />
       )}
 
@@ -130,8 +154,32 @@ export default async function PullDetailPage({
           </div>
         ))}
 
+        {reviews.map((rv) => (
+          <div className="pr-comment review" key={rv.id}>
+            <div className="pr-comment-head">
+              <b>{rv.author?.login ?? "unknown"}</b>
+              <span className="subtle"> reviewed · {fmtDate(rv.submittedAt)}</span>
+              <span className="spacer" />
+              {rv.dismissed ? (
+                <span className="badge">Dismissed</span>
+              ) : rv.stale ? (
+                <span className="badge">Stale</span>
+              ) : null}
+              <ReviewStateBadge state={rv.state} />
+            </div>
+            {rv.body && (
+              <div className="pr-comment-body">
+                <pre>{rv.body}</pre>
+              </div>
+            )}
+          </div>
+        ))}
+
         {isOpen && (
-          <CommentForm org={params.org} repo={params.repo} number={number} />
+          <>
+            <CommentForm org={params.org} repo={params.repo} number={number} />
+            <ReviewForm org={params.org} repo={params.repo} number={number} />
+          </>
         )}
       </div>
 
