@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
@@ -22,6 +23,7 @@ type Server struct {
 	cfg    *config.Config
 	logger *slog.Logger
 	store  *store.Store
+	auth   *auth.Service
 	router chi.Router
 }
 
@@ -32,6 +34,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		cfg:    cfg,
 		logger: logger,
 		store:  st,
+		auth:   auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)),
 		router: chi.NewRouter(),
 	}
 	s.setupMiddleware()
@@ -68,5 +71,16 @@ func (s *Server) setupRoutes() {
 	// Versioned API surface. Resource routes are added in later PRs.
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/meta", s.handleMeta)
+
+		// Authentication: register and login are public; me and logout require a token.
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register", s.handleRegister)
+			r.Post("/login", s.handleLogin)
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireAuth)
+				r.Get("/me", s.handleMe)
+				r.Post("/logout", s.handleLogout)
+			})
+		})
 	})
 }

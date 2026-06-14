@@ -1,11 +1,13 @@
 "use client";
 
-// Sidebar is the primary navigation chrome. It highlights the active route and,
-// for now, renders a placeholder identity + sign-out link. Real auth state and
-// org switching arrive in PR 3 (auth) and PR 4 (Forgejo orgs).
+// Sidebar is the primary navigation chrome. It highlights the active route and
+// renders the signed-in user plus a sign-out control wired to a server action.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+import { logoutAction } from "../lib/actions";
+import type { User } from "../lib/api";
 
 export type NavItem = {
   href: string;
@@ -28,7 +30,7 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export function Sidebar() {
+export function Sidebar({ user }: { user: User }) {
   const pathname = usePathname() || "/";
 
   return (
@@ -39,7 +41,7 @@ export function Sidebar() {
 
       <div className="org">
         <span className="who">Signed in as</span>
-        <b>dev@quill.local</b>
+        <b>{user.displayName || user.username}</b>
       </div>
 
       <nav className="nav">
@@ -57,9 +59,11 @@ export function Sidebar() {
       </nav>
 
       <div className="foot">
-        <Link className="logout-btn" href="/login">
-          Sign out
-        </Link>
+        <form action={logoutAction}>
+          <button className="logout-btn" type="submit">
+            Sign out
+          </button>
+        </form>
         <div className="copy">© 2026 Quill</div>
       </div>
     </aside>
