@@ -115,6 +115,40 @@ export type PullComment = {
   createdAt: string;
 };
 
+export type ReviewState = "APPROVED" | "REQUEST_CHANGES" | "COMMENT" | "PENDING";
+
+export type Review = {
+  id: number;
+  state: ReviewState;
+  body: string;
+  author: UserRef | null;
+  stale: boolean;
+  dismissed: boolean;
+  submittedAt: string;
+};
+
+// PolicyGate is the merge verdict for a PR against the policy on its base branch.
+export type PolicyGate = {
+  applies: boolean;
+  pattern?: string;
+  requiredApprovals: number;
+  approvals: number;
+  changesRequested: number;
+  blocked: boolean;
+  reason?: string;
+};
+
+// BranchPolicy is a repository branch-protection rule owned by Quill.
+export type BranchPolicy = {
+  pattern: string;
+  requiredApprovals: number;
+  dismissStaleApprovals: boolean;
+  requireUpToDate: boolean;
+  blockForcePush: boolean;
+  requirePullRequest: boolean;
+  updatedAt: string;
+};
+
 export type DiffLine = {
   type: "context" | "add" | "del";
   content: string;
@@ -482,6 +516,35 @@ export function getPullComments(
   );
 }
 
+// reviewsResult carries a PR's reviews and the policy gate for its base branch.
+export type ReviewsResult = { reviews: Review[]; gate: PolicyGate };
+
+export function getPullReviews(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+): Promise<Result<ReviewsResult>> {
+  return authGet<ReviewsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/reviews`,
+  );
+}
+
+// policiesResult is the branch-policy listing payload.
+export type PoliciesResult = { repository: Repo; policies: BranchPolicy[] };
+
+export function getBranchPolicies(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<PoliciesResult>> {
+  return authGet<PoliciesResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/policies`,
+  );
+}
+
 // DataResult carries a decoded body on success or a message on failure, for
 // mutations that return a resource rather than a slug.
 export type DataResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -491,9 +554,18 @@ async function postData<T>(
   path: string,
   body: unknown,
 ): Promise<DataResult<T>> {
+  return sendData<T>(token, "POST", path, body);
+}
+
+async function sendData<T>(
+  token: string,
+  method: "POST" | "PUT",
+  path: string,
+  body: unknown,
+): Promise<DataResult<T>> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
+      method,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
@@ -511,6 +583,29 @@ async function postData<T>(
       };
     }
     return { ok: true, data: data as T };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
+// deleteResource issues an authenticated DELETE, treating any 2xx as success.
+async function deleteResource(
+  token: string,
+  path: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return { ok: false, error: data?.message || `Request failed (${res.status}).` };
+    }
+    return { ok: true };
   } catch {
     return { ok: false, error: "Can't reach the Quill backend." };
   }
@@ -553,5 +648,54 @@ export function mergePull(
     token,
     `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/merge`,
     { method },
+  );
+}
+
+// createPullReview submits a review (approve, request changes, or comment).
+export function createPullReview(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+  input: { event: ReviewState; body: string },
+): Promise<DataResult<{ review: Review }>> {
+  return postData(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/reviews`,
+    input,
+  );
+}
+
+// ---- branch policies -------------------------------------------------------
+
+export type BranchPolicyInput = {
+  pattern: string;
+  requiredApprovals: number;
+  dismissStaleApprovals: boolean;
+  requireUpToDate: boolean;
+  blockForcePush: boolean;
+  requirePullRequest: boolean;
+};
+
+// setBranchPolicy creates or updates a branch policy (org owners / admins only).
+export function setBranchPolicy(
+  token: string,
+  org: string,
+  repo: string,
+  input: BranchPolicyInput,
+): Promise<DataResult<{ policy: BranchPolicy }>> {
+  return sendData(token, "PUT", `/api/v1/orgs/${org}/repos/${repo}/policies`, input);
+}
+
+// deleteBranchPolicy removes the policy for a branch pattern.
+export function deleteBranchPolicy(
+  token: string,
+  org: string,
+  repo: string,
+  pattern: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/policies?pattern=${encodeURIComponent(pattern)}`,
   );
 }

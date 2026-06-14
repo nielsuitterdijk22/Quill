@@ -64,6 +64,28 @@ func (s *Service) authorizeOrgMember(ctx context.Context, actor Actor, orgID uui
 	return ErrForbidden
 }
 
+// authorizeOrgAdmin returns nil when the actor is a platform admin or an owner
+// of orgID, and ErrForbidden otherwise. It gates configuration changes (such as
+// editing branch policies) that ordinary members may not perform.
+func (s *Service) authorizeOrgAdmin(ctx context.Context, actor Actor, orgID uuid.UUID) error {
+	if actor.IsAdmin {
+		return nil
+	}
+	members, err := s.store.ListOrgMembers(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("check org membership: %w", err)
+	}
+	for _, m := range members {
+		if m.ID == actor.UserID {
+			if m.MemberRole == "owner" {
+				return nil
+			}
+			return ErrForbidden
+		}
+	}
+	return ErrForbidden
+}
+
 // isUniqueViolation reports whether err is a Postgres unique-constraint violation,
 // used to translate races into ErrConflict.
 func isUniqueViolation(err error) bool {

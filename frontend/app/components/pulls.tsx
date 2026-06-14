@@ -39,6 +39,19 @@ export function DiffStat({
   );
 }
 
+const REVIEW_STATE: Record<string, { label: string; cls: string }> = {
+  APPROVED: { label: "Approved", cls: "green" },
+  REQUEST_CHANGES: { label: "Changes requested", cls: "red" },
+  COMMENT: { label: "Commented", cls: "" },
+  PENDING: { label: "Pending", cls: "" },
+};
+
+// ReviewStateBadge renders a colored badge for a review's verdict.
+export function ReviewStateBadge({ state }: { state: string }) {
+  const r = REVIEW_STATE[state] ?? { label: state, cls: "" };
+  return <span className={`badge ${r.cls}`}>{r.label}</span>;
+}
+
 const STATUS_GLYPH: Record<string, string> = {
   added: "A",
   deleted: "D",

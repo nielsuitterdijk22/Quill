@@ -106,6 +106,11 @@ func (s *Server) setupRoutes() {
 							r.Get("/branches", s.handleListBranches)
 							r.Get("/commits", s.handleListCommits)
 							r.Get("/contents", s.handleGetContents)
+							r.Route("/policies", func(r chi.Router) {
+								r.Get("/", s.handleListBranchPolicies)
+								r.Put("/", s.handleSetBranchPolicy)
+								r.Delete("/", s.handleDeleteBranchPolicy)
+							})
 							r.Route("/pulls", func(r chi.Router) {
 								r.Get("/", s.handleListPulls)
 								r.Post("/", s.handleCreatePull)
@@ -114,6 +119,8 @@ func (s *Server) setupRoutes() {
 									r.Get("/diff", s.handleGetPullDiff)
 									r.Get("/comments", s.handleListPullComments)
 									r.Post("/comments", s.handleCreatePullComment)
+									r.Get("/reviews", s.handleListPullReviews)
+									r.Post("/reviews", s.handleCreatePullReview)
 									r.Post("/merge", s.handleMergePull)
 								})
 							})
