@@ -18,6 +18,9 @@ var (
 	ErrConflict     = errors.New("already exists")
 	ErrNotFound     = errors.New("not found")
 	ErrForbidden    = errors.New("forbidden")
+	// ErrUnavailable signals that a git-side operation can't be served because
+	// Forgejo is disabled or the resource isn't linked to a git repository.
+	ErrUnavailable = errors.New("git backend unavailable")
 )
 
 // Visibility values accepted for repositories. "internal" is visible to all
@@ -36,9 +39,24 @@ const defaultOwningTeamSlug = "owners"
 // alphanumerics plus '-', '_' and '.', starting alphanumeric, up to 63 chars.
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
+// reservedSlugs are handles Quill keeps for itself so org/repo slugs never
+// collide with reserved frontend routes (e.g. the "/orgs/new" create form or a
+// repo's "/new" create form).
+var reservedSlugs = map[string]bool{
+	"new":      true,
+	"edit":     true,
+	"settings": true,
+	"api":      true,
+}
+
 // normalizeSlug lowercases and trims a candidate slug.
 func normalizeSlug(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// validSlug reports whether a normalized slug is well-formed and not reserved.
+func validSlug(s string) bool {
+	return slugRe.MatchString(s) && !reservedSlugs[s]
 }
 
 func validVisibility(v string) bool {

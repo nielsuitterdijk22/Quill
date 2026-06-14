@@ -37,8 +37,8 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, orgSlug string, i
 
 	slug := normalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)
-	if !slugRe.MatchString(slug) {
-		return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.' and start alphanumeric", ErrInvalidInput)
+	if !validSlug(slug) {
+		return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 	}
 	if name == "" {
 		name = slug

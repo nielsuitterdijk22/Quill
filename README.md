@@ -100,7 +100,7 @@ Foundation-first; each item is one focused PR.
 - [x] **PR 2 — Postgres schema & store** (migrations, sqlc, core tables)
 - [x] **PR 3 — Auth abstraction + local provider** (JWT, middleware, login)
 - [x] **PR 4 — Forgejo integration** (admin client, provisioning, identity map)
-- [ ] **PR 5 — Org & repo browsing** (orgs, repos, file tree, branches, commits)
+- [x] **PR 5 — Org & repo browsing** (orgs, repos, file tree, branches, commits)
 - [ ] **PR 6 — Pull requests** (list/create/view, diff, review, merge)
 - [ ] **PR 7 — Branch policies** (protected branches, required reviews/checks)
 - [ ] **PR 8 — Pipelines** (runner integration, runs, logs, status checks)

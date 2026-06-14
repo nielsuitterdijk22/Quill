@@ -124,3 +124,91 @@ func TestForgejoOrgAndRepoLifecycle(t *testing.T) {
 		t.Fatalf("expected NotFound after org delete, got %v", err)
 	}
 }
+
+func TestForgejoBrowse(t *testing.T) {
+	c := newClient(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	orgName := "quill-itest-b-" + suffix
+	repoName := "quill-itest-br-" + suffix
+
+	if _, err := c.CreateOrg(ctx, forgejo.CreateOrgOptions{Name: orgName, Visibility: "private"}); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	t.Cleanup(func() { _ = c.DeleteOrg(context.Background(), orgName) })
+	if _, err := c.CreateOrgRepo(ctx, orgName, forgejo.CreateRepoOptions{
+		Name:          repoName,
+		Private:       true,
+		AutoInit:      true,
+		DefaultBranch: "main",
+	}); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	t.Cleanup(func() { _ = c.DeleteRepo(context.Background(), orgName, repoName) })
+
+	branches, err := c.ListBranches(ctx, orgName, repoName)
+	if err != nil {
+		t.Fatalf("list branches: %v", err)
+	}
+	if !hasBranch(branches, "main") {
+		t.Fatalf("expected a main branch, got %+v", branches)
+	}
+
+	// Root listing should contain the auto-init README.
+	root, err := c.GetContents(ctx, orgName, repoName, "", "main")
+	if err != nil {
+		t.Fatalf("get root contents: %v", err)
+	}
+	if !root.IsDir {
+		t.Fatal("root contents should be a directory")
+	}
+	if !hasEntry(root.Entries, "README.md") {
+		t.Fatalf("expected README.md in root, got %+v", root.Entries)
+	}
+
+	// Fetching the README directly returns its base64-encoded content.
+	file, err := c.GetContents(ctx, orgName, repoName, "README.md", "main")
+	if err != nil {
+		t.Fatalf("get README: %v", err)
+	}
+	if file.IsDir || file.File == nil {
+		t.Fatal("README should resolve to a file")
+	}
+	if file.File.Content == nil || *file.File.Content == "" {
+		t.Fatal("README file should carry base64 content")
+	}
+
+	// A missing path must surface as a 404.
+	if _, err := c.GetContents(ctx, orgName, repoName, "does/not/exist", "main"); !forgejo.NotFound(err) {
+		t.Fatalf("expected NotFound for missing path, got %v", err)
+	}
+
+	commits, err := c.ListCommits(ctx, orgName, repoName, "main", "", 10)
+	if err != nil {
+		t.Fatalf("list commits: %v", err)
+	}
+	if len(commits) == 0 {
+		t.Fatal("expected at least one commit")
+	}
+	if commits[0].SHA == "" {
+		t.Fatal("commit should carry a SHA")
+	}
+}
+
+func hasBranch(branches []forgejo.Branch, name string) bool {
+	for _, b := range branches {
+		if b.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEntry(entries []forgejo.ContentEntry, name string) bool {
+	for _, e := range entries {
+		if e.Name == name {
+			return true
+		}
+	}
+	return false
+}

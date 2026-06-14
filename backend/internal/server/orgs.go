@@ -205,6 +205,8 @@ func (s *Server) writePlatformError(w http.ResponseWriter, err error, fallback s
 		httpx.Error(w, http.StatusNotFound, "not_found", "resource not found")
 	case errors.Is(err, platform.ErrForbidden):
 		httpx.Error(w, http.StatusForbidden, "forbidden", "you do not have access to this organization")
+	case errors.Is(err, platform.ErrUnavailable):
+		httpx.Error(w, http.StatusBadGateway, "git_unavailable", "the git backend is unavailable for this repository")
 	default:
 		s.logger.Error("platform operation failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", fallback)

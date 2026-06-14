@@ -41,6 +41,46 @@ export type Repo = {
   createdAt: string;
 };
 
+export type Branch = {
+  name: string;
+  protected: boolean;
+  commitSha: string;
+  commitMessage: string;
+  commitDate: string;
+};
+
+export type Commit = {
+  sha: string;
+  message: string;
+  authorName: string;
+  authorLogin?: string;
+  date: string;
+};
+
+export type ContentEntry = {
+  name: string;
+  path: string;
+  type: "file" | "dir" | "symlink" | "submodule";
+  size: number;
+};
+
+export type ContentFile = {
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+  isBinary: boolean;
+  tooLarge: boolean;
+  content?: string;
+};
+
+export type Contents = {
+  type: "dir" | "file";
+  path: string;
+  entries?: ContentEntry[];
+  file?: ContentFile;
+};
+
 export type User = {
   id: string;
   username: string;
@@ -155,4 +195,173 @@ async function postAuth(path: string, body: unknown): Promise<AuthResult> {
   } catch {
     return { ok: false, error: "Can't reach the Quill backend." };
   }
+}
+
+// Result distinguishes success from a failed fetch by HTTP status so pages can
+// render the right state (404 → not found, 403 → no access, etc.).
+export type Result<T> =
+  | { ok: true; data: T }
+  | { ok: false; status: number; message: string };
+
+// authGet performs an authenticated GET and decodes JSON, mapping transport and
+// HTTP errors into a typed Result. status 0 indicates the backend is unreachable.
+async function authGet<T>(token: string, path: string): Promise<Result<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return {
+        ok: false,
+        status: res.status,
+        message: body?.message || `Request failed (${res.status}).`,
+      };
+    }
+    return { ok: true, data: (await res.json()) as T };
+  } catch {
+    return { ok: false, status: 0, message: "Can't reach the Quill backend." };
+  }
+}
+
+// getOrg fetches a single organization.
+export function getOrg(token: string, slug: string): Promise<Result<Org>> {
+  return authGet<Org>(token, `/api/v1/orgs/${slug}`);
+}
+
+// reposResult is the org-detail repository listing payload.
+export type ReposResult = { organization: Org; repositories: Repo[] };
+
+// getReposByOrg returns an org plus its repositories, preserving HTTP status.
+export function getReposByOrg(
+  token: string,
+  slug: string,
+): Promise<Result<ReposResult>> {
+  return authGet<ReposResult>(token, `/api/v1/orgs/${slug}/repos`);
+}
+
+// getRepo fetches a single repository's metadata.
+export function getRepo(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<Repo>> {
+  return authGet<Repo>(token, `/api/v1/orgs/${org}/repos/${repo}`);
+}
+
+// branchesResult is the branch listing payload.
+export type BranchesResult = {
+  repository: Repo;
+  defaultBranch: string;
+  branches: Branch[];
+};
+
+export function getBranches(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<BranchesResult>> {
+  return authGet<BranchesResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/branches`,
+  );
+}
+
+// commitsResult is the commit log payload.
+export type CommitsResult = { repository: Repo; commits: Commit[] };
+
+export function getCommits(
+  token: string,
+  org: string,
+  repo: string,
+  ref?: string,
+  path?: string,
+  limit = 30,
+): Promise<Result<CommitsResult>> {
+  const q = new URLSearchParams();
+  if (ref) q.set("ref", ref);
+  if (path) q.set("path", path);
+  q.set("limit", String(limit));
+  return authGet<CommitsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/commits?${q.toString()}`,
+  );
+}
+
+// contentsResult is the directory/file contents payload.
+export type ContentsResult = { repository: Repo; contents: Contents };
+
+export function getContents(
+  token: string,
+  org: string,
+  repo: string,
+  path?: string,
+  ref?: string,
+): Promise<Result<ContentsResult>> {
+  const q = new URLSearchParams();
+  if (path) q.set("path", path);
+  if (ref) q.set("ref", ref);
+  const qs = q.toString();
+  return authGet<ContentsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/contents${qs ? `?${qs}` : ""}`,
+  );
+}
+
+// MutationResult reports the outcome of a create call: the created slug on
+// success, or a human-readable error.
+export type MutationResult =
+  | { ok: true; slug: string }
+  | { ok: false; error: string };
+
+async function postCreate(
+  token: string,
+  path: string,
+  body: unknown,
+): Promise<MutationResult> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const data = (await res.json().catch(() => null)) as
+      | { slug?: string; message?: string }
+      | null;
+    if (!res.ok || !data?.slug) {
+      return { ok: false, error: data?.message || `Request failed (${res.status}).` };
+    }
+    return { ok: true, slug: data.slug };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
+// createOrg provisions an organization (and its Forgejo mirror).
+export function createOrg(
+  token: string,
+  input: { slug: string; name: string; description: string },
+): Promise<MutationResult> {
+  return postCreate(token, "/api/v1/orgs", input);
+}
+
+// createRepo provisions a repository under an org (and its Forgejo mirror).
+export function createRepo(
+  token: string,
+  org: string,
+  input: {
+    slug: string;
+    name: string;
+    description: string;
+    visibility: string;
+  },
+): Promise<MutationResult> {
+  return postCreate(token, `/api/v1/orgs/${org}/repos`, input);
 }
