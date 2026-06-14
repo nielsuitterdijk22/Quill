@@ -62,6 +62,9 @@ a {
 .warn {
   color: var(--amber);
 }
+.muted {
+  color: var(--muted);
+}
 
 /* ---- app shell -------------------------------------------------------------- */
 .app {

@@ -12,6 +12,8 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
+	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
@@ -20,22 +22,27 @@ const Version = "0.1.0"
 
 // Server is the root HTTP handler for the Quill backend.
 type Server struct {
-	cfg    *config.Config
-	logger *slog.Logger
-	store  *store.Store
-	auth   *auth.Service
-	router chi.Router
+	cfg      *config.Config
+	logger   *slog.Logger
+	store    *store.Store
+	auth     *auth.Service
+	forgejo  *forgejo.Client
+	platform *platform.Service
+	router   chi.Router
 }
 
 // New constructs a Server with middleware and routes configured. store may be
 // nil in tests that only exercise handlers which don't touch the database.
 func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
+	fj := forgejo.New(cfg.Forgejo)
 	s := &Server{
-		cfg:    cfg,
-		logger: logger,
-		store:  st,
-		auth:   auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)),
-		router: chi.NewRouter(),
+		cfg:      cfg,
+		logger:   logger,
+		store:    st,
+		auth:     auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
+		forgejo:  fj,
+		platform: platform.NewService(st, fj, logger),
+		router:   chi.NewRouter(),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -80,6 +87,18 @@ func (s *Server) setupRoutes() {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
 				r.Post("/logout", s.handleLogout)
+			})
+		})
+
+		// Organizations and repositories require authentication.
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireAuth)
+			r.Route("/orgs", func(r chi.Router) {
+				r.Get("/", s.handleListOrgs)
+				r.Post("/", s.handleCreateOrg)
+				r.Get("/{slug}", s.handleGetOrg)
+				r.Get("/{slug}/repos", s.handleListRepos)
+				r.Post("/{slug}/repos", s.handleCreateRepo)
 			})
 		})
 	})

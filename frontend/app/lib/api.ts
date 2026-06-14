@@ -6,10 +6,39 @@
 
 const API_BASE = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
 
+export type ForgejoStatus = {
+  configured: boolean;
+  reachable: boolean;
+  version?: string;
+};
+
 export type Meta = {
   name: string;
   version: string;
   env: string;
+  forgejo?: ForgejoStatus;
+};
+
+export type Org = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  forgejoOrg?: string;
+  createdAt: string;
+};
+
+export type Repo = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  visibility: string;
+  defaultBranch: string;
+  isArchived: boolean;
+  forgejoOwner?: string;
+  forgejoName?: string;
+  createdAt: string;
 };
 
 export type User = {
@@ -71,6 +100,40 @@ export async function fetchMe(token: string): Promise<User | null> {
     return (await res.json()) as User;
   } catch {
     return null;
+  }
+}
+
+// listOrgs returns all organizations visible to the authenticated user, or an
+// empty list when the backend is unreachable so pages can render a degraded state.
+export async function listOrgs(token: string): Promise<Org[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/orgs`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { organizations?: Org[] };
+    return data.organizations ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// listReposByOrg returns the repositories within an org, or an empty list on error.
+export async function listReposByOrg(
+  token: string,
+  slug: string,
+): Promise<Repo[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/orgs/${slug}/repos`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { repositories?: Repo[] };
+    return data.repositories ?? [];
+  } catch {
+    return [];
   }
 }
 

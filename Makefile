@@ -40,7 +40,10 @@ be-build: ## Build the backend
 
 .PHONY: be-test
 be-test: ## Run backend tests
-	cd backend && go test ./...
+	# -p 1 serialises package test binaries so the gated integration tests, which
+	# share one Postgres database, don't race each other when a DB is configured.
+	# Without QUILL_TEST_DATABASE_URL those tests skip and this is a no-op.
+	cd backend && go test -p 1 ./...
 
 .PHONY: be-fmt
 be-fmt: ## Format Go code
