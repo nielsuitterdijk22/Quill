@@ -81,6 +81,59 @@ export type Contents = {
   file?: ContentFile;
 };
 
+export type UserRef = { login: string; name?: string };
+
+export type PullRef = { label: string; ref: string; sha: string };
+
+export type PullRequest = {
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  draft: boolean;
+  merged: boolean;
+  mergeable: boolean;
+  comments: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  author: UserRef | null;
+  head: PullRef;
+  base: PullRef;
+  htmlUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt?: string;
+  mergedBy?: UserRef;
+  mergeCommitSha?: string;
+};
+
+export type PullComment = {
+  id: number;
+  body: string;
+  author: UserRef | null;
+  createdAt: string;
+};
+
+export type DiffLine = {
+  type: "context" | "add" | "del";
+  content: string;
+  oldNumber: number;
+  newNumber: number;
+};
+
+export type DiffHunk = { header: string; lines: DiffLine[] };
+
+export type DiffFile = {
+  path: string;
+  oldPath: string;
+  status: string;
+  isBinary: boolean;
+  additions: number;
+  deletions: number;
+  hunks: DiffHunk[];
+};
+
 export type User = {
   id: string;
   username: string;
@@ -364,4 +417,141 @@ export function createRepo(
   },
 ): Promise<MutationResult> {
   return postCreate(token, `/api/v1/orgs/${org}/repos`, input);
+}
+
+// ---- pull requests ---------------------------------------------------------
+
+// pullsResult is the PR listing payload.
+export type PullsResult = { repository: Repo; pulls: PullRequest[] };
+
+// getPulls returns a repository's pull requests filtered by state.
+export function getPulls(
+  token: string,
+  org: string,
+  repo: string,
+  state: "open" | "closed" | "all" = "open",
+): Promise<Result<PullsResult>> {
+  return authGet<PullsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls?state=${state}`,
+  );
+}
+
+// pullResult is the single-PR payload.
+export type PullResult = { repository: Repo; pull: PullRequest };
+
+export function getPull(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+): Promise<Result<PullResult>> {
+  return authGet<PullResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}`,
+  );
+}
+
+// diffResult is a PR's parsed diff payload.
+export type DiffResult = { files: DiffFile[] };
+
+export function getPullDiff(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+): Promise<Result<DiffResult>> {
+  return authGet<DiffResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/diff`,
+  );
+}
+
+// commentsResult is a PR's conversation payload.
+export type CommentsResult = { comments: PullComment[] };
+
+export function getPullComments(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+): Promise<Result<CommentsResult>> {
+  return authGet<CommentsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/comments`,
+  );
+}
+
+// DataResult carries a decoded body on success or a message on failure, for
+// mutations that return a resource rather than a slug.
+export type DataResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+async function postData<T>(
+  token: string,
+  path: string,
+  body: unknown,
+): Promise<DataResult<T>> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const data = (await res.json().catch(() => null)) as
+      | (T & { message?: string })
+      | null;
+    if (!res.ok || !data) {
+      return {
+        ok: false,
+        error: data?.message || `Request failed (${res.status}).`,
+      };
+    }
+    return { ok: true, data: data as T };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
+// createPull opens a pull request from head into base.
+export function createPull(
+  token: string,
+  org: string,
+  repo: string,
+  input: { title: string; body: string; head: string; base: string },
+): Promise<DataResult<{ pull: PullRequest }>> {
+  return postData(token, `/api/v1/orgs/${org}/repos/${repo}/pulls`, input);
+}
+
+// createPullComment adds a comment to a pull request's conversation.
+export function createPullComment(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+  body: string,
+): Promise<DataResult<{ comment: PullComment }>> {
+  return postData(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/comments`,
+    { body },
+  );
+}
+
+// mergePull merges a pull request using the given method.
+export function mergePull(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+  method: "merge" | "squash" | "rebase",
+): Promise<DataResult<{ pull: PullRequest }>> {
+  return postData(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/merge`,
+    { method },
+  );
 }
