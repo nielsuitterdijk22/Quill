@@ -122,6 +122,121 @@ func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, e
 	return int(total), nil
 }
 
+// RepoPull pairs a pull request with the repository and organization it belongs
+// to, so a cross-repository listing carries the context the frontend needs to
+// link back to each PR.
+type RepoPull struct {
+	OrgSlug  string
+	RepoSlug string
+	RepoName string
+	Pull     forgejo.PullRequest
+}
+
+// ListOpenPullsInput holds the optional cheap filters for ListOpenPulls.
+type ListOpenPullsInput struct {
+	// State is "open" (default), "closed", or "all".
+	State string
+	// OrgSlug, when non-empty, restricts the listing to a single organization.
+	OrgSlug string
+}
+
+// maxPullListConcurrency bounds how many repositories Quill queries Forgejo for
+// pull requests at once when building the cross-repository overview.
+const maxPullListConcurrency = 8
+
+// maxPullsPerRepo caps how many pull requests Quill pulls from any one
+// repository for the overview, keeping a single noisy repo from dominating the
+// aggregate (and the response size).
+const maxPullsPerRepo = 50
+
+// ListOpenPulls returns pull requests across every repository in the
+// organizations the actor belongs to, newest-updated first. Like
+// OpenPullRequestCount it is best-effort: a repository whose pulls can't be read
+// is skipped and logged, mirroring the dashboard's tolerance for partial data.
+// The optional input narrows the result by state and/or organization.
+func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPullsInput) ([]RepoPull, error) {
+	if !s.forgejoEnabled() {
+		return nil, nil
+	}
+	state := in.State
+	if state == "" {
+		state = "open"
+	}
+
+	orgs, err := s.store.ListOrganizations(ctx, db.ListOrganizationsParams{Limit: 200, Offset: 0})
+	if err != nil {
+		return nil, fmt.Errorf("list orgs: %w", err)
+	}
+
+	type target struct {
+		owner, name, orgSlug, repoSlug, repoName string
+	}
+	var targets []target
+	for _, org := range orgs {
+		if in.OrgSlug != "" && org.Slug != in.OrgSlug {
+			continue
+		}
+		// Only list repos in orgs the actor can see; skip the rest silently so the
+		// result matches what the dashboard would show for this user.
+		if err := s.authorizeOrgMember(ctx, actor, org.ID); err != nil {
+			if errors.Is(err, ErrForbidden) {
+				continue
+			}
+			return nil, err
+		}
+		repos, err := s.store.ListRepositoriesByOrg(ctx, db.ListRepositoriesByOrgParams{OrgID: org.ID, Limit: 200, Offset: 0})
+		if err != nil {
+			return nil, fmt.Errorf("list repos: %w", err)
+		}
+		for _, repo := range repos {
+			if owner, name, ok := forgejoTarget(repo, org); ok {
+				targets = append(targets, target{
+					owner:    owner,
+					name:     name,
+					orgSlug:  org.Slug,
+					repoSlug: repo.Slug,
+					repoName: repo.Name,
+				})
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return nil, nil
+	}
+
+	results := make([][]RepoPull, len(targets))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxPullListConcurrency)
+	for i, t := range targets {
+		i, t := i, t
+		g.Go(func() error {
+			pulls, err := s.forgejo.ListPulls(gctx, t.owner, t.name, state, maxPullsPerRepo)
+			if err != nil {
+				// Best-effort: an empty repo or transient failure contributes nothing.
+				s.logger.Warn("cross-repo pull listing failed", "repo", t.owner+"/"+t.name, "error", err)
+				return nil
+			}
+			out := make([]RepoPull, 0, len(pulls))
+			for _, p := range pulls {
+				out = append(out, RepoPull{OrgSlug: t.orgSlug, RepoSlug: t.repoSlug, RepoName: t.repoName, Pull: p})
+			}
+			results[i] = out
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	var all []RepoPull
+	for _, r := range results {
+		all = append(all, r...)
+	}
+	// Newest-updated first across all repositories.
+	sort.Slice(all, func(i, j int) bool { return all[i].Pull.UpdatedAt.After(all[j].Pull.UpdatedAt) })
+	return all, nil
+}
+
 // GetPull returns a single pull request by number.
 func (s *Service) GetPull(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, forgejo.PullRequest, error) {
 	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
