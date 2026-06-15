@@ -1,224 +1,208 @@
 package pipeline
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"sort"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/nektos/act/pkg/model"
+	"github.com/nektos/act/pkg/runner"
 )
 
-// actRunner interprets a workflow with nektos/act's model package and executes
-// its steps. It is the concrete Runner Quill ships today.
+// actRunner is the concrete Runner Quill ships: it interprets a workflow with
+// nektos/act and executes it for real on the host's container engine (Docker).
+// act is the GitHub Actions runtime, so this gives authentic semantics — `on:`
+// filtering, `uses:` actions (incl. actions/checkout), composite/Docker actions,
+// matrices and expressions — running on-host rather than dispatched to Forge.
 //
-// Interpretation (parsing the YAML into the job/step graph, resolving `runs-on`,
-// shells, and step kinds) is delegated to nektos/act so Quill speaks authentic
-// GitHub Actions semantics. Execution of `run:` steps is done by act itself when
-// the `act` CLI and a container engine are available; otherwise the runner falls
-// back to executing the step's shell script directly so pipelines still produce
-// real logs in environments without Docker (CI, local dev). `uses:` steps are
-// recorded but not executed by the fallback path — that is the seam a future
-// forgeRunner fills with real action execution.
+// "On-host" is the deliberate choice here: containers run on this machine's
+// Docker. The Runner interface remains the seam where a forgeRunner can later
+// dispatch the same JobSpec to Forge's ephemeral, confidential runners instead.
 type actRunner struct {
-	// shell is the shell used for the local fallback execution of run steps.
-	shell string
-	// stepTimeout bounds a single step's wall-clock time.
-	stepTimeout time.Duration
+	// images maps a runs-on label to the container image act runs the job in.
+	images map[string]string
+	// arch is the container platform (e.g. linux/amd64) act targets.
+	arch string
+	// timeout bounds a whole workflow run.
+	timeout time.Duration
 	// maxLogBytes caps captured logs per step to keep DB rows bounded.
 	maxLogBytes int
 }
 
-// NewActRunner constructs the default nektos/act-backed runner.
+// NewActRunner constructs the default nektos/act-backed runner. Image and
+// architecture come from the environment so deployments can pin them without a
+// code change:
+//
+//	QUILL_PIPELINE_UBUNTU_IMAGE   image for ubuntu-* runners (default catthehacker/ubuntu:act-latest)
+//	QUILL_PIPELINE_CONTAINER_ARCH container platform (default linux/<goarch>)
+//	QUILL_PIPELINE_TIMEOUT        whole-run timeout (Go duration, default 30m)
 func NewActRunner() Runner {
 	return &actRunner{
-		shell:       "bash",
-		stepTimeout: 5 * time.Minute,
+		images:      defaultImages(),
+		arch:        containerArch(),
+		timeout:     pipelineTimeout(),
 		maxLogBytes: 256 << 10, // 256 KiB
 	}
 }
 
-// Run interprets spec.WorkflowYAML and executes each job's steps in order.
+// Run interprets spec.WorkflowYAML, plans it for the triggering event, and
+// executes the plan with act. It returns a structured RunResult; a non-nil error
+// means the workflow could not start (bad YAML, no image, Docker unreachable),
+// in which case the platform layer records a startup failure.
 func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 	started := time.Now().UTC()
 
-	wf, err := model.ReadWorkflow(strings.NewReader(spec.WorkflowYAML), false)
+	planner, err := model.NewSingleWorkflowPlanner(workflowFileName(spec.WorkflowPath), strings.NewReader(spec.WorkflowYAML))
 	if err != nil {
 		return RunResult{}, fmt.Errorf("parse workflow: %w", err)
 	}
-
-	jobs := r.planJobs(wf)
-	result := RunResult{StartedAt: started, Jobs: make([]JobResult, 0, len(jobs))}
-
-	for _, jp := range jobs {
-		if err := ctx.Err(); err != nil {
-			// Context cancelled: mark the remaining jobs cancelled and stop.
-			jp.result.Status = StatusCancelled
-			result.Jobs = append(result.Jobs, jp.result)
-			continue
-		}
-		jr := r.runJob(ctx, spec, jp)
-		result.Jobs = append(result.Jobs, jr)
+	plan, err := r.plan(planner, spec.Event)
+	if err != nil {
+		return RunResult{}, fmt.Errorf("plan workflow: %w", err)
+	}
+	if plan == nil || len(plan.Stages) == 0 {
+		// No job matches the triggering event: nothing to run.
+		return RunResult{Status: StatusSkipped, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 	}
 
-	result.FinishedAt = time.Now().UTC()
-	result.Status = rollupStatus(result.Jobs)
+	// act needs a workspace. The platform layer checks the repo out into
+	// spec.Workdir; without it (e.g. Forgejo disabled) we still give act a temp
+	// dir so workflows without repo files can run.
+	workdir := spec.Workdir
+	if workdir == "" {
+		tmp, err := os.MkdirTemp("", "quill-ci-ws-*")
+		if err != nil {
+			return RunResult{}, fmt.Errorf("create workspace: %w", err)
+		}
+		defer os.RemoveAll(tmp)
+		workdir = tmp
+	}
+
+	eventPath, cleanup, err := writeEventFile(spec)
+	if err != nil {
+		return RunResult{}, fmt.Errorf("write event: %w", err)
+	}
+	defer cleanup()
+
+	cfg := &runner.Config{
+		Workdir:               workdir,
+		BindWorkdir:           false,
+		EventName:             actEventName(spec.Event),
+		EventPath:             eventPath,
+		DefaultBranch:         "main",
+		Platforms:             r.images,
+		ContainerArchitecture: r.arch,
+		AutoRemove:            true,
+		LogOutput:             true,
+		Token:                 spec.Token,
+		Env:                   map[string]string{},
+		Secrets:               map[string]string{},
+		Vars:                  map[string]string{},
+		GitHubInstance:        "github.com",
+	}
+	rn, err := runner.New(cfg)
+	if err != nil {
+		return RunResult{}, fmt.Errorf("init runner: %w", err)
+	}
+
+	cap := newLogCapture()
+	exec := rn.NewPlanExecutor(plan)
+
+	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+	runCtx = runner.WithJobLoggerFactory(runCtx, cap)
+
+	execErr := exec(runCtx)
+
+	result := r.assemble(plan, cap, started)
+	if len(result.Jobs) == 0 {
+		// act produced no captured jobs — surface why it couldn't start.
+		if execErr != nil {
+			return RunResult{}, execErr
+		}
+		result.Status = StatusSkipped
+	}
 	return result, nil
 }
 
-// plannedJob pairs a parsed act job with the result skeleton we fill in.
-type plannedJob struct {
-	job    *model.Job
-	result JobResult
+// plan selects which jobs to run. A manual trigger ("Run workflow") runs every
+// job regardless of the workflow's `on:`; an event trigger (push/pull_request)
+// runs only the jobs whose `on:` includes that event.
+func (r *actRunner) plan(planner model.WorkflowPlanner, event string) (*model.Plan, error) {
+	if event == "" || event == "manual" {
+		return planner.PlanAll()
+	}
+	return planner.PlanEvent(event)
 }
 
-// planJobs flattens the workflow's jobs into an ordered, deterministic list.
-// nektos/act stores jobs in a map; we sort by job key so runs are reproducible.
-func (r *actRunner) planJobs(wf *model.Workflow) []plannedJob {
-	keys := make([]string, 0, len(wf.Jobs))
-	for k := range wf.Jobs {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	planned := make([]plannedJob, 0, len(keys))
-	for i, key := range keys {
-		job := wf.GetJob(key)
-		name := job.Name
-		if name == "" {
-			name = key
-		}
-		planned = append(planned, plannedJob{
-			job: job,
-			result: JobResult{
-				Key:      key,
-				Name:     name,
+// assemble turns the plan (job order/metadata) and the capture (per-step status
+// and logs) into a RunResult. Job identity/order comes from the plan so the tree
+// is stable even when a job is skipped and emits no logs.
+func (r *actRunner) assemble(plan *model.Plan, cap *logCapture, started time.Time) RunResult {
+	res := RunResult{StartedAt: started, Jobs: make([]JobResult, 0)}
+	pos := 0
+	for _, stage := range plan.Stages {
+		for _, run := range stage.Runs {
+			job := run.Job()
+			jr := JobResult{
+				Key:      run.JobID,
+				Name:     firstNonEmpty(job.Name, run.JobID),
 				RunsOn:   strings.Join(job.RunsOn(), ", "),
-				Position: i,
-			},
-		})
-	}
-	return planned
-}
+				Position: pos,
+			}
+			pos++
 
-// runJob executes every step of a job in order, stopping at the first failure
-// (matching GitHub Actions' default fail-fast within a job).
-func (r *actRunner) runJob(ctx context.Context, spec JobSpec, jp plannedJob) JobResult {
-	jr := jp.result
-	jr.Status = StatusRunning
-	jr.StartedAt = time.Now().UTC()
+			typeByName := make(map[string]string, len(job.Steps))
+			for _, st := range job.Steps {
+				typeByName[st.String()] = stepKind(st)
+			}
 
-	failed := false
-	for _, step := range jp.job.Steps {
-		sr := r.runStep(ctx, spec, step, failed)
-		jr.Steps = append(jr.Steps, sr)
-		if sr.Status == StatusFailure {
-			failed = true
+			jc := cap.job(run.JobID)
+			if jc == nil {
+				jr.Status = StatusSkipped
+				res.Jobs = append(res.Jobs, jr)
+				continue
+			}
+			jr.StartedAt = jc.started
+			jr.FinishedAt = jc.finished
+			for _, sid := range jc.order {
+				sc := jc.steps[sid]
+				jr.Steps = append(jr.Steps, StepResult{
+					Name:       firstNonEmpty(sc.name, sid),
+					Type:       firstNonEmpty(typeByName[sc.name], StepTypeRun),
+					Status:     mapStatus(sc.outcome),
+					Logs:       clampLog(sc.logs.String(), r.maxLogBytes),
+					StartedAt:  sc.started,
+					FinishedAt: sc.finished,
+				})
+			}
+			jr.Status = mapJobStatus(jc.result, jr.Steps)
+			res.Jobs = append(res.Jobs, jr)
 		}
 	}
-
-	jr.FinishedAt = time.Now().UTC()
-	if failed {
-		jr.Status = StatusFailure
-	} else {
-		jr.Status = StatusSuccess
-	}
-	return jr
+	res.FinishedAt = time.Now().UTC()
+	res.Status = rollupStatus(res.Jobs)
+	return res
 }
 
-// runStep executes a single step. Once a previous step in the job has failed,
-// subsequent steps are skipped (the default behaviour). `uses:` steps are
-// recorded as skipped by the fallback executor.
-func (r *actRunner) runStep(ctx context.Context, spec JobSpec, step *model.Step, priorFailure bool) StepResult {
-	name := step.String()
-	sr := StepResult{Name: name, StartedAt: time.Now().UTC()}
-
-	switch step.Type() {
-	case model.StepTypeRun:
-		sr.Type = StepTypeRun
-	default:
-		sr.Type = StepTypeUses
-	}
-
-	if priorFailure {
-		sr.Status = StatusSkipped
-		sr.Logs = "Skipped: an earlier step in this job failed."
-		sr.FinishedAt = time.Now().UTC()
-		return sr
-	}
-
-	if sr.Type != StepTypeRun {
-		// Action (`uses:`) steps need a real runner (act with a container engine,
-		// or the future forgeRunner). The fallback records them without executing.
-		sr.Status = StatusSkipped
-		sr.Logs = fmt.Sprintf("Action step %q is not executed by the local runner.", step.Uses)
-		sr.FinishedAt = time.Now().UTC()
-		return sr
-	}
-
-	logs, ok := r.execRun(ctx, spec, step)
-	sr.Logs = clampLog(logs, r.maxLogBytes)
-	if ok {
-		sr.Status = StatusSuccess
-	} else {
-		sr.Status = StatusFailure
-	}
-	sr.FinishedAt = time.Now().UTC()
-	return sr
-}
-
-// execRun runs a `run:` step's script with the configured shell and captures its
-// combined output. It returns (logs, success).
-func (r *actRunner) execRun(ctx context.Context, spec JobSpec, step *model.Step) (string, bool) {
-	script := step.Run
-	if strings.TrimSpace(script) == "" {
-		return "(empty run step)\n", true
-	}
-
-	stepCtx, cancel := context.WithTimeout(ctx, r.stepTimeout)
-	defer cancel()
-
-	shell := r.shell
-	if _, err := exec.LookPath(shell); err != nil {
-		shell = "sh"
-	}
-
-	cmd := exec.CommandContext(stepCtx, shell, "-c", script)
-	if dir := step.WorkingDirectory; dir != "" && spec.Workdir != "" {
-		cmd.Dir = spec.Workdir + "/" + dir
-	} else if spec.Workdir != "" {
-		cmd.Dir = spec.Workdir
-	}
-	cmd.Env = append(os.Environ(),
-		"CI=true",
-		"GITHUB_ACTIONS=true",
-		"GITHUB_REF="+spec.Ref,
-		"GITHUB_SHA="+spec.CommitSHA,
-		"GITHUB_EVENT_NAME="+spec.Event,
-	)
-	for k, v := range step.GetEnv() {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "$ %s\n", strings.TrimSpace(script))
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-
-	err := cmd.Run()
-	if stepCtx.Err() == context.DeadlineExceeded {
-		fmt.Fprintf(&buf, "\nstep timed out after %s\n", r.stepTimeout)
-		return buf.String(), false
-	}
+// MatchesEvent reports whether any job in the workflow runs for event. The
+// platform layer uses it to gate webhook-triggered runs so a push doesn't run
+// workflows that only listen for other events. Branch/path filters within an
+// event are still evaluated by act at run time, not here.
+func MatchesEvent(workflowYAML, event string) (bool, error) {
+	planner, err := model.NewSingleWorkflowPlanner("workflow.yml", strings.NewReader(workflowYAML))
 	if err != nil {
-		fmt.Fprintf(&buf, "\nexit: %v\n", err)
-		return buf.String(), false
+		return false, err
 	}
-	return buf.String(), true
+	plan, err := planner.PlanEvent(event)
+	if err != nil {
+		return false, err
+	}
+	return plan != nil && len(plan.Stages) > 0, nil
 }
 
 // WorkflowName extracts a workflow's display name from its YAML `name:` field,
@@ -230,6 +214,153 @@ func WorkflowName(yaml, path string) string {
 			return n
 		}
 	}
+	return baseName(path)
+}
+
+// ---- helpers ---------------------------------------------------------------
+
+// stepKind classifies a parsed step as a run or uses step.
+func stepKind(s *model.Step) string {
+	if s.Type() == model.StepTypeRun {
+		return StepTypeRun
+	}
+	return StepTypeUses
+}
+
+// mapStatus maps act's step outcome ("success"/"failure"/"skipped") to Quill's
+// vocabulary, defaulting an unlabelled-but-seen step to success.
+func mapStatus(outcome string) string {
+	switch outcome {
+	case "failure":
+		return StatusFailure
+	case "skipped":
+		return StatusSkipped
+	case "success", "":
+		return StatusSuccess
+	default:
+		return StatusSuccess
+	}
+}
+
+// mapJobStatus prefers act's job result; absent that it rolls up the steps.
+func mapJobStatus(jobResult string, steps []StepResult) string {
+	switch jobResult {
+	case "success":
+		return StatusSuccess
+	case "failure":
+		return StatusFailure
+	case "skipped":
+		return StatusSkipped
+	}
+	for _, s := range steps {
+		if s.Status == StatusFailure {
+			return StatusFailure
+		}
+	}
+	return StatusSuccess
+}
+
+// actEventName maps Quill's event to the GitHub event name act runs under. A
+// manual trigger presents as workflow_dispatch inside the workflow context.
+func actEventName(event string) string {
+	if event == "" || event == "manual" {
+		return "workflow_dispatch"
+	}
+	return event
+}
+
+// writeEventFile writes a minimal event payload act mounts as event.json so
+// expressions like github.ref / github.sha resolve. Returns a cleanup func.
+func writeEventFile(spec JobSpec) (string, func(), error) {
+	payload := map[string]any{
+		"ref":         spec.Ref,
+		"after":       spec.CommitSHA,
+		"head_commit": map[string]any{"id": spec.CommitSHA},
+	}
+	if owner, name, ok := splitFullName(spec.RepoFullName); ok {
+		payload["repository"] = map[string]any{
+			"full_name":      spec.RepoFullName,
+			"name":           name,
+			"owner":          map[string]any{"login": owner, "name": owner},
+			"default_branch": "main",
+		}
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", func() {}, err
+	}
+	f, err := os.CreateTemp("", "quill-ci-event-*.json")
+	if err != nil {
+		return "", func() {}, err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", func() {}, err
+	}
+	f.Close()
+	return f.Name(), func() { os.Remove(f.Name()) }, nil
+}
+
+func defaultImages() map[string]string {
+	img := getenvDefault("QUILL_PIPELINE_UBUNTU_IMAGE", "catthehacker/ubuntu:act-latest")
+	return map[string]string{
+		"ubuntu-latest": img,
+		"ubuntu-24.04":  img,
+		"ubuntu-22.04":  img,
+		"ubuntu-20.04":  img,
+		"ubuntu":        img,
+	}
+}
+
+func containerArch() string {
+	if a := strings.TrimSpace(os.Getenv("QUILL_PIPELINE_CONTAINER_ARCH")); a != "" {
+		return a
+	}
+	return "linux/" + runtime.GOARCH
+}
+
+func pipelineTimeout() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("QUILL_PIPELINE_TIMEOUT")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 30 * time.Minute
+}
+
+func getenvDefault(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
+func splitFullName(full string) (owner, name string, ok bool) {
+	i := strings.IndexByte(full, '/')
+	if i <= 0 || i == len(full)-1 {
+		return "", "", false
+	}
+	return full[:i], full[i+1:], true
+}
+
+// workflowFileName gives act a stable file name for the single-workflow planner;
+// the base name is enough since the content is supplied as a reader.
+func workflowFileName(path string) string {
+	if b := baseName(path); b != "" {
+		return b
+	}
+	return "workflow.yml"
+}
+
+func baseName(path string) string {
 	base := path
 	if i := strings.LastIndexByte(base, '/'); i >= 0 {
 		base = base[i+1:]

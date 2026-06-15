@@ -4,9 +4,9 @@
 //
 // The Runner interface is the seam that lets the executor be swapped without
 // touching the platform service. Today the only implementation is actRunner,
-// which uses nektos/act to interpret a workflow and runs its shell steps
-// locally; a forgeRunner that dispatches to Forge's ephemeral runners can drop
-// in behind the same interface later.
+// which uses nektos/act to interpret and fully execute a workflow on the host's
+// container engine; a forgeRunner that dispatches the same JobSpec to Forge's
+// ephemeral, confidential runners can drop in behind the same interface later.
 package pipeline
 
 import (
@@ -45,9 +45,15 @@ type JobSpec struct {
 	// Ref and CommitSHA describe what is being built.
 	Ref       string
 	CommitSHA string
-	// Workdir is an optional checked-out working directory for shell steps. When
-	// empty the runner executes steps in a transient temp directory.
+	// Workdir is an optional checked-out working directory the runner executes
+	// against. When empty the runner provisions a transient temp directory.
 	Workdir string
+	// RepoFullName is "owner/name", used to populate the synthetic event payload
+	// so `github.repository`-style expressions resolve. Optional.
+	RepoFullName string
+	// Token is an optional credential exposed to the workflow as GITHUB_TOKEN.
+	// Empty is fine — act skips actions/checkout and runs against Workdir.
+	Token string
 }
 
 // StepResult is the outcome of a single step.

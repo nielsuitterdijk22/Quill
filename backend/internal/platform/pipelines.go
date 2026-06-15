@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -173,9 +174,10 @@ func (s *Service) TriggerRun(ctx context.Context, actor Actor, orgSlug, repoSlug
 }
 
 // TriggerWebhook runs the workflows in a repository in response to a Forgejo
-// push/pull_request event. It runs every workflow file found (GitHub semantics
-// gate by the workflow's `on:` triggers; that filtering is a TODO — see below).
-// It is not actor-scoped: the webhook is authenticated by a shared secret at the
+// push/pull_request event. Each workflow is gated by its `on:` triggers — only
+// those that listen for this event run, matching GitHub semantics (per-event
+// branch/path filters are still evaluated by the runner at execution time). It
+// is not actor-scoped: the webhook is authenticated by a shared secret at the
 // server layer, so runs are recorded with no triggering user.
 func (s *Service) TriggerWebhook(ctx context.Context, repo db.Repository, owner, name, event, ref string) ([]db.PipelineRun, error) {
 	files, err := s.forgejo.ListWorkflows(ctx, owner, name, ref)
@@ -184,9 +186,19 @@ func (s *Service) TriggerWebhook(ctx context.Context, repo db.Repository, owner,
 	}
 	var runs []db.PipelineRun
 	for _, f := range files {
-		// TODO: respect each workflow's `on:` triggers (push branches/paths,
-		// pull_request) before running. nektos/act's model exposes On(); wiring
-		// the event/branch filter here is the next refinement.
+		yaml, err := s.forgejo.GetWorkflowContent(ctx, owner, name, f.Path, ref)
+		if err != nil {
+			s.logger.Warn("webhook workflow read failed", "repo", owner+"/"+name, "workflow", f.Path, "error", err)
+			continue
+		}
+		match, err := pipeline.MatchesEvent(yaml, event)
+		if err != nil {
+			s.logger.Warn("webhook workflow parse failed", "repo", owner+"/"+name, "workflow", f.Path, "error", err)
+			continue
+		}
+		if !match {
+			continue
+		}
 		run, err := s.runWorkflow(ctx, repo, owner, name, TriggerInput{
 			WorkflowPath: f.Path,
 			Ref:          ref,
@@ -254,12 +266,17 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		return db.PipelineRun{}, fmt.Errorf("create run: %w", err)
 	}
 
+	workdir, cleanup := s.checkoutWorkspace(ctx, owner, name, ref, commitSHA)
+	defer cleanup()
+
 	result, runErr := s.runner.Run(ctx, pipeline.JobSpec{
 		WorkflowYAML: yaml,
 		WorkflowPath: path,
 		Event:        event,
 		Ref:          ref,
 		CommitSHA:    commitSHA,
+		Workdir:      workdir,
+		RepoFullName: owner + "/" + name,
 	})
 	if runErr != nil {
 		// The workflow could not be interpreted/started: mark the run failed and
@@ -272,6 +289,33 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		s.logger.Warn("could not persist run result", "run", run.ID, "error", err)
 	}
 	return s.finishRun(ctx, run.ID, result.Status)
+}
+
+// checkoutWorkspace clones the repository at ref/sha into a temp directory the
+// runner executes against, returning the path and a cleanup func. On any failure
+// (Forgejo disabled, clone error) it returns an empty workdir and a no-op cleanup
+// — the runner then falls back to an empty workspace, so the run still produces
+// logs (only steps that need repo files will fail).
+func (s *Service) checkoutWorkspace(ctx context.Context, owner, name, ref, sha string) (string, func()) {
+	noop := func() {}
+	if !s.forgejoEnabled() {
+		return "", noop
+	}
+	cloneURL, err := s.forgejo.CloneURL(owner, name)
+	if err != nil {
+		return "", noop
+	}
+	dir, err := os.MkdirTemp("", "quill-ci-repo-*")
+	if err != nil {
+		s.logger.Warn("pipeline workspace mkdir failed", "error", err)
+		return "", noop
+	}
+	if err := pipeline.Checkout(ctx, cloneURL, ref, sha, dir); err != nil {
+		s.logger.Warn("pipeline checkout failed", "repo", owner+"/"+name, "ref", ref, "error", err)
+		os.RemoveAll(dir)
+		return "", noop
+	}
+	return dir, func() { os.RemoveAll(dir) }
 }
 
 // persistResult writes the job/step tree produced by the runner.

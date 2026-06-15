@@ -2,6 +2,7 @@ package forgejo
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 )
@@ -43,4 +44,22 @@ func (c *Client) CreateAccessToken(ctx context.Context, username, password, name
 		return "", err
 	}
 	return out.SHA1, nil
+}
+
+// CloneURL returns an HTTP clone URL for owner/name with the admin token embedded
+// as the basic-auth username, suitable for `git clone`. It is used by the CI
+// runner to check a repository out into the build workspace. Returns an error
+// when Forgejo is disabled (no token) since the URL would not authenticate.
+func (c *Client) CloneURL(owner, name string) (string, error) {
+	if c.base == "" || c.token == "" {
+		return "", errors.New("forgejo client disabled")
+	}
+	u, err := url.Parse(c.base)
+	if err != nil {
+		return "", err
+	}
+	// Forgejo accepts a token as the basic-auth username for git-over-HTTP.
+	u.User = url.User(c.token)
+	u.Path = "/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + ".git"
+	return u.String(), nil
 }
