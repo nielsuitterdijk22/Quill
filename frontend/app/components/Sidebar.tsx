@@ -17,7 +17,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "◧" },
   { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭" },
-  { href: "/pipelines", label: "Pipelines", icon: "▷", soon: true },
+  { href: "/pipelines", label: "Pipelines", icon: "▷" },
   { href: "/teams", label: "Teams", icon: "◎" },
   { href: "/orgs", label: "Organizations", icon: "▤" },
   { href: "/settings", label: "Settings", icon: "⚙" },
@@ -71,6 +71,7 @@ const REPO_TABS = [
   { key: "commits", label: "Commits", icon: "◷" },
   { key: "branches", label: "Branches", icon: "⎇" },
   { key: "pulls", label: "Pull requests", icon: "⤭" },
+  { key: "pipelines", label: "Pipelines", icon: "▷" },
   { key: "settings", label: "Settings", icon: "⚙" },
 ] as const;
 
@@ -87,6 +88,8 @@ function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
       return `${b}/branches`;
     case "pulls":
       return `${b}/pulls`;
+    case "pipelines":
+      return `${b}/pipelines`;
     case "settings":
       return `${b}/settings`;
   }
@@ -111,6 +114,8 @@ function repoTabActive(
       return pathname === `${b}/branches`;
     case "pulls":
       return pathname.startsWith(`${b}/pulls`);
+    case "pipelines":
+      return pathname.startsWith(`${b}/pipelines`);
     case "settings":
       return pathname === `${b}/settings`;
   }

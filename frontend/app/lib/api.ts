@@ -990,4 +990,119 @@ async function postNoContent(
   } catch {
     return { ok: false, error: "Can't reach the Quill backend." };
   }
+// ---- pipelines (CI) --------------------------------------------------------
+
+// PipelineRunStatus is the lifecycle state of a run, job, or step.
+export type PipelineRunStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failure"
+  | "cancelled"
+  | "skipped";
+
+// PipelineRun is one execution of a workflow.
+export type PipelineRun = {
+  id: string;
+  runNumber: number;
+  workflowPath?: string;
+  status: PipelineRunStatus;
+  event: string;
+  ref: string;
+  commitSha: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+};
+
+// PipelineSummary is a workflow file plus its most recent run.
+export type PipelineSummary = {
+  workflowPath: string;
+  name: string;
+  lastRun?: PipelineRun;
+};
+
+// PipelineStep is a single step within a job, including its captured logs.
+export type PipelineStep = {
+  name: string;
+  type: "run" | "uses";
+  status: PipelineRunStatus;
+  logs: string;
+  startedAt?: string;
+  finishedAt?: string;
+};
+
+// PipelineJob is a job and its steps within a run.
+export type PipelineJob = {
+  key: string;
+  name: string;
+  runsOn: string;
+  status: PipelineRunStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  steps: PipelineStep[];
+};
+
+// PipelineRunDetail is a run with its fully expanded job/step tree.
+export type PipelineRunDetail = PipelineRun & { jobs: PipelineJob[] };
+
+// pipelinesResult is the workflow listing payload.
+export type PipelinesResult = {
+  repository: Repo;
+  pipelines: PipelineSummary[];
+};
+
+// getPipelines returns a repository's workflows with their latest run status.
+export function getPipelines(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<PipelinesResult>> {
+  return authGet<PipelinesResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pipelines`,
+  );
+}
+
+// runsResult is the run-listing payload.
+export type RunsResult = { repository: Repo; runs: PipelineRun[] };
+
+// getPipelineRuns returns a repository's most recent runs across all pipelines.
+export function getPipelineRuns(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<RunsResult>> {
+  return authGet<RunsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pipelines/runs`,
+  );
+}
+
+// runDetailResult is the single-run payload with its job/step tree.
+export type RunDetailResult = { repository: Repo; run: PipelineRunDetail };
+
+// getPipelineRun returns a single run (by number) with its full job/step tree.
+// workflow is the repo-relative workflow path the run belongs to.
+export function getPipelineRun(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+  workflow: string,
+): Promise<Result<RunDetailResult>> {
+  return authGet<RunDetailResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pipelines/runs/${number}?workflow=${encodeURIComponent(workflow)}`,
+  );
+}
+
+// triggerPipelineRun runs a workflow manually on the given ref (empty = default).
+export function triggerPipelineRun(
+  token: string,
+  org: string,
+  repo: string,
+  input: { workflow: string; ref?: string },
+): Promise<DataResult<{ run: PipelineRun }>> {
+  return postData(token, `/api/v1/orgs/${org}/repos/${repo}/pipelines`, input);
 }

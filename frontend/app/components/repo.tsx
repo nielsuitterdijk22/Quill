@@ -100,7 +100,13 @@ export function VisibilityBadge({ visibility }: { visibility: string }) {
   );
 }
 
-export type RepoTab = "code" | "commits" | "branches" | "pulls" | "settings";
+export type RepoTab =
+  | "code"
+  | "commits"
+  | "branches"
+  | "pulls"
+  | "pipelines"
+  | "settings";
 
 // RepoHeader renders the repo title, visibility, and the code/commits/branches/
 // pull-requests/settings tab navigation shared across every repository page.
@@ -123,6 +129,7 @@ export function RepoHeader({
     { key: "commits", label: "Commits", href: commitsHref(org, repo, refName) },
     { key: "branches", label: "Branches", href: `${base}/branches` },
     { key: "pulls", label: "Pull requests", href: `${base}/pulls` },
+    { key: "pipelines", label: "Pipelines", href: `${base}/pipelines` },
     { key: "settings", label: "Settings", href: `${base}/settings` },
   ];
   return (
