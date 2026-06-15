@@ -23,8 +23,28 @@ const NAV: NavItem[] = [
   { href: "/settings", label: "Settings", icon: "⚙", soon: true },
 ];
 
+// isRepoScoped is true for any path inside a specific repository, i.e.
+// /orgs/{org}/repos/{repo} and everything beneath it (code/commits/branches/
+// blob/tree/pulls/settings). These browse code, not org management, so the
+// top-level "Repositories" entry should light up for them.
+function isRepoScoped(pathname: string): boolean {
+  return /^\/orgs\/[^/]+\/repos\/[^/]+(\/|$)/.test(pathname);
+}
+
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
+  // "Repositories" owns both the standalone /repositories listing and every
+  // repo-scoped /orgs/{org}/repos/{repo}/... page.
+  if (href === "/repositories") {
+    if (pathname === href || pathname.startsWith(href + "/")) return true;
+    return isRepoScoped(pathname);
+  }
+  // "Organizations" stays active only for genuine org-management pages
+  // (/orgs, /orgs/new, /orgs/{org} landing) — never while browsing a repo.
+  if (href === "/orgs") {
+    if (isRepoScoped(pathname)) return false;
+    return pathname === href || pathname.startsWith(href + "/");
+  }
   return pathname === href || pathname.startsWith(href + "/");
 }
 
@@ -41,14 +61,15 @@ function safeDecode(segment: string): string {
   }
 }
 
-// Extract repo context from /orgs/{org}/{repo}/* paths. Returns null for
-// top-level org pages (/orgs/{org}/new) and non-repo routes. Refs can contain
-// slashes (e.g. feature/login-page), so the commits route — which never carries
-// a path — keeps its whole tail as the ref, while tree/blob fall back to the
-// first segment (their tail mixes ref and file path, which we can't split here).
+// Extract repo context from /orgs/{org}/repos/{repo}/* paths. Returns null for
+// org-management pages (/orgs, /orgs/new, /orgs/{org}, /orgs/{org}/repos/new)
+// and non-repo routes. Refs can contain slashes (e.g. feature/login-page), so
+// the commits route — which never carries a path — keeps its whole tail as the
+// ref, while tree/blob fall back to the first segment (their tail mixes ref and
+// file path, which we can't split here).
 function parseRepoCtx(pathname: string): RepoCtx | null {
   const m = pathname.match(
-    /^\/orgs\/([^/]+)\/([^/]+)(?:\/(tree|commits|blob)\/(.+?))?\/?$/,
+    /^\/orgs\/([^/]+)\/repos\/([^/]+)(?:\/(tree|commits|blob)\/(.+?))?\/?$/,
   );
   if (!m || !m[2] || m[2] === "new") return null;
   let ref = "main";
@@ -77,7 +98,7 @@ const REPO_TABS = [
 type RepoTabKey = (typeof REPO_TABS)[number]["key"];
 
 function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
-  const b = `/orgs/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.repo)}`;
+  const b = `/orgs/${encodeURIComponent(ctx.org)}/repos/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
     case "code":
       return b;
@@ -97,7 +118,7 @@ function repoTabActive(
   key: RepoTabKey,
   ctx: RepoCtx,
 ): boolean {
-  const b = `/orgs/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.repo)}`;
+  const b = `/orgs/${encodeURIComponent(ctx.org)}/repos/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
     case "code":
       return (
@@ -153,7 +174,7 @@ export function Sidebar({ user }: { user: User }) {
             </Link>
             {" / "}
             <Link
-              href={`/orgs/${encodeURIComponent(repoCtx.org)}/${encodeURIComponent(repoCtx.repo)}`}
+              href={`/orgs/${encodeURIComponent(repoCtx.org)}/repos/${encodeURIComponent(repoCtx.repo)}`}
             >
               <b>{repoCtx.repo}</b>
             </Link>
