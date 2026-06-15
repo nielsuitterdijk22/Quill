@@ -613,6 +613,50 @@ select:focus {
   overflow-x: auto;
 }
 
+/* ---- sidebar repo context -------------------------------------------------- */
+.repo-ctx {
+  margin: 10px 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.repo-ctx-label {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repo-ctx-label a:hover { color: var(--text); }
+.repo-ctx-label b { color: var(--text); }
+.repo-ctx-nav {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+.repo-ctx-nav a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.repo-ctx-nav a:last-child { border-bottom: none; }
+.repo-ctx-nav a:hover { color: var(--text); background: var(--panel2); }
+.repo-ctx-nav a.active { color: var(--text); background: var(--panel2); }
+.repo-ctx-nav .ic {
+  width: 14px;
+  display: inline-block;
+  text-align: center;
+  font-size: 11px;
+}
+.repo-ctx-nav a.active .ic { color: var(--accent-soft); }
+
 /* ---- repository code browser (PR 5) ---------------------------------------- */
 /* Tab nav under a repo header (Code / Commits / Branches). */
 .rtabs {
