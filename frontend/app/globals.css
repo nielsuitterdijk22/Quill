@@ -1181,3 +1181,86 @@ h2.section {
 .policy-form-panel .check {
   margin-bottom: 10px;
 }
+
+/* ---- repository settings sections (general + danger zone) ------------------- */
+.settings-section {
+  margin-bottom: 32px;
+}
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+.settings-section .settings-head {
+  margin-bottom: 14px;
+}
+.form-success {
+  background: #11241a;
+  border: 1px solid #1d3d2a;
+  color: var(--green);
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.danger-zone {
+  border-color: #3d1f27;
+  padding: 0;
+  overflow: hidden;
+}
+.danger-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.danger-row:last-child {
+  border-bottom: none;
+}
+.danger-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 460px;
+}
+.danger-row-text strong {
+  font-size: 14px;
+  color: var(--text);
+}
+.danger-row-text .subtle {
+  font-size: 12px;
+}
+.danger-form {
+  margin: 0;
+  min-width: 280px;
+}
+.danger-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.danger-controls input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+}
+.danger-controls input:focus {
+  outline: none;
+  border-color: var(--red);
+}
+@media (max-width: 720px) {
+  .danger-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .danger-form {
+    min-width: 0;
+    width: 100%;
+  }
+}

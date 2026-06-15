@@ -453,6 +453,37 @@ export function createRepo(
   return postCreate(token, `/api/v1/orgs/${org}/repos`, input);
 }
 
+// UpdateRepoInput is a partial repository update. Only the provided fields change;
+// setting `slug` renames the repository (and its Forgejo git repo).
+export type UpdateRepoInput = {
+  name?: string;
+  description?: string;
+  visibility?: string;
+  defaultBranch?: string;
+  slug?: string;
+  archived?: boolean;
+};
+
+// updateRepo changes a repository's general settings (org owners / admins only)
+// and returns the repository's new state.
+export function updateRepo(
+  token: string,
+  org: string,
+  repo: string,
+  input: UpdateRepoInput,
+): Promise<DataResult<Repo>> {
+  return sendData<Repo>(token, "PATCH", `/api/v1/orgs/${org}/repos/${repo}`, input);
+}
+
+// deleteRepo permanently removes a repository (org owners / admins only).
+export function deleteRepo(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(token, `/api/v1/orgs/${org}/repos/${repo}`);
+}
+
 // ---- pull requests ---------------------------------------------------------
 
 // pullsResult is the PR listing payload.
@@ -559,7 +590,7 @@ async function postData<T>(
 
 async function sendData<T>(
   token: string,
-  method: "POST" | "PUT",
+  method: "POST" | "PUT" | "PATCH",
   path: string,
   body: unknown,
 ): Promise<DataResult<T>> {
