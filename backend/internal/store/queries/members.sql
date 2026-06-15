@@ -27,3 +27,11 @@ FROM team_members m
 JOIN users u ON u.id = m.user_id
 WHERE m.team_id = $1
 ORDER BY u.username;
+
+-- name: ListTeamsByUser :many
+SELECT t.*, o.slug AS org_slug, o.name AS org_name, m.role AS member_role
+FROM team_members m
+JOIN teams t ON t.id = m.team_id
+JOIN organizations o ON o.id = t.org_id
+WHERE m.user_id = $1
+ORDER BY o.slug, t.slug;

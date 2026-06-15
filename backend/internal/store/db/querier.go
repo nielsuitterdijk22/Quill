@@ -43,6 +43,7 @@ type Querier interface {
 	ListRepositoriesByTeam(ctx context.Context, owningTeamID uuid.UUID) ([]Repository, error)
 	ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]ListTeamMembersRow, error)
 	ListTeamsByOrg(ctx context.Context, orgID uuid.UUID) ([]Team, error)
+	ListTeamsByUser(ctx context.Context, userID uuid.UUID) ([]ListTeamsByUserRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	RemoveOrgMember(ctx context.Context, arg RemoveOrgMemberParams) error
 	RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberParams) error
@@ -52,6 +53,7 @@ type Querier interface {
 	SetUserForgejoLink(ctx context.Context, arg SetUserForgejoLinkParams) (User, error)
 	UpdateAuthIdentitySecret(ctx context.Context, arg UpdateAuthIdentitySecretParams) error
 	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
+	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertBranchPolicy(ctx context.Context, arg UpsertBranchPolicyParams) (BranchPolicy, error)
 }
 
