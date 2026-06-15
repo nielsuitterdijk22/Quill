@@ -187,6 +187,44 @@ func (s *Server) handleOpenPullCount(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"openPullRequests": count})
 }
 
+// repoPullResponse is one entry in the cross-repository pull-request overview: a
+// pull request together with the org/repo context needed to link back to it.
+type repoPullResponse struct {
+	OrgSlug  string       `json:"orgSlug"`
+	RepoSlug string       `json:"repoSlug"`
+	RepoName string       `json:"repoName"`
+	Pull     pullResponse `json:"pull"`
+}
+
+// handleListMyPulls returns open pull requests across every repository the
+// authenticated user can see — the top-level "/pulls" overview. Cheap filters:
+// ?state=open|closed|all and ?org=<slug>.
+func (s *Server) handleListMyPulls(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	pulls, err := s.platform.ListOpenPulls(r.Context(), actor, platform.ListOpenPullsInput{
+		State:   r.URL.Query().Get("state"),
+		OrgSlug: r.URL.Query().Get("org"),
+	})
+	if err != nil {
+		s.writePlatformError(w, err, "could not list pull requests")
+		return
+	}
+	out := make([]repoPullResponse, 0, len(pulls))
+	for _, p := range pulls {
+		out = append(out, repoPullResponse{
+			OrgSlug:  p.OrgSlug,
+			RepoSlug: p.RepoSlug,
+			RepoName: p.RepoName,
+			Pull:     newPullResponse(p.Pull),
+		})
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"pulls": out})
+}
+
 // gitTokenResponse is a freshly minted git-over-HTTPS credential. The token is
 // returned only once, at creation time.
 type gitTokenResponse struct {

@@ -543,6 +543,31 @@ export function getPulls(
   );
 }
 
+// RepoPull is one entry in the cross-repository pull-request overview: a pull
+// request together with the org/repo it belongs to, so the row can link back.
+export type RepoPull = {
+  orgSlug: string;
+  repoSlug: string;
+  repoName: string;
+  pull: PullRequest;
+};
+
+// MyPullsResult is the cross-repository overview payload.
+export type MyPullsResult = { pulls: RepoPull[] };
+
+// getMyPulls returns open pull requests across every repository the signed-in
+// user can access, newest-updated first. Optional cheap filters: state and org.
+export function getMyPulls(
+  token: string,
+  opts: { state?: "open" | "closed" | "all"; org?: string } = {},
+): Promise<Result<MyPullsResult>> {
+  const q = new URLSearchParams();
+  if (opts.state) q.set("state", opts.state);
+  if (opts.org) q.set("org", opts.org);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return authGet<MyPullsResult>(token, `/api/v1/me/pulls${suffix}`);
+}
+
 // pullResult is the single-PR payload.
 export type PullResult = { repository: Repo; pull: PullRequest };
 

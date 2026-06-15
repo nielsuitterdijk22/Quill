@@ -16,7 +16,7 @@ export type NavItem = {
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "◧" },
   { href: "/repositories", label: "Repositories", icon: "⎇" },
-  { href: "/pulls", label: "Pull requests", icon: "⤭", soon: true },
+  { href: "/pulls", label: "Pull requests", icon: "⤭" },
   { href: "/pipelines", label: "Pipelines", icon: "▷", soon: true },
   { href: "/teams", label: "Teams", icon: "◎", soon: true },
   { href: "/orgs", label: "Organizations", icon: "▤" },
