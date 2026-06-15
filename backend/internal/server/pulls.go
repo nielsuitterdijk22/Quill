@@ -170,6 +170,23 @@ type mergePullRequest struct {
 }
 
 // handleListPulls returns a repository's pull requests.
+// handleOpenPullCount returns the total number of open pull requests across all
+// repositories the authenticated user can see — the dashboard's aggregate figure
+// in a single request, instead of one request per repository from the browser.
+func (s *Server) handleOpenPullCount(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	count, err := s.platform.OpenPullRequestCount(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not count open pull requests")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"openPullRequests": count})
+}
+
 func (s *Server) handleListPulls(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {

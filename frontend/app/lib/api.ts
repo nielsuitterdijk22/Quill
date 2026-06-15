@@ -265,6 +265,17 @@ export async function listReposByOrg(
   }
 }
 
+// getOpenPullRequestCount returns the total number of open pull requests across
+// every repository the user can see, computed server-side in a single request.
+// Returns 0 on any failure so the dashboard degrades gracefully.
+export async function getOpenPullRequestCount(token: string): Promise<number> {
+  const res = await authGet<{ openPullRequests: number }>(
+    token,
+    "/api/v1/me/pulls/open-count",
+  );
+  return res.ok ? res.data.openPullRequests : 0;
+}
+
 async function postAuth(path: string, body: unknown): Promise<AuthResult> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {

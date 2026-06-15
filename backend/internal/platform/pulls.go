@@ -2,9 +2,13 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
@@ -47,6 +51,73 @@ func (s *Service) ListPulls(ctx context.Context, actor Actor, orgSlug, repoSlug,
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
 	return repo, pulls, nil
+}
+
+// maxPullCountConcurrency bounds how many repositories Quill queries Forgejo for
+// open-PR counts at once when computing the dashboard aggregate.
+const maxPullCountConcurrency = 8
+
+// OpenPullRequestCount returns the total number of open pull requests across
+// every repository in the organizations the actor belongs to. Counts come from
+// Forgejo's exact total (not a capped page), and repositories are queried
+// concurrently with a bounded worker pool. It is best-effort: a repository whose
+// count can't be read is treated as zero and logged, mirroring the dashboard's
+// tolerance for partial data.
+func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, error) {
+	if !s.forgejoEnabled() {
+		return 0, nil
+	}
+
+	orgs, err := s.store.ListOrganizations(ctx, db.ListOrganizationsParams{Limit: 200, Offset: 0})
+	if err != nil {
+		return 0, fmt.Errorf("list orgs: %w", err)
+	}
+
+	type target struct{ owner, name string }
+	var targets []target
+	for _, org := range orgs {
+		// Only count repos in orgs the actor can see; skip the rest silently so the
+		// total matches what the dashboard would list for this user.
+		if err := s.authorizeOrgMember(ctx, actor, org.ID); err != nil {
+			if errors.Is(err, ErrForbidden) {
+				continue
+			}
+			return 0, err
+		}
+		repos, err := s.store.ListRepositoriesByOrg(ctx, db.ListRepositoriesByOrgParams{OrgID: org.ID, Limit: 200, Offset: 0})
+		if err != nil {
+			return 0, fmt.Errorf("list repos: %w", err)
+		}
+		for _, repo := range repos {
+			if owner, name, ok := forgejoTarget(repo, org); ok {
+				targets = append(targets, target{owner: owner, name: name})
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return 0, nil
+	}
+
+	var total int64
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxPullCountConcurrency)
+	for _, t := range targets {
+		t := t
+		g.Go(func() error {
+			n, err := s.forgejo.CountOpenPulls(gctx, t.owner, t.name)
+			if err != nil {
+				// Best-effort: an empty repo or transient failure contributes zero.
+				s.logger.Warn("open pull-request count failed", "repo", t.owner+"/"+t.name, "error", err)
+				return nil
+			}
+			atomic.AddInt64(&total, int64(n))
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return 0, err
+	}
+	return int(total), nil
 }
 
 // GetPull returns a single pull request by number.

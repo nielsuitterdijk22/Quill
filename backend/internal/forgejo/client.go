@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,6 +107,30 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		}
 	}
 	return nil
+}
+
+// count issues a GET and returns Forgejo's X-Total-Count header — the total
+// number of items matching the query — without downloading the items. It returns
+// 0 when the header is absent or unparseable.
+func (c *Client) count(ctx context.Context, path string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1"+path, nil)
+	if err != nil {
+		return 0, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("forgejo GET %s: %w", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, &APIError{Status: resp.StatusCode, Method: http.MethodGet, Path: path, Message: readError(resp.Body)}
+	}
+	n, _ := strconv.Atoi(resp.Header.Get("X-Total-Count"))
+	return n, nil
 }
 
 // getRaw performs a GET and returns the raw response body. It is used for

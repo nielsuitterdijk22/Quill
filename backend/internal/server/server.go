@@ -93,6 +93,7 @@ func (s *Server) setupRoutes() {
 		// Organizations and repositories require authentication.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
 			r.Route("/orgs", func(r chi.Router) {
 				r.Get("/", s.handleListOrgs)
 				r.Post("/", s.handleCreateOrg)

@@ -144,6 +144,17 @@ func (c *Client) GetPull(ctx context.Context, owner, repo string, number int) (P
 	return out, err
 }
 
+// CountOpenPulls returns the exact number of open pull requests in a repository
+// via Forgejo's X-Total-Count header, so the figure is correct regardless of how
+// many PRs exist (no page-size cap).
+func (c *Client) CountOpenPulls(ctx context.Context, owner, repo string) (int, error) {
+	q := url.Values{}
+	q.Set("state", "open")
+	q.Set("limit", "1")
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls?" + q.Encode()
+	return c.count(ctx, p)
+}
+
 // CreatePull opens a pull request. When asUser is non-empty the request is
 // attributed to that Forgejo user via sudo (the user must have access to the
 // repository — see platform.ensureCollaborator).
