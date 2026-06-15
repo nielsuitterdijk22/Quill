@@ -62,6 +62,58 @@ type Organization struct {
 	UpdatedAt      time.Time     `json:"updatedAt"`
 }
 
+type Pipeline struct {
+	ID           uuid.UUID `json:"id"`
+	RepoID       uuid.UUID `json:"repoId"`
+	WorkflowPath string    `json:"workflowPath"`
+	Name         string    `json:"name"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type PipelineJob struct {
+	ID         uuid.UUID          `json:"id"`
+	RunID      uuid.UUID          `json:"runId"`
+	JobKey     string             `json:"jobKey"`
+	Name       string             `json:"name"`
+	RunsOn     string             `json:"runsOn"`
+	Status     string             `json:"status"`
+	Position   int32              `json:"position"`
+	StartedAt  pgtype.Timestamptz `json:"startedAt"`
+	FinishedAt pgtype.Timestamptz `json:"finishedAt"`
+	CreatedAt  time.Time          `json:"createdAt"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
+type PipelineRun struct {
+	ID          uuid.UUID          `json:"id"`
+	PipelineID  uuid.UUID          `json:"pipelineId"`
+	RunNumber   int64              `json:"runNumber"`
+	Status      string             `json:"status"`
+	Event       string             `json:"event"`
+	Ref         string             `json:"ref"`
+	CommitSha   string             `json:"commitSha"`
+	TriggeredBy uuid.NullUUID      `json:"triggeredBy"`
+	StartedAt   pgtype.Timestamptz `json:"startedAt"`
+	FinishedAt  pgtype.Timestamptz `json:"finishedAt"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
+}
+
+type PipelineStep struct {
+	ID         uuid.UUID          `json:"id"`
+	JobID      uuid.UUID          `json:"jobId"`
+	Position   int32              `json:"position"`
+	Name       string             `json:"name"`
+	StepType   string             `json:"stepType"`
+	Status     string             `json:"status"`
+	Logs       string             `json:"logs"`
+	StartedAt  pgtype.Timestamptz `json:"startedAt"`
+	FinishedAt pgtype.Timestamptz `json:"finishedAt"`
+	CreatedAt  time.Time          `json:"createdAt"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
 type Repository struct {
 	ID            uuid.UUID   `json:"id"`
 	OrgID         uuid.UUID   `json:"orgId"`

@@ -1528,3 +1528,83 @@ h2.section {
   gap: 8px;
   justify-content: flex-end;
 }
+
+/* ---- pipelines (CI) ------------------------------------------------------ */
+.run-workflow-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.run-workflow-form select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.run-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.run-glyph.success {
+  color: var(--green);
+}
+.run-glyph.failure {
+  color: var(--red);
+}
+.run-glyph.running {
+  color: var(--amber);
+}
+.run-last {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.run-meta {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.pipeline-step {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel2);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.pipeline-step:last-child {
+  margin-bottom: 0;
+}
+.pipeline-step > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+.pipeline-step > summary::-webkit-details-marker {
+  display: none;
+}
+.step-logs {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}

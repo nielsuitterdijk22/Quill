@@ -79,6 +79,10 @@ func (s *Server) setupRoutes() {
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/meta", s.handleMeta)
 
+		// Forgejo webhook receiver: auto-triggers pipelines on push / pull_request.
+		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
+		r.Post("/webhooks/forgejo", s.handleWebhook)
+
 		// Authentication: register and login are public; me and logout require a token.
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", s.handleRegister)
@@ -115,6 +119,12 @@ func (s *Server) setupRoutes() {
 								r.Get("/", s.handleListBranchPolicies)
 								r.Put("/", s.handleSetBranchPolicy)
 								r.Delete("/", s.handleDeleteBranchPolicy)
+							})
+							r.Route("/pipelines", func(r chi.Router) {
+								r.Get("/", s.handleListPipelines)
+								r.Post("/", s.handleTriggerRun)
+								r.Get("/runs", s.handleListRuns)
+								r.Get("/runs/{number}", s.handleGetRun)
 							})
 							r.Route("/pulls", func(r chi.Router) {
 								r.Get("/", s.handleListPulls)

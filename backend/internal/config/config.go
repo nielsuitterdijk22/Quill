@@ -28,6 +28,11 @@ type Config struct {
 	JWT     JWTConfig
 	Forgejo ForgejoConfig
 
+	// WebhookSecret authenticates inbound Forgejo webhooks that auto-trigger
+	// pipelines. When empty, signature verification is skipped (dev mode), so set
+	// it in any shared environment.
+	WebhookSecret string
+
 	CORSAllowedOrigins []string
 }
 
@@ -67,6 +72,7 @@ func Load() (*Config, error) {
 			AdminToken: getenv("QUILL_FORGEJO_ADMIN_TOKEN", ""),
 			PublicURL:  getenv("QUILL_FORGEJO_PUBLIC_URL", ""),
 		},
+		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 	}
 
