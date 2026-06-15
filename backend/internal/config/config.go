@@ -42,6 +42,9 @@ type JWTConfig struct {
 type ForgejoConfig struct {
 	BaseURL    string
 	AdminToken string
+	// PublicURL is the externally-accessible Forgejo URL shown to users in clone
+	// instructions. Defaults to BaseURL when not set.
+	PublicURL string
 }
 
 // Load reads configuration from the environment.
@@ -62,6 +65,7 @@ func Load() (*Config, error) {
 		Forgejo: ForgejoConfig{
 			BaseURL:    getenv("QUILL_FORGEJO_BASE_URL", "http://localhost:3000"),
 			AdminToken: getenv("QUILL_FORGEJO_ADMIN_TOKEN", ""),
+			PublicURL:  getenv("QUILL_FORGEJO_PUBLIC_URL", ""),
 		},
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 	}

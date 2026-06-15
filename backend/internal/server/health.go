@@ -47,6 +47,14 @@ func (s *Server) forgejoStatus(r *http.Request) map[string]any {
 	if s.forgejo == nil || !s.forgejo.Enabled() {
 		return status
 	}
+	// Expose the public URL so frontends can construct git clone URLs. Fall back
+	// to the internal base URL when a separate public URL isn't configured (fine
+	// for local dev where both resolve to the same host).
+	if pub := s.cfg.Forgejo.PublicURL; pub != "" {
+		status["publicUrl"] = pub
+	} else if base := s.cfg.Forgejo.BaseURL; base != "" {
+		status["publicUrl"] = base
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if version, err := s.forgejo.Version(ctx); err == nil {

@@ -74,6 +74,7 @@ services:
       QUILL_DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill}@postgres:5432/${POSTGRES_DB:-quill}?sslmode=disable
       QUILL_FORGEJO_BASE_URL: http://forgejo:3000
       QUILL_FORGEJO_ADMIN_TOKEN: ${QUILL_FORGEJO_ADMIN_TOKEN:-}
+      QUILL_FORGEJO_PUBLIC_URL: ${QUILL_FORGEJO_PUBLIC_URL:-}
       QUILL_JWT_SECRET: ${QUILL_JWT_SECRET:-dev-insecure-secret-change-me}
       QUILL_CORS_ALLOWED_ORIGINS: http://localhost:3001
     ports:

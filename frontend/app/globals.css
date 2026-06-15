@@ -571,6 +571,48 @@ select:focus {
   flex-wrap: wrap;
 }
 
+/* ---- empty repo setup screen ----------------------------------------------- */
+.empty-repo-body {
+  padding: 18px 20px 22px;
+}
+.empty-repo-body .subtle {
+  margin: 0 0 14px;
+}
+.clone-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.clone-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.clone-url {
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #10131a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--accent-soft);
+  word-break: break-all;
+}
+.setup-cmds {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  background: #10131a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+}
+
 /* ---- repository code browser (PR 5) ---------------------------------------- */
 /* Tab nav under a repo header (Code / Commits / Branches). */
 .rtabs {

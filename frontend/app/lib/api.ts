@@ -10,6 +10,7 @@ export type ForgejoStatus = {
   configured: boolean;
   reachable: boolean;
   version?: string;
+  publicUrl?: string;
 };
 
 export type Meta = {

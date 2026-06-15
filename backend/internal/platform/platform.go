@@ -24,6 +24,9 @@ var (
 	// ErrPolicyViolation signals that an operation is blocked by a branch policy
 	// (e.g. merging a pull request that lacks the required approvals).
 	ErrPolicyViolation = errors.New("blocked by branch policy")
+	// ErrEmptyRepo signals that the git repository exists but has no commits yet,
+	// so content/branch/commit reads cannot be served.
+	ErrEmptyRepo = errors.New("repository is empty")
 )
 
 // Visibility values accepted for repositories. "internal" is visible to all
