@@ -262,6 +262,9 @@ func (s *Service) UpdateRepo(ctx context.Context, actor Actor, orgSlug, repoSlug
 			return db.Repository{}, ErrUnavailable
 		}
 		opts, dirty := forgejoEdit(repo, next)
+		// currentName tracks where the repo lives in Forgejo; it changes after a
+		// rename so any compensating revert targets the right repository.
+		currentName := name
 		if dirty {
 			updated, err := s.forgejo.EditRepo(ctx, owner, name, opts)
 			if err != nil {
@@ -269,18 +272,23 @@ func (s *Service) UpdateRepo(ctx context.Context, actor Actor, orgSlug, repoSlug
 			}
 			if renamed {
 				next.ForgejoName = pgtype.Text{String: updated.Name, Valid: true}
+				currentName = updated.Name
 			}
 		}
 
 		saved, err := s.store.UpdateRepository(ctx, updateRepoParams(repo.ID, next))
 		if err != nil {
-			// Roll back a Forgejo rename so git and metadata stay consistent.
-			if renamed {
+			// The Forgejo edit already applied but persisting failed. Revert the
+			// *entire* edit — not just a rename — so the two systems don't silently
+			// diverge. This matters most for visibility: a private→public change
+			// left in Forgejo would expose a repo Quill still treats as private.
+			if dirty {
 				cctx, cancel := detachedContext(ctx)
 				defer cancel()
-				revert := repo.Slug
-				if _, rerr := s.forgejo.EditRepo(cctx, owner, next.Slug, forgejo.EditRepoOptions{Name: &revert}); rerr != nil {
-					s.logger.Error("failed to roll back forgejo repo rename", "repo", owner+"/"+next.Slug, "error", rerr)
+				if revert, rdirty := forgejoEdit(next, repo); rdirty {
+					if _, rerr := s.forgejo.EditRepo(cctx, owner, currentName, revert); rerr != nil {
+						s.logger.Error("failed to roll back forgejo repo edit", "repo", owner+"/"+currentName, "error", rerr)
+					}
 				}
 			}
 			if isUniqueViolation(err) {
