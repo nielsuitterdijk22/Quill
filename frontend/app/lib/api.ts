@@ -848,3 +848,146 @@ export function deleteBranchPolicy(
     `/api/v1/orgs/${org}/repos/${repo}/policies?pattern=${encodeURIComponent(pattern)}`,
   );
 }
+
+// ---- teams -----------------------------------------------------------------
+
+// Team is an access + ownership unit within an organization.
+export type Team = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  createdAt: string;
+};
+
+// TeamMember is a user that belongs to a team, with their role in that team.
+export type TeamMember = {
+  id: string;
+  username: string;
+  email: string;
+  displayName: string;
+  role: string;
+};
+
+// MyTeam is a team the signed-in user belongs to, annotated with its org so the
+// cross-org teams page can link back to each one.
+export type MyTeam = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  role: string;
+  orgSlug: string;
+  orgName: string;
+};
+
+// teamsResult is the org-scoped team listing payload.
+export type TeamsResult = { organization: Org; teams: Team[] };
+
+// getTeamsByOrg returns an org plus its teams, preserving HTTP status.
+export function getTeamsByOrg(
+  token: string,
+  org: string,
+): Promise<Result<TeamsResult>> {
+  return authGet<TeamsResult>(token, `/api/v1/orgs/${org}/teams`);
+}
+
+// teamResult is the single-team payload, including its members.
+export type TeamResult = {
+  organization: Org;
+  team: Team;
+  members: TeamMember[];
+};
+
+// getTeam returns a single team with its members.
+export function getTeam(
+  token: string,
+  org: string,
+  team: string,
+): Promise<Result<TeamResult>> {
+  return authGet<TeamResult>(token, `/api/v1/orgs/${org}/teams/${team}`);
+}
+
+// createTeam provisions a team under an org (org owners only).
+export function createTeam(
+  token: string,
+  org: string,
+  input: { slug: string; name: string; description: string },
+): Promise<MutationResult> {
+  return postCreate(token, `/api/v1/orgs/${org}/teams`, input);
+}
+
+// addTeamMember adds (or updates the role of) a user in a team by username.
+export function addTeamMember(
+  token: string,
+  org: string,
+  team: string,
+  input: { username: string; role: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return postNoContent(
+    token,
+    `/api/v1/orgs/${org}/teams/${team}/members`,
+    input,
+  );
+}
+
+// removeTeamMember removes a user from a team by user id.
+export function removeTeamMember(
+  token: string,
+  org: string,
+  team: string,
+  userID: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/orgs/${org}/teams/${team}/members/${userID}`,
+  );
+}
+
+// getMyTeams returns every team the signed-in user belongs to, across all orgs.
+export async function getMyTeams(token: string): Promise<MyTeam[]> {
+  const res = await authGet<{ teams?: MyTeam[] }>(token, "/api/v1/me/teams");
+  return res.ok ? (res.data.teams ?? []) : [];
+}
+
+// ---- profile ---------------------------------------------------------------
+
+// updateProfile saves the signed-in user's editable profile fields.
+export function updateProfile(
+  token: string,
+  input: { displayName: string },
+): Promise<DataResult<User>> {
+  return sendData<User>(token, "PATCH", "/api/v1/auth/me", input);
+}
+
+// postNoContent issues an authenticated POST for endpoints that return no body
+// (204), mapping transport and HTTP errors into a simple ok/error result.
+async function postNoContent(
+  token: string,
+  path: string,
+  body: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return {
+        ok: false,
+        error: data?.message || `Request failed (${res.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}

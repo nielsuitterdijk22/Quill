@@ -208,6 +208,23 @@ func (s *Service) CurrentUser(ctx context.Context, id Identity) (db.User, error)
 	return s.store.GetUserByID(ctx, id.UserID)
 }
 
+// maxDisplayNameLen bounds a display name so profiles stay sane in the UI.
+const maxDisplayNameLen = 100
+
+// UpdateProfile updates the signed-in user's editable profile fields (currently
+// just the display name) and returns the refreshed record. An empty display name
+// is allowed and clears it; the UI then falls back to the username.
+func (s *Service) UpdateProfile(ctx context.Context, id Identity, displayName string) (db.User, error) {
+	displayName = strings.TrimSpace(displayName)
+	if len(displayName) > maxDisplayNameLen {
+		return db.User{}, fmt.Errorf("%w: display name must be at most %d characters", ErrInvalidInput, maxDisplayNameLen)
+	}
+	return s.store.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
+		ID:          id.UserID,
+		DisplayName: displayName,
+	})
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

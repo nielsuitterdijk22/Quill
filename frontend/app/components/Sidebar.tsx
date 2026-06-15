@@ -18,9 +18,9 @@ const NAV: NavItem[] = [
   { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭" },
   { href: "/pipelines", label: "Pipelines", icon: "▷", soon: true },
-  { href: "/teams", label: "Teams", icon: "◎", soon: true },
+  { href: "/teams", label: "Teams", icon: "◎" },
   { href: "/orgs", label: "Organizations", icon: "▤" },
-  { href: "/settings", label: "Settings", icon: "⚙", soon: true },
+  { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

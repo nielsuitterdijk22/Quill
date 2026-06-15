@@ -86,6 +86,7 @@ func (s *Server) setupRoutes() {
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
+				r.Patch("/me", s.handleUpdateProfile)
 				r.Post("/logout", s.handleLogout)
 			})
 		})
@@ -96,11 +97,21 @@ func (s *Server) setupRoutes() {
 			r.Get("/me/pulls", s.handleListMyPulls)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
 			r.Post("/me/git-token", s.handleCreateGitToken)
+			r.Get("/me/teams", s.handleListMyTeams)
 			r.Route("/orgs", func(r chi.Router) {
 				r.Get("/", s.handleListOrgs)
 				r.Post("/", s.handleCreateOrg)
 				r.Route("/{slug}", func(r chi.Router) {
 					r.Get("/", s.handleGetOrg)
+					r.Route("/teams", func(r chi.Router) {
+						r.Get("/", s.handleListTeams)
+						r.Post("/", s.handleCreateTeam)
+						r.Route("/{team}", func(r chi.Router) {
+							r.Get("/", s.handleGetTeam)
+							r.Post("/members", s.handleAddTeamMember)
+							r.Delete("/members/{userID}", s.handleRemoveTeamMember)
+						})
+					})
 					r.Route("/repos", func(r chi.Router) {
 						r.Get("/", s.handleListRepos)
 						r.Post("/", s.handleCreateRepo)
