@@ -1,9 +1,6 @@
-import { getMeta, listOrgs, listReposByOrg, type Repo } from "../lib/api";
+import { getMeta, getPulls, listOrgs, listReposByOrg, type Repo } from "../lib/api";
 import { getToken } from "../lib/session";
 
-// Dashboard is the landing page of the authenticated shell. Since PR 4 it shows
-// live Forgejo connectivity plus real organization and repository counts sourced
-// from the backend; richer browsing arrives in PR 5.
 export default async function DashboardPage() {
   const token = getToken();
   const [meta, orgs] = await Promise.all([
@@ -20,6 +17,20 @@ export default async function DashboardPage() {
   const reposByOrg = new Map<string, Repo[]>();
   orgs.forEach((o, i) => reposByOrg.set(o.slug, repoLists[i] ?? []));
   const totalRepos = repoLists.reduce((sum, list) => sum + list.length, 0);
+
+  // Open PR count across all repos (best-effort; 0 on any failure).
+  let totalOpenPRs = 0;
+  if (token && totalRepos > 0) {
+    const prResults = await Promise.all(
+      orgs.flatMap((o, i) =>
+        (repoLists[i] ?? []).map((r) => getPulls(token, o.slug, r.slug, "open")),
+      ),
+    );
+    totalOpenPRs = prResults.reduce(
+      (sum, r) => sum + (r.ok ? r.data.pulls.length : 0),
+      0,
+    );
+  }
 
   return (
     <>
@@ -69,22 +80,19 @@ export default async function DashboardPage() {
         <div className="card">
           <div className="k">Open pull requests</div>
           <div className="v">
-            0 <small>across orgs</small>
+            {totalOpenPRs} <small>across orgs</small>
           </div>
         </div>
         <div className="card">
           <div className="k">Pipelines</div>
           <div className="v">
-            0 <small>running</small>
+            — <small className="muted">coming soon</small>
           </div>
         </div>
       </div>
 
       <div className="panel">
-        <h2>
-          Organizations
-          <span className="tag">PR 5 · browse</span>
-        </h2>
+        <h2>Organizations</h2>
         {orgs.length === 0 ? (
           <div className="empty">
             No organizations yet. Create one from{" "}
