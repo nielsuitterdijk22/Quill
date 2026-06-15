@@ -21,6 +21,7 @@ type Querier interface {
 	CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteBranchPolicy(ctx context.Context, arg DeleteBranchPolicyParams) (int64, error)
+	DeleteRepository(ctx context.Context, id uuid.UUID) error
 	GetAuthIdentity(ctx context.Context, arg GetAuthIdentityParams) (AuthIdentity, error)
 	GetBranchPolicy(ctx context.Context, arg GetBranchPolicyParams) (BranchPolicy, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
@@ -50,6 +51,7 @@ type Querier interface {
 	SetRepositoryForgejoLink(ctx context.Context, arg SetRepositoryForgejoLinkParams) (Repository, error)
 	SetUserForgejoLink(ctx context.Context, arg SetUserForgejoLinkParams) (User, error)
 	UpdateAuthIdentitySecret(ctx context.Context, arg UpdateAuthIdentitySecretParams) error
+	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
 	UpsertBranchPolicy(ctx context.Context, arg UpsertBranchPolicyParams) (BranchPolicy, error)
 }
 

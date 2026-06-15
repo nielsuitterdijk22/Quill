@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -164,4 +165,231 @@ func (s *Service) ListReposByOrg(ctx context.Context, actor Actor, orgSlug strin
 		Offset: offset,
 	})
 	return org, repos, err
+}
+
+// UpdateRepoInput is a partial update of a repository's settings. A nil field is
+// left unchanged; a non-nil field is applied (and validated). Setting Slug
+// renames the repository, which also renames its Forgejo git repository.
+type UpdateRepoInput struct {
+	Name          *string
+	Description   *string
+	Visibility    *string
+	DefaultBranch *string
+	Slug          *string
+	Archived      *bool
+}
+
+// UpdateRepo changes a repository's general settings for an org owner or platform
+// admin. The change is mirrored into Forgejo first — so a rename or default-branch
+// move is validated by the git layer — and then recorded in Postgres. A rename
+// that fails to persist is rolled back in Forgejo so the two systems don't drift.
+func (s *Service) UpdateRepo(ctx context.Context, actor Actor, orgSlug, repoSlug string, in UpdateRepoInput) (db.Repository, error) {
+	org, err := s.getOrg(ctx, orgSlug)
+	if err != nil {
+		return db.Repository{}, err
+	}
+	if err := s.authorizeOrgAdmin(ctx, actor, org.ID); err != nil {
+		return db.Repository{}, err
+	}
+	repo, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
+		OrgID: org.ID,
+		Lower: normalizeSlug(repoSlug),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.Repository{}, ErrNotFound
+	}
+	if err != nil {
+		return db.Repository{}, fmt.Errorf("lookup repo: %w", err)
+	}
+
+	// Apply the requested fields onto a copy of the current state, validating each.
+	next := repo
+	renamed := false
+
+	if in.Name != nil {
+		name := strings.TrimSpace(*in.Name)
+		if name == "" {
+			return db.Repository{}, fmt.Errorf("%w: name cannot be empty", ErrInvalidInput)
+		}
+		next.Name = name
+	}
+	if in.Description != nil {
+		next.Description = strings.TrimSpace(*in.Description)
+	}
+	if in.Visibility != nil {
+		vis := strings.TrimSpace(*in.Visibility)
+		if !validVisibility(vis) {
+			return db.Repository{}, fmt.Errorf("%w: visibility must be public, internal or private", ErrInvalidInput)
+		}
+		next.Visibility = vis
+	}
+	if in.DefaultBranch != nil {
+		branch := strings.TrimSpace(*in.DefaultBranch)
+		if branch == "" {
+			return db.Repository{}, fmt.Errorf("%w: default branch cannot be empty", ErrInvalidInput)
+		}
+		next.DefaultBranch = branch
+	}
+	if in.Archived != nil {
+		next.IsArchived = *in.Archived
+	}
+	if in.Slug != nil {
+		slug := normalizeSlug(*in.Slug)
+		if slug != repo.Slug {
+			if !validSlug(slug) {
+				return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
+			}
+			// Reject a slug already taken by another repo in the same org.
+			if _, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{OrgID: org.ID, Lower: slug}); err == nil {
+				return db.Repository{}, ErrConflict
+			} else if !errors.Is(err, pgx.ErrNoRows) {
+				return db.Repository{}, fmt.Errorf("lookup repo: %w", err)
+			}
+			next.Slug = slug
+			renamed = true
+		}
+	}
+
+	if !repoChanged(repo, next) {
+		return repo, nil // nothing to do
+	}
+
+	// Mirror the git-visible changes into Forgejo. The display name is Quill-only
+	// metadata (Forgejo has no separate display name), so it is not mirrored.
+	if s.forgejoEnabled() {
+		owner, name, ok := forgejoTarget(repo, org)
+		if !ok {
+			return db.Repository{}, ErrUnavailable
+		}
+		opts, dirty := forgejoEdit(repo, next)
+		if dirty {
+			updated, err := s.forgejo.EditRepo(ctx, owner, name, opts)
+			if err != nil {
+				return db.Repository{}, translateForgejoWrite(err)
+			}
+			if renamed {
+				next.ForgejoName = pgtype.Text{String: updated.Name, Valid: true}
+			}
+		}
+
+		saved, err := s.store.UpdateRepository(ctx, updateRepoParams(repo.ID, next))
+		if err != nil {
+			// Roll back a Forgejo rename so git and metadata stay consistent.
+			if renamed {
+				cctx, cancel := detachedContext(ctx)
+				defer cancel()
+				revert := repo.Slug
+				if _, rerr := s.forgejo.EditRepo(cctx, owner, next.Slug, forgejo.EditRepoOptions{Name: &revert}); rerr != nil {
+					s.logger.Error("failed to roll back forgejo repo rename", "repo", owner+"/"+next.Slug, "error", rerr)
+				}
+			}
+			if isUniqueViolation(err) {
+				return db.Repository{}, ErrConflict
+			}
+			return db.Repository{}, fmt.Errorf("update repo: %w", err)
+		}
+		return saved, nil
+	}
+
+	saved, err := s.store.UpdateRepository(ctx, updateRepoParams(repo.ID, next))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return db.Repository{}, ErrConflict
+		}
+		return db.Repository{}, fmt.Errorf("update repo: %w", err)
+	}
+	return saved, nil
+}
+
+// DeleteRepo permanently removes a repository for an org owner or platform admin.
+// The git repository is deleted from Forgejo first — an already-missing one is
+// treated as success — and then the metadata row (cascading its branch policies)
+// is removed, which keeps a retried delete safe.
+func (s *Service) DeleteRepo(ctx context.Context, actor Actor, orgSlug, repoSlug string) error {
+	org, err := s.getOrg(ctx, orgSlug)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizeOrgAdmin(ctx, actor, org.ID); err != nil {
+		return err
+	}
+	repo, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
+		OrgID: org.ID,
+		Lower: normalizeSlug(repoSlug),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lookup repo: %w", err)
+	}
+
+	if s.forgejoEnabled() {
+		if owner, name, ok := forgejoTarget(repo, org); ok {
+			if err := s.forgejo.DeleteRepo(ctx, owner, name); err != nil && !forgejo.NotFound(err) {
+				return fmt.Errorf("forgejo delete repo: %w", err)
+			}
+		}
+	}
+	if err := s.store.DeleteRepository(ctx, repo.ID); err != nil {
+		return fmt.Errorf("delete repo: %w", err)
+	}
+	return nil
+}
+
+// repoChanged reports whether any persisted setting differs between two repos.
+func repoChanged(a, b db.Repository) bool {
+	return a.Slug != b.Slug ||
+		a.Name != b.Name ||
+		a.Description != b.Description ||
+		a.Visibility != b.Visibility ||
+		a.DefaultBranch != b.DefaultBranch ||
+		a.IsArchived != b.IsArchived
+}
+
+// forgejoEdit builds the Forgejo edit payload from the diff between the current
+// and desired repository, returning dirty=false when nothing git-visible changed.
+func forgejoEdit(cur, next db.Repository) (forgejo.EditRepoOptions, bool) {
+	var opts forgejo.EditRepoOptions
+	dirty := false
+	if next.Slug != cur.Slug {
+		s := next.Slug
+		opts.Name = &s
+		dirty = true
+	}
+	if next.Description != cur.Description {
+		d := next.Description
+		opts.Description = &d
+		dirty = true
+	}
+	if next.Visibility != cur.Visibility {
+		p := forgejoPrivate(next.Visibility)
+		opts.Private = &p
+		dirty = true
+	}
+	if next.DefaultBranch != cur.DefaultBranch {
+		b := next.DefaultBranch
+		opts.DefaultBranch = &b
+		dirty = true
+	}
+	if next.IsArchived != cur.IsArchived {
+		a := next.IsArchived
+		opts.Archived = &a
+		dirty = true
+	}
+	return opts, dirty
+}
+
+// updateRepoParams projects a repository's desired state into UpdateRepository args.
+func updateRepoParams(id uuid.UUID, next db.Repository) db.UpdateRepositoryParams {
+	return db.UpdateRepositoryParams{
+		ID:            id,
+		Slug:          next.Slug,
+		Name:          next.Name,
+		Description:   next.Description,
+		Visibility:    next.Visibility,
+		DefaultBranch: next.DefaultBranch,
+		IsArchived:    next.IsArchived,
+		ForgejoName:   next.ForgejoName,
+	}
 }

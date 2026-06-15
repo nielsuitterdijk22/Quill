@@ -60,6 +60,15 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 	return i, err
 }
 
+const deleteRepository = `-- name: DeleteRepository :exec
+DELETE FROM repositories WHERE id = $1
+`
+
+func (q *Queries) DeleteRepository(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRepository, id)
+	return err
+}
+
 const getRepositoryByID = `-- name: GetRepositoryByID :one
 SELECT id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories WHERE id = $1
 `
@@ -260,6 +269,61 @@ func (q *Queries) SetRepositoryForgejoLink(ctx context.Context, arg SetRepositor
 		arg.ID,
 		arg.ForgejoRepoID,
 		arg.ForgejoOwner,
+		arg.ForgejoName,
+	)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.OwningTeamID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.Visibility,
+		&i.DefaultBranch,
+		&i.IsArchived,
+		&i.ForgejoRepoID,
+		&i.ForgejoOwner,
+		&i.ForgejoName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateRepository = `-- name: UpdateRepository :one
+UPDATE repositories
+SET slug = $2,
+    name = $3,
+    description = $4,
+    visibility = $5,
+    default_branch = $6,
+    is_archived = $7,
+    forgejo_name = $8
+WHERE id = $1
+RETURNING id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
+`
+
+type UpdateRepositoryParams struct {
+	ID            uuid.UUID   `json:"id"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	Description   string      `json:"description"`
+	Visibility    string      `json:"visibility"`
+	DefaultBranch string      `json:"defaultBranch"`
+	IsArchived    bool        `json:"isArchived"`
+	ForgejoName   pgtype.Text `json:"forgejoName"`
+}
+
+func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error) {
+	row := q.db.QueryRow(ctx, updateRepository,
+		arg.ID,
+		arg.Slug,
+		arg.Name,
+		arg.Description,
+		arg.Visibility,
+		arg.DefaultBranch,
+		arg.IsArchived,
 		arg.ForgejoName,
 	)
 	var i Repository

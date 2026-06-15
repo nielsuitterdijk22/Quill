@@ -145,6 +145,27 @@ func (c *Client) GetRepo(ctx context.Context, owner, name string) (Repo, error) 
 	return out, err
 }
 
+// EditRepoOptions describes an edit to a repository. Every field is a pointer so
+// only the ones the caller sets are sent (and changed); nil fields are omitted
+// from the request body and left untouched in Forgejo. A non-nil pointer to the
+// empty string is still sent, which is what lets a description be cleared.
+type EditRepoOptions struct {
+	Name          *string `json:"name,omitempty"`
+	Description   *string `json:"description,omitempty"`
+	Private       *bool   `json:"private,omitempty"`
+	DefaultBranch *string `json:"default_branch,omitempty"`
+	Archived      *bool   `json:"archived,omitempty"`
+}
+
+// EditRepo updates a repository's settings (PATCH /repos/{owner}/{repo}) and
+// returns the repository's new state. Renaming sets Name; the owner is unchanged.
+func (c *Client) EditRepo(ctx context.Context, owner, name string, opts EditRepoOptions) (Repo, error) {
+	var out Repo
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name)
+	err := c.do(ctx, http.MethodPatch, p, opts, &out)
+	return out, err
+}
+
 // DeleteRepo removes a repository by owner and name.
 func (c *Client) DeleteRepo(ctx context.Context, owner, name string) error {
 	return c.do(ctx, http.MethodDelete, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name), nil, nil)

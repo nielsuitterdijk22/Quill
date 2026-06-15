@@ -103,6 +103,8 @@ func (s *Server) setupRoutes() {
 						r.Post("/", s.handleCreateRepo)
 						r.Route("/{repo}", func(r chi.Router) {
 							r.Get("/", s.handleGetRepo)
+							r.Patch("/", s.handleUpdateRepo)
+							r.Delete("/", s.handleDeleteRepo)
 							r.Get("/branches", s.handleListBranches)
 							r.Get("/commits", s.handleListCommits)
 							r.Get("/contents", s.handleGetContents)

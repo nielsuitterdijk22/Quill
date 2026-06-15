@@ -284,3 +284,190 @@ func TestCreateOrgRejectsReservedSlug(t *testing.T) {
 		}
 	}
 }
+
+func ptr[T any](v T) *T { return &v }
+
+// seedRepo creates an org owned by a fresh user plus a repository in it, and
+// returns the owner id. Forgejo is disabled in these tests, so updates and
+// deletes exercise the metadata path only.
+func seedRepo(t *testing.T, svc *platform.Service, st *store.Store, orgSlug, repoSlug string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	owner := makeUser(t, st, "owner-"+orgSlug+"-"+repoSlug)
+	if _, err := svc.CreateOrg(ctx, owner, platform.CreateOrgInput{Slug: orgSlug}); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	if _, err := svc.CreateRepo(ctx, actor(owner), orgSlug, platform.CreateRepoInput{Slug: repoSlug, Name: repoSlug}); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	return owner
+}
+
+func TestUpdateRepoMetadata(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+
+	updated, err := svc.UpdateRepo(ctx, actor(owner), "acme", "widget", platform.UpdateRepoInput{
+		Name:          ptr("Widget Service"),
+		Description:   ptr("does widget things"),
+		Visibility:    ptr(platform.VisibilityInternal),
+		DefaultBranch: ptr("trunk"),
+		Archived:      ptr(true),
+	})
+	if err != nil {
+		t.Fatalf("update repo: %v", err)
+	}
+	if updated.Name != "Widget Service" || updated.Description != "does widget things" {
+		t.Fatalf("name/description not applied: %+v", updated)
+	}
+	if updated.Visibility != platform.VisibilityInternal || updated.DefaultBranch != "trunk" || !updated.IsArchived {
+		t.Fatalf("visibility/default/archived not applied: %+v", updated)
+	}
+
+	// Re-reading returns the persisted values.
+	got, err := svc.GetRepo(ctx, actor(owner), "acme", "widget")
+	if err != nil {
+		t.Fatalf("get repo: %v", err)
+	}
+	if got.Visibility != platform.VisibilityInternal || got.DefaultBranch != "trunk" || !got.IsArchived {
+		t.Fatalf("changes did not persist: %+v", got)
+	}
+}
+
+func TestUpdateRepoIsPartial(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+
+	// Only the description is provided; other fields must be left untouched.
+	updated, err := svc.UpdateRepo(ctx, actor(owner), "acme", "widget", platform.UpdateRepoInput{
+		Description: ptr("just a description"),
+	})
+	if err != nil {
+		t.Fatalf("update repo: %v", err)
+	}
+	if updated.Description != "just a description" {
+		t.Fatalf("description not applied: %+v", updated)
+	}
+	if updated.Visibility != platform.VisibilityPrivate || updated.DefaultBranch != "main" || updated.IsArchived {
+		t.Fatalf("untouched fields changed: %+v", updated)
+	}
+}
+
+func TestUpdateRepoRename(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+
+	updated, err := svc.UpdateRepo(ctx, actor(owner), "acme", "widget", platform.UpdateRepoInput{
+		Slug: ptr("Gadget"),
+	})
+	if err != nil {
+		t.Fatalf("rename repo: %v", err)
+	}
+	if updated.Slug != "gadget" {
+		t.Fatalf("slug should be normalised to gadget, got %q", updated.Slug)
+	}
+	// The old slug no longer resolves; the new one does.
+	if _, err := svc.GetRepo(ctx, actor(owner), "acme", "widget"); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("old slug should be gone, got %v", err)
+	}
+	if _, err := svc.GetRepo(ctx, actor(owner), "acme", "gadget"); err != nil {
+		t.Fatalf("new slug should resolve: %v", err)
+	}
+}
+
+func TestUpdateRepoRenameConflict(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+	if _, err := svc.CreateRepo(ctx, actor(owner), "acme", platform.CreateRepoInput{Slug: "gadget", Name: "gadget"}); err != nil {
+		t.Fatalf("create second repo: %v", err)
+	}
+	if _, err := svc.UpdateRepo(ctx, actor(owner), "acme", "widget", platform.UpdateRepoInput{Slug: ptr("gadget")}); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("expected ErrConflict renaming onto an existing slug, got %v", err)
+	}
+}
+
+func TestUpdateRepoValidation(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+
+	cases := map[string]platform.UpdateRepoInput{
+		"bad visibility":     {Visibility: ptr("secret")},
+		"empty default":      {DefaultBranch: ptr("   ")},
+		"empty name":         {Name: ptr("  ")},
+		"reserved slug":      {Slug: ptr("settings")},
+		"invalid slug chars": {Slug: ptr("Has Spaces")},
+	}
+	for name, in := range cases {
+		if _, err := svc.UpdateRepo(ctx, actor(owner), "acme", "widget", in); !errors.Is(err, platform.ErrInvalidInput) {
+			t.Fatalf("%s: expected ErrInvalidInput, got %v", name, err)
+		}
+	}
+}
+
+func TestUpdateRepoRequiresOwner(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+	org, _ := st.GetOrganizationBySlug(ctx, "acme")
+
+	// A plain (non-owner) member may not change settings.
+	member := makeUser(t, st, "bob")
+	if err := st.AddOrgMember(ctx, db.AddOrgMemberParams{OrgID: org.ID, UserID: member, Role: "member"}); err != nil {
+		t.Fatalf("add member: %v", err)
+	}
+	if _, err := svc.UpdateRepo(ctx, actor(member), "acme", "widget", platform.UpdateRepoInput{Description: ptr("nope")}); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("member update: expected ErrForbidden, got %v", err)
+	}
+
+	// An outsider is likewise denied.
+	outsider := makeUser(t, st, "mallory")
+	if err := svc.DeleteRepo(ctx, actor(outsider), "acme", "widget"); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("outsider delete: expected ErrForbidden, got %v", err)
+	}
+
+	// The owner succeeds, confirming the gate is owner-specific.
+	if _, err := svc.UpdateRepo(ctx, actor(owner), "acme", "widget", platform.UpdateRepoInput{Description: ptr("ok")}); err != nil {
+		t.Fatalf("owner update: %v", err)
+	}
+}
+
+func TestDeleteRepoCascadesPolicies(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+
+	// Attach a branch policy so the delete must cascade it.
+	if _, err := svc.SetBranchPolicy(ctx, actor(owner), "acme", "widget", platform.BranchPolicyInput{
+		Pattern: "main", RequiredApprovals: 1, RequirePullRequest: true,
+	}); err != nil {
+		t.Fatalf("set policy: %v", err)
+	}
+
+	if err := svc.DeleteRepo(ctx, actor(owner), "acme", "widget"); err != nil {
+		t.Fatalf("delete repo: %v", err)
+	}
+	if _, err := svc.GetRepo(ctx, actor(owner), "acme", "widget"); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("repo should be gone, got %v", err)
+	}
+	_, repos, err := svc.ListReposByOrg(ctx, actor(owner), "acme", 0, 0)
+	if err != nil {
+		t.Fatalf("list repos: %v", err)
+	}
+	if len(repos) != 0 {
+		t.Fatalf("expected no repos after delete, got %d", len(repos))
+	}
+}
+
+func TestDeleteRepoUnknown(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := seedRepo(t, svc, st, "acme", "widget")
+	if err := svc.DeleteRepo(ctx, actor(owner), "acme", "ghost"); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound deleting unknown repo, got %v", err)
+	}
+}

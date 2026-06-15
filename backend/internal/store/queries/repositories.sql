@@ -34,3 +34,18 @@ UPDATE repositories
 SET is_archived = $2
 WHERE id = $1
 RETURNING *;
+
+-- name: UpdateRepository :one
+UPDATE repositories
+SET slug = $2,
+    name = $3,
+    description = $4,
+    visibility = $5,
+    default_branch = $6,
+    is_archived = $7,
+    forgejo_name = $8
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteRepository :exec
+DELETE FROM repositories WHERE id = $1;

@@ -12,6 +12,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
 
 // This file holds the read-only repository browsing endpoints added in PR 5:
@@ -81,6 +82,58 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, newRepoResponse(repo))
+}
+
+// updateRepoRequest is the partial update body for a repository's settings. Every
+// field is a pointer so an omitted field is left unchanged (distinct from a field
+// explicitly set to its zero value, e.g. clearing the description).
+type updateRepoRequest struct {
+	Name          *string `json:"name"`
+	Description   *string `json:"description"`
+	Visibility    *string `json:"visibility"`
+	DefaultBranch *string `json:"defaultBranch"`
+	Slug          *string `json:"slug"`
+	Archived      *bool   `json:"archived"`
+}
+
+// handleUpdateRepo changes a repository's general settings (org owners / admins).
+func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req updateRepoRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	repo, err := s.platform.UpdateRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), platform.UpdateRepoInput{
+		Name:          req.Name,
+		Description:   req.Description,
+		Visibility:    req.Visibility,
+		DefaultBranch: req.DefaultBranch,
+		Slug:          req.Slug,
+		Archived:      req.Archived,
+	})
+	if err != nil {
+		s.writePlatformError(w, err, "could not update repository")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, newRepoResponse(repo))
+}
+
+// handleDeleteRepo permanently deletes a repository (org owners / admins).
+func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.platform.DeleteRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo")); err != nil {
+		s.writePlatformError(w, err, "could not delete repository")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleListBranches returns a repository's git branches.
