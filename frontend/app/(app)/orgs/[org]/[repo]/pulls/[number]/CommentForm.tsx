@@ -38,7 +38,12 @@ export function CommentForm({
   return (
     <form className="comment-form" action={formAction} ref={ref}>
       {state.error && <div className="form-error">{state.error}</div>}
-      <textarea name="body" rows={3} placeholder="Leave a comment" />
+      <textarea
+        name="body"
+        rows={3}
+        aria-label="Comment"
+        placeholder="Leave a comment"
+      />
       <div className="form-actions">
         <SubmitButton />
       </div>

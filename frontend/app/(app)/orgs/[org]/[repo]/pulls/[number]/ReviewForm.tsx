@@ -75,6 +75,7 @@ export function ReviewForm({
       <textarea
         name="body"
         rows={3}
+        aria-label="Review comment"
         placeholder="Leave a review comment (optional unless commenting)…"
       />
       <ReviewButtons />

@@ -29,6 +29,17 @@ function isActive(pathname: string, href: string): boolean {
 
 type RepoCtx = { org: string; repo: string; ref: string };
 
+// safeDecode decodes a URL path segment, returning it unchanged if it isn't
+// valid percent-encoding. decodeURIComponent throws on malformed input (e.g. a
+// stray "%"), which would otherwise crash the whole app shell on a bad URL.
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 // Extract repo context from /orgs/{org}/{repo}/* paths. Returns null for
 // top-level org pages (/orgs/{org}/new) and non-repo routes.
 function parseRepoCtx(pathname: string): RepoCtx | null {
@@ -37,11 +48,11 @@ function parseRepoCtx(pathname: string): RepoCtx | null {
   );
   if (!m || !m[2] || m[2] === "new") return null;
   return {
-    org: decodeURIComponent(m[1]),
-    repo: decodeURIComponent(m[2]),
+    org: safeDecode(m[1]),
+    repo: safeDecode(m[2]),
     // Use the ref extracted from the URL path when available so the Commits
     // link stays consistent while browsing; fall back to "main".
-    ref: m[4] ? decodeURIComponent(m[4]) : "main",
+    ref: m[4] ? safeDecode(m[4]) : "main",
   };
 }
 

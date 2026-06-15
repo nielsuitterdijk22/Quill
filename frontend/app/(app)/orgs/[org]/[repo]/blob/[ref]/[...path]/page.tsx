@@ -42,7 +42,8 @@ export default async function BlobPage({
   if (contents.type === "dir") {
     redirect(treeHref(params.org, params.repo, ref, path));
   }
-  const file = contents.file!;
+  if (!contents.file) notFound();
+  const file = contents.file;
 
   return (
     <>
