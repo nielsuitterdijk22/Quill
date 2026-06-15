@@ -1,0 +1,11 @@
+- pushing a folder results in a 0B folder
+- prettify select + card
+- click elsewhere on clone
+- Pull Request overview
+- Pipelines -- does this even belong here, or rather in Forge?
+- Teams
+- Settings
+- Commits are links
+- add sha
+- remove backend version & forgejo
+- errors from PRs

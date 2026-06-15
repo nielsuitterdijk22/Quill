@@ -15,10 +15,11 @@ export type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "◧" },
-  { href: "/orgs", label: "Organizations", icon: "▤" },
+  { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭", soon: true },
   { href: "/pipelines", label: "Pipelines", icon: "▷", soon: true },
   { href: "/teams", label: "Teams", icon: "◎", soon: true },
+  { href: "/orgs", label: "Organizations", icon: "▤" },
   { href: "/settings", label: "Settings", icon: "⚙", soon: true },
 ];
 
@@ -41,27 +42,36 @@ function safeDecode(segment: string): string {
 }
 
 // Extract repo context from /orgs/{org}/{repo}/* paths. Returns null for
-// top-level org pages (/orgs/{org}/new) and non-repo routes.
+// top-level org pages (/orgs/{org}/new) and non-repo routes. Refs can contain
+// slashes (e.g. feature/login-page), so the commits route — which never carries
+// a path — keeps its whole tail as the ref, while tree/blob fall back to the
+// first segment (their tail mixes ref and file path, which we can't split here).
 function parseRepoCtx(pathname: string): RepoCtx | null {
   const m = pathname.match(
-    /^\/orgs\/([^/]+)\/([^/]+)(?:\/(tree|commits|blob)\/([^/]+))?/,
+    /^\/orgs\/([^/]+)\/([^/]+)(?:\/(tree|commits|blob)\/(.+?))?\/?$/,
   );
   if (!m || !m[2] || m[2] === "new") return null;
+  let ref = "main";
+  if (m[4]) {
+    if (m[3] === "commits") {
+      ref = m[4].split("/").map(safeDecode).join("/");
+    } else {
+      ref = safeDecode(m[4].split("/")[0]);
+    }
+  }
   return {
     org: safeDecode(m[1]),
     repo: safeDecode(m[2]),
-    // Use the ref extracted from the URL path when available so the Commits
-    // link stays consistent while browsing; fall back to "main".
-    ref: m[4] ? safeDecode(m[4]) : "main",
+    ref,
   };
 }
 
 const REPO_TABS = [
-  { key: "code",    label: "Code",          icon: "▤" },
-  { key: "commits", label: "Commits",        icon: "◷" },
-  { key: "branches",label: "Branches",       icon: "⎇" },
-  { key: "pulls",   label: "Pull requests",  icon: "⤭" },
-  { key: "settings",label: "Settings",       icon: "⚙" },
+  { key: "code", label: "Code", icon: "▤" },
+  { key: "commits", label: "Commits", icon: "◷" },
+  { key: "branches", label: "Branches", icon: "⎇" },
+  { key: "pulls", label: "Pull requests", icon: "⤭" },
+  { key: "settings", label: "Settings", icon: "⚙" },
 ] as const;
 
 type RepoTabKey = (typeof REPO_TABS)[number]["key"];
@@ -69,22 +79,40 @@ type RepoTabKey = (typeof REPO_TABS)[number]["key"];
 function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
   const b = `/orgs/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
-    case "code":     return b;
-    case "commits":  return `${b}/commits/${encodeURIComponent(ctx.ref)}`;
-    case "branches": return `${b}/branches`;
-    case "pulls":    return `${b}/pulls`;
-    case "settings": return `${b}/settings`;
+    case "code":
+      return b;
+    case "commits":
+      return `${b}/commits/${ctx.ref.split("/").map(encodeURIComponent).join("/")}`;
+    case "branches":
+      return `${b}/branches`;
+    case "pulls":
+      return `${b}/pulls`;
+    case "settings":
+      return `${b}/settings`;
   }
 }
 
-function repoTabActive(pathname: string, key: RepoTabKey, ctx: RepoCtx): boolean {
+function repoTabActive(
+  pathname: string,
+  key: RepoTabKey,
+  ctx: RepoCtx,
+): boolean {
   const b = `/orgs/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
-    case "code":     return pathname === b || pathname.startsWith(`${b}/tree/`) || pathname.startsWith(`${b}/blob/`);
-    case "commits":  return pathname.startsWith(`${b}/commits/`);
-    case "branches": return pathname === `${b}/branches`;
-    case "pulls":    return pathname.startsWith(`${b}/pulls`);
-    case "settings": return pathname === `${b}/settings`;
+    case "code":
+      return (
+        pathname === b ||
+        pathname.startsWith(`${b}/tree/`) ||
+        pathname.startsWith(`${b}/blob/`)
+      );
+    case "commits":
+      return pathname.startsWith(`${b}/commits/`);
+    case "branches":
+      return pathname === `${b}/branches`;
+    case "pulls":
+      return pathname.startsWith(`${b}/pulls`);
+    case "settings":
+      return pathname === `${b}/settings`;
   }
 }
 
@@ -135,7 +163,9 @@ export function Sidebar({ user }: { user: User }) {
               <Link
                 key={t.key}
                 href={repoTabHref(repoCtx, t.key)}
-                className={repoTabActive(pathname, t.key, repoCtx) ? "active" : ""}
+                className={
+                  repoTabActive(pathname, t.key, repoCtx) ? "active" : ""
+                }
               >
                 <span className="ic">{t.icon}</span>
                 {t.label}

@@ -40,13 +40,13 @@ Quill is the home for two companion tools that surface inside it:
 
 ## Repository layout
 
-| Path               | What                                                        |
-| ------------------ | ----------------------------------------------------------- |
-| `backend/`         | Go API (module `github.com/nielsuitterdijk22/quill`)        |
-| `frontend/`        | Next.js 14 app-router UI + shared dark design system        |
-| `deploy/compose/`  | Local dev stack (Forgejo + Postgres + api + web)            |
-| `docs/`            | Design notes                                                |
-| `.github/`         | CI                                                          |
+| Path              | What                                                 |
+| ----------------- | ---------------------------------------------------- |
+| `backend/`        | Go API (module `github.com/nielsuitterdijk22/quill`) |
+| `frontend/`       | Next.js 14 app-router UI + shared dark design system |
+| `deploy/compose/` | Local dev stack (Forgejo + Postgres + api + web)     |
+| `docs/`           | Design notes                                         |
+| `.github/`        | CI                                                   |
 
 ## Quickstart
 

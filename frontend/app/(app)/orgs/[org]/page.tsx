@@ -45,7 +45,7 @@ export default async function OrgDetailPage({
 
       <div className="top">
         <h1>{org.name}</h1>
-        <Link className="btn primary" href={`/orgs/${org.slug}/new`}>
+        <Link className="btn primary" href={`/orgs/${org.slug}/repos/new`}>
           ＋ New repository
         </Link>
       </div>
@@ -59,15 +59,15 @@ export default async function OrgDetailPage({
         </h2>
         {repos.length === 0 ? (
           <div className="empty">
-            No repositories yet. Create one — it is initialised in Forgejo with a
-            default branch and a README.
+            No repositories yet. Create one — it is initialised in Forgejo with
+            a default branch and a README.
           </div>
         ) : (
           repos.map((r) => (
             <Link
               className="row-item"
               key={r.id}
-              href={`/orgs/${org.slug}/${r.slug}`}
+              href={`/orgs/${org.slug}/repos/${r.slug}`}
             >
               <span className="tree-icon">▤</span>
               <span className="nm">{r.name}</span>

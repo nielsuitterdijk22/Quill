@@ -175,6 +175,14 @@ func (c *Client) GetPullDiff(ctx context.Context, owner, repo string, number int
 	return string(raw), nil
 }
 
+// ListPullCommits returns the commits contained in a pull request, newest first.
+func (c *Client) ListPullCommits(ctx context.Context, owner, repo string, number int) ([]Commit, error) {
+	var out []Commit
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls/" + strconv.Itoa(number) + "/commits?limit=100&verification=false&files=false"
+	err := c.do(ctx, http.MethodGet, p, nil, &out)
+	return out, err
+}
+
 // ListIssueComments returns the conversation comments on a pull request (PRs and
 // issues share the comment endpoint in Forgejo).
 func (c *Client) ListIssueComments(ctx context.Context, owner, repo string, number int) ([]IssueComment, error) {

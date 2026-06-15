@@ -52,6 +52,24 @@ func (s *Service) ListCommits(ctx context.Context, actor Actor, orgSlug, repoSlu
 	return repo, commits, nil
 }
 
+// GetCommit returns a single commit's metadata together with its diff parsed
+// into per-file hunks — what the commit detail page needs in one call.
+func (s *Service) GetCommit(ctx context.Context, actor Actor, orgSlug, repoSlug, sha string) (db.Repository, forgejo.Commit, []forgejo.DiffFile, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return db.Repository{}, forgejo.Commit{}, nil, err
+	}
+	commit, err := s.forgejo.GetCommit(ctx, owner, name, sha)
+	if err != nil {
+		return db.Repository{}, forgejo.Commit{}, nil, translateForgejoRead(err)
+	}
+	diff, err := s.forgejo.GetCommitDiff(ctx, owner, name, sha)
+	if err != nil {
+		return db.Repository{}, forgejo.Commit{}, nil, translateForgejoRead(err)
+	}
+	return repo, commit, forgejo.ParseUnifiedDiff(diff), nil
+}
+
 // GetContents returns a directory listing or single file at path/ref within a
 // repository. An empty ref resolves to the repository's default branch.
 func (s *Service) GetContents(ctx context.Context, actor Actor, orgSlug, repoSlug, path, ref string) (db.Repository, *forgejo.Contents, error) {

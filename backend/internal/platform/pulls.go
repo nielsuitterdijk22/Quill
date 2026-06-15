@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -207,6 +209,94 @@ func (s *Service) CreatePullComment(ctx context.Context, actor Actor, orgSlug, r
 		return forgejo.IssueComment{}, translateForgejoWrite(err)
 	}
 	return comment, nil
+}
+
+// ListPullCommits returns the commits contained in a pull request.
+func (s *Service) ListPullCommits(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, []forgejo.Commit, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return db.Repository{}, nil, err
+	}
+	commits, err := s.forgejo.ListPullCommits(ctx, owner, name, number)
+	if err != nil {
+		return db.Repository{}, nil, translateForgejoRead(err)
+	}
+	return repo, commits, nil
+}
+
+// LineComment is a line-anchored review comment on a pull request's diff.
+type LineComment struct {
+	ID        int64
+	Path      string
+	Line      int
+	Body      string
+	Author    *forgejo.User
+	CreatedAt time.Time
+}
+
+// ListLineComments returns every line-anchored review comment on a pull request,
+// flattened across all of its reviews and ordered by creation time.
+func (s *Service) ListLineComments(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, []LineComment, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return db.Repository{}, nil, err
+	}
+	reviews, err := s.forgejo.ListReviews(ctx, owner, name, number)
+	if err != nil {
+		return db.Repository{}, nil, translateForgejoRead(err)
+	}
+	var out []LineComment
+	for _, rv := range reviews {
+		comments, err := s.forgejo.ListReviewComments(ctx, owner, name, number, rv.ID)
+		if err != nil {
+			return db.Repository{}, nil, translateForgejoRead(err)
+		}
+		for _, cm := range comments {
+			out = append(out, LineComment{
+				ID:        cm.ID,
+				Path:      cm.Path,
+				Line:      cm.Position,
+				Body:      cm.Body,
+				Author:    cm.User,
+				CreatedAt: cm.CreatedAt,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return repo, out, nil
+}
+
+// CreateLineComment posts a single line-anchored comment on a pull request's
+// diff, attributed to the actor. line is the line number in the new version of
+// the file (matching the diff's new-side gutter).
+func (s *Service) CreateLineComment(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, path string, line int, body string) (LineComment, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return LineComment{}, err
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return LineComment{}, fmt.Errorf("%w: a comment cannot be empty", ErrInvalidInput)
+	}
+	if strings.TrimSpace(path) == "" || line <= 0 {
+		return LineComment{}, fmt.Errorf("%w: a file path and line are required", ErrInvalidInput)
+	}
+	asUser := s.actingForgejoUser(ctx, owner, name, actor)
+	review, err := s.forgejo.CreateReview(ctx, owner, name, number, asUser, forgejo.CreateReviewOptions{
+		Event:    forgejo.ReviewComment,
+		Comments: []forgejo.ReviewCommentInput{{Path: path, Body: body, NewPosition: line}},
+	})
+	if err != nil {
+		return LineComment{}, translateForgejoWrite(err)
+	}
+	// Surface the freshly created comment so the caller can render it without a
+	// second round-trip; the review carries exactly the one comment we sent.
+	comments, err := s.forgejo.ListReviewComments(ctx, owner, name, number, review.ID)
+	if err == nil && len(comments) > 0 {
+		cm := comments[len(comments)-1]
+		return LineComment{ID: cm.ID, Path: cm.Path, Line: cm.Position, Body: cm.Body, Author: cm.User, CreatedAt: cm.CreatedAt}, nil
+	}
+	return LineComment{Path: path, Line: line, Body: body}, nil
 }
 
 // MergePull merges a pull request using method ("merge", "squash", or "rebase")

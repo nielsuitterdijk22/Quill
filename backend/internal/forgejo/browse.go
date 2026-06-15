@@ -118,6 +118,29 @@ func (c *Client) ListCommits(ctx context.Context, owner, repo, ref, path string,
 	return out, err
 }
 
+// GetCommit returns a single commit's metadata by SHA (or any ref that resolves
+// to one). The diff is fetched separately via GetCommitDiff, so the heavy file
+// list is suppressed here.
+func (c *Client) GetCommit(ctx context.Context, owner, repo, sha string) (Commit, error) {
+	var out Commit
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) +
+		"/git/commits/" + url.PathEscape(sha) + "?stat=false&verification=false&files=false"
+	err := c.do(ctx, http.MethodGet, p, nil, &out)
+	return out, err
+}
+
+// GetCommitDiff returns the unified diff text introduced by a single commit
+// (the change against its first parent).
+func (c *Client) GetCommitDiff(ctx context.Context, owner, repo, sha string) (string, error) {
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) +
+		"/git/commits/" + url.PathEscape(sha) + ".diff"
+	raw, err := c.getRaw(ctx, p, maxDiffBytes)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // GetContents fetches a path within a repository at ref (empty ref = default
 // branch). It returns a directory listing or a single file with base64 content.
 func (c *Client) GetContents(ctx context.Context, owner, repo, path, ref string) (*Contents, error) {

@@ -109,6 +109,47 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	return nil
 }
 
+// doBasicAuth performs a request authenticated with a specific user's HTTP basic
+// credentials rather than the admin token. Forgejo requires basic auth — not
+// token auth — to mint a personal access token, so this exists for that narrow
+// purpose and should not be used for ordinary admin-mediated calls.
+func (c *Client) doBasicAuth(ctx context.Context, method, path, user, pass string, body, out any) error {
+	var reader io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal body: %w", err)
+		}
+		reader = bytes.NewReader(buf)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.base+"/api/v1"+path, reader)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.SetBasicAuth(user, pass)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("forgejo %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &APIError{Status: resp.StatusCode, Method: method, Path: path, Message: readError(resp.Body)}
+	}
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
 // count issues a GET and returns Forgejo's X-Total-Count header — the total
 // number of items matching the query — without downloading the items. It returns
 // 0 when the header is absent or unparseable.

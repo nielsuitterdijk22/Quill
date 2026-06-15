@@ -198,6 +198,34 @@ func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGetCommit returns a single commit's metadata and its parsed diff.
+func (s *Server) handleGetCommit(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	repo, commit, files, err := s.platform.GetCommit(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), chi.URLParam(r, "sha"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not load commit")
+		return
+	}
+	entry := commitResponse{
+		SHA:        commit.SHA,
+		Message:    commit.Commit.Message,
+		AuthorName: commit.Commit.Author.Name,
+		Date:       commit.Commit.Author.Date,
+	}
+	if commit.Author != nil {
+		entry.AuthorLogin = commit.Author.Login
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"repository": newRepoResponse(repo),
+		"commit":     entry,
+		"files":      newDiffFiles(files),
+	})
+}
+
 // handleGetContents returns a directory listing or a single file at path/ref.
 func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())

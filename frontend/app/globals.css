@@ -1350,3 +1350,181 @@ h2.section {
     width: 100%;
   }
 }
+/* Visibility lives in the danger zone and uses a select rather than an input. */
+.danger-controls select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* ---- clone widget ---------------------------------------------------------- */
+.clone-wrap {
+  position: relative;
+  display: inline-block;
+}
+.clone-toggle {
+  white-space: nowrap;
+}
+.clone-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: 340px;
+  max-width: 90vw;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 10px;
+}
+.clone-pop-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.clone-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.clone-field input {
+  flex: 1;
+  min-width: 0;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 7px 9px;
+}
+.copy-btn {
+  white-space: nowrap;
+}
+.clone-token-cta {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.clone-token-cta .subtle {
+  font-size: 12px;
+  margin: 0;
+}
+.clone-token-out {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.clone-token-out .hint {
+  margin: 0;
+  color: var(--amber);
+  font-size: 12px;
+}
+.clone-token-out .subtle {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ---- pull-request tabs ----------------------------------------------------- */
+.pr-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: 18px 0;
+}
+.pr-tabs a {
+  padding: 8px 13px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.pr-tabs a:hover {
+  color: var(--text);
+}
+.pr-tabs a.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- inline diff line comments --------------------------------------------- */
+.diff-table tr.dl.commentable td.gutter-new {
+  position: relative;
+}
+.diff-table td.gutter-new .ln-num {
+  display: inline-block;
+}
+.add-comment-btn {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  line-height: 14px;
+  text-align: center;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.08s ease-in;
+}
+.diff-table tr.dl.commentable:hover .add-comment-btn {
+  opacity: 1;
+}
+.add-comment-btn:hover {
+  opacity: 1;
+}
+.line-comment-row td.code {
+  background: var(--panel);
+  padding: 10px 12px;
+  white-space: normal;
+}
+.line-comment {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel2);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+.line-comment:last-child {
+  margin-bottom: 0;
+}
+.line-comment-head {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.line-comment-head b {
+  color: var(--text);
+}
+.line-comment-body {
+  font-size: 13px;
+}
+.line-comment-body pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.line-comment-form {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 10px;
+}
+.line-comment-form .form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

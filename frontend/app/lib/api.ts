@@ -276,6 +276,15 @@ export async function getOpenPullRequestCount(token: string): Promise<number> {
   return res.ok ? res.data.openPullRequests : 0;
 }
 
+// GitCredential is a one-time git-over-HTTPS credential: a username and a freshly
+// minted access token used as the password when cloning or pushing.
+export type GitCredential = { username: string; token: string };
+
+// createGitToken mints a personal git access token for the user (shown once).
+export function createGitToken(token: string): Promise<DataResult<GitCredential>> {
+  return postData<GitCredential>(token, "/api/v1/me/git-token", {});
+}
+
 async function postAuth(path: string, body: unknown): Promise<AuthResult> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -387,6 +396,26 @@ export function getCommits(
   return authGet<CommitsResult>(
     token,
     `/api/v1/orgs/${org}/repos/${repo}/commits?${q.toString()}`,
+  );
+}
+
+// commitDetailResult is a single commit's metadata plus its parsed diff.
+export type CommitDetailResult = {
+  repository: Repo;
+  commit: Commit;
+  files: DiffFile[];
+};
+
+// getCommit returns a single commit's metadata and the diff it introduced.
+export function getCommit(
+  token: string,
+  org: string,
+  repo: string,
+  sha: string,
+): Promise<Result<CommitDetailResult>> {
+  return authGet<CommitDetailResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/commits/${sha}`,
   );
 }
 
@@ -705,6 +734,58 @@ export function createPullReview(
   return postData(
     token,
     `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/reviews`,
+    input,
+  );
+}
+
+// getPullCommits returns the commits contained in a pull request.
+export function getPullCommits(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+): Promise<Result<{ commits: Commit[] }>> {
+  return authGet<{ commits: Commit[] }>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/commits`,
+  );
+}
+
+// LineComment is a line-anchored review comment on a pull request's diff. line is
+// the line number in the new version of the file.
+export type LineComment = {
+  id: number;
+  path: string;
+  line: number;
+  body: string;
+  author?: string;
+  createdAt: string;
+};
+
+// getLineComments returns a pull request's line-anchored review comments.
+export function getLineComments(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+): Promise<Result<{ comments: LineComment[] }>> {
+  return authGet<{ comments: LineComment[] }>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/line-comments`,
+  );
+}
+
+// createLineComment posts a single line-anchored comment on a PR's diff.
+export function createLineComment(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+  input: { path: string; line: number; body: string },
+): Promise<DataResult<{ comment: LineComment }>> {
+  return postData(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/line-comments`,
     input,
   );
 }

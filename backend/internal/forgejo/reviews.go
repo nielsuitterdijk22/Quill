@@ -34,10 +34,34 @@ type Review struct {
 }
 
 // CreateReviewOptions describes a review submission. Event is one of APPROVED,
-// REQUEST_CHANGES, or COMMENT.
+// REQUEST_CHANGES, or COMMENT. Comments, when present, are line-anchored code
+// comments attached to the review (used for diff line comments).
 type CreateReviewOptions struct {
-	Event string `json:"event"`
-	Body  string `json:"body,omitempty"`
+	Event    string               `json:"event"`
+	Body     string               `json:"body,omitempty"`
+	Comments []ReviewCommentInput `json:"comments,omitempty"`
+}
+
+// ReviewCommentInput anchors a review comment to a line in a file's diff.
+// NewPosition is the line number in the new version of the file; OldPosition the
+// line in the old version. One is set depending on the side being commented on.
+type ReviewCommentInput struct {
+	Path        string `json:"path"`
+	Body        string `json:"body"`
+	NewPosition int    `json:"new_position,omitempty"`
+	OldPosition int    `json:"old_position,omitempty"`
+}
+
+// ReviewCodeComment is a single line-anchored comment within a review. Position
+// is the line number in the new version of the file the comment is attached to.
+type ReviewCodeComment struct {
+	ID        int64     `json:"id"`
+	Path      string    `json:"path"`
+	Body      string    `json:"body"`
+	Position  int       `json:"position"`
+	User      *User     `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	HTMLURL   string    `json:"html_url"`
 }
 
 // ListReviews returns the reviews submitted on a pull request.
@@ -54,5 +78,15 @@ func (c *Client) CreateReview(ctx context.Context, owner, repo string, number in
 	var out Review
 	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls/" + strconv.Itoa(number) + "/reviews" + sudoQuery(asUser)
 	err := c.do(ctx, http.MethodPost, p, opts, &out)
+	return out, err
+}
+
+// ListReviewComments returns the line-anchored comments attached to a single
+// review on a pull request.
+func (c *Client) ListReviewComments(ctx context.Context, owner, repo string, number int, reviewID int64) ([]ReviewCodeComment, error) {
+	var out []ReviewCodeComment
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) +
+		"/pulls/" + strconv.Itoa(number) + "/reviews/" + strconv.FormatInt(reviewID, 10) + "/comments"
+	err := c.do(ctx, http.MethodGet, p, nil, &out)
 	return out, err
 }

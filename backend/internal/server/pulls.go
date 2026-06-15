@@ -187,6 +187,29 @@ func (s *Server) handleOpenPullCount(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"openPullRequests": count})
 }
 
+// gitTokenResponse is a freshly minted git-over-HTTPS credential. The token is
+// returned only once, at creation time.
+type gitTokenResponse struct {
+	Username string `json:"username"`
+	Token    string `json:"token"`
+}
+
+// handleCreateGitToken mints a personal git access token for the authenticated
+// user so they can clone and push over HTTPS. The token is shown once.
+func (s *Server) handleCreateGitToken(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	cred, err := s.platform.CreateGitToken(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not create git token")
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, gitTokenResponse{Username: cred.Username, Token: cred.Token})
+}
+
 func (s *Server) handleListPulls(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -318,6 +341,109 @@ func (s *Server) handleCreatePullComment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newPullCommentResponse(comment)})
+}
+
+// handleListPullCommits returns the commits contained in a pull request.
+func (s *Server) handleListPullCommits(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, ok := pullNumber(w, r)
+	if !ok {
+		return
+	}
+	_, commits, err := s.platform.ListPullCommits(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list commits")
+		return
+	}
+	out := make([]commitResponse, 0, len(commits))
+	for _, c := range commits {
+		entry := commitResponse{
+			SHA:        c.SHA,
+			Message:    c.Commit.Message,
+			AuthorName: c.Commit.Author.Name,
+			Date:       c.Commit.Author.Date,
+		}
+		if c.Author != nil {
+			entry.AuthorLogin = c.Author.Login
+		}
+		out = append(out, entry)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"commits": out})
+}
+
+// lineCommentResponse is a line-anchored review comment on a PR's diff.
+type lineCommentResponse struct {
+	ID        int64     `json:"id"`
+	Path      string    `json:"path"`
+	Line      int       `json:"line"`
+	Body      string    `json:"body"`
+	Author    string    `json:"author,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func newLineCommentResponse(c platform.LineComment) lineCommentResponse {
+	out := lineCommentResponse{ID: c.ID, Path: c.Path, Line: c.Line, Body: c.Body, CreatedAt: c.CreatedAt}
+	if c.Author != nil {
+		out.Author = c.Author.Login
+	}
+	return out
+}
+
+// handleListLineComments returns a pull request's line-anchored review comments.
+func (s *Server) handleListLineComments(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, ok := pullNumber(w, r)
+	if !ok {
+		return
+	}
+	_, comments, err := s.platform.ListLineComments(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list line comments")
+		return
+	}
+	out := make([]lineCommentResponse, 0, len(comments))
+	for _, c := range comments {
+		out = append(out, newLineCommentResponse(c))
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"comments": out})
+}
+
+// createLineCommentRequest anchors a new comment to a file and line in the diff.
+type createLineCommentRequest struct {
+	Path string `json:"path"`
+	Line int    `json:"line"`
+	Body string `json:"body"`
+}
+
+// handleCreateLineComment posts a single line-anchored comment on a PR's diff.
+func (s *Server) handleCreateLineComment(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, ok := pullNumber(w, r)
+	if !ok {
+		return
+	}
+	var req createLineCommentRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	comment, err := s.platform.CreateLineComment(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number, req.Path, req.Line, req.Body)
+	if err != nil {
+		s.writePlatformError(w, err, "could not add line comment")
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newLineCommentResponse(comment)})
 }
 
 // handleMergePull merges a pull request.

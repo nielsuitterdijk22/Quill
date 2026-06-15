@@ -94,6 +94,7 @@ func (s *Server) setupRoutes() {
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
+			r.Post("/me/git-token", s.handleCreateGitToken)
 			r.Route("/orgs", func(r chi.Router) {
 				r.Get("/", s.handleListOrgs)
 				r.Post("/", s.handleCreateOrg)
@@ -108,6 +109,7 @@ func (s *Server) setupRoutes() {
 							r.Delete("/", s.handleDeleteRepo)
 							r.Get("/branches", s.handleListBranches)
 							r.Get("/commits", s.handleListCommits)
+							r.Get("/commits/{sha}", s.handleGetCommit)
 							r.Get("/contents", s.handleGetContents)
 							r.Route("/policies", func(r chi.Router) {
 								r.Get("/", s.handleListBranchPolicies)
@@ -120,8 +122,11 @@ func (s *Server) setupRoutes() {
 								r.Route("/{number}", func(r chi.Router) {
 									r.Get("/", s.handleGetPull)
 									r.Get("/diff", s.handleGetPullDiff)
+									r.Get("/commits", s.handleListPullCommits)
 									r.Get("/comments", s.handleListPullComments)
 									r.Post("/comments", s.handleCreatePullComment)
+									r.Get("/line-comments", s.handleListLineComments)
+									r.Post("/line-comments", s.handleCreateLineComment)
 									r.Get("/reviews", s.handleListPullReviews)
 									r.Post("/reviews", s.handleCreatePullReview)
 									r.Post("/merge", s.handleMergePull)

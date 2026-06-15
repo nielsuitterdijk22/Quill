@@ -5,10 +5,48 @@ import Link from "next/link";
 
 import type { Commit, ContentEntry } from "../lib/api";
 
-
 // repoBase is the URL prefix for a repository's pages.
 export function repoBase(org: string, repo: string): string {
-  return `/orgs/${encodeURIComponent(org)}/${encodeURIComponent(repo)}`;
+  return `/orgs/${encodeURIComponent(org)}/repos/${encodeURIComponent(repo)}`;
+}
+
+// cloneHttpUrl builds the public HTTPS git URL for a repository, used by the
+// clone widget. owner/name fall back to the org/repo slugs when Forgejo hasn't
+// reported them.
+export function cloneHttpUrl(
+  publicUrl: string | undefined,
+  owner: string | undefined,
+  name: string | undefined,
+  org: string,
+  repo: string,
+): string {
+  const base = (publicUrl ?? "http://localhost:3000").replace(/\/+$/, "");
+  return `${base}/${owner ?? org}/${name ?? repo}.git`;
+}
+
+// encodeRef encodes a ref for a catch-all route segment: each slash-separated
+// part is percent-encoded but the slashes are preserved so the route receives
+// the ref as multiple path segments (e.g. feature/login-page → two segments).
+export function encodeRef(ref: string): string {
+  return ref.split("/").map(encodeURIComponent).join("/");
+}
+
+// splitRef resolves a catch-all slug into a (ref, path) pair. Branch names can
+// contain slashes, so we pick the longest leading run of segments that matches a
+// known ref; anything after it is the file path. Falls back to treating the
+// first segment as the ref (covers commit SHAs and tags not in the list).
+export function splitRef(
+  slug: string[],
+  refNames: string[],
+): { ref: string; path: string } {
+  const known = new Set(refNames);
+  for (let i = slug.length; i >= 1; i--) {
+    const candidate = slug.slice(0, i).join("/");
+    if (known.has(candidate)) {
+      return { ref: candidate, path: slug.slice(i).join("/") };
+    }
+  }
+  return { ref: slug[0] ?? "", path: slug.slice(1).join("/") };
 }
 
 // treeHref links to a directory listing at a ref/path.
@@ -18,7 +56,7 @@ export function treeHref(
   ref: string,
   path = "",
 ): string {
-  const base = `${repoBase(org, repo)}/tree/${encodeURIComponent(ref)}`;
+  const base = `${repoBase(org, repo)}/tree/${encodeRef(ref)}`;
   return path ? `${base}/${encodePath(path)}` : base;
 }
 
@@ -29,16 +67,17 @@ export function blobHref(
   ref: string,
   path: string,
 ): string {
-  return `${repoBase(org, repo)}/blob/${encodeURIComponent(ref)}/${encodePath(path)}`;
+  return `${repoBase(org, repo)}/blob/${encodeRef(ref)}/${encodePath(path)}`;
+}
+
+// commitsHref links to the commit log at a ref.
+export function commitsHref(org: string, repo: string, ref: string): string {
+  return `${repoBase(org, repo)}/commits/${encodeRef(ref)}`;
 }
 
 // encodePath encodes each path segment while keeping the slashes between them.
 export function encodePath(path: string): string {
-  return path
-    .split("/")
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join("/");
+  return path.split("/").filter(Boolean).map(encodeURIComponent).join("/");
 }
 
 // humanBytes renders a byte count compactly (e.g. "1.2 KB").
@@ -81,7 +120,7 @@ export function RepoHeader({
   const base = repoBase(org, repo);
   const tabs: { key: RepoTab; label: string; href: string }[] = [
     { key: "code", label: "Code", href: treeHref(org, repo, refName) },
-    { key: "commits", label: "Commits", href: `${base}/commits/${encodeURIComponent(refName)}` },
+    { key: "commits", label: "Commits", href: commitsHref(org, repo, refName) },
     { key: "branches", label: "Branches", href: `${base}/branches` },
     { key: "pulls", label: "Pull requests", href: `${base}/pulls` },
     { key: "settings", label: "Settings", href: `${base}/settings` },
@@ -101,7 +140,11 @@ export function RepoHeader({
       </div>
       <nav className="rtabs">
         {tabs.map((t) => (
-          <Link key={t.key} href={t.href} className={t.key === active ? "active" : ""}>
+          <Link
+            key={t.key}
+            href={t.href}
+            className={t.key === active ? "active" : ""}
+          >
             {t.label}
           </Link>
         ))}
@@ -209,8 +252,18 @@ export function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
   ];
   return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 }
@@ -234,18 +287,14 @@ export function DirView({
   latest?: Commit | null;
 }) {
   const showUp = path !== "";
-  const parent = path.includes("/")
-    ? path.slice(0, path.lastIndexOf("/"))
-    : "";
+  const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   return (
     <>
       {latest && (
         <div className="commit-strip">
           <span className="mono">{shortSha(latest.sha)}</span>
           <span className="msg">{firstLine(latest.message)}</span>
-          <span className="sha">
-            {latest.authorLogin || latest.authorName}
-          </span>
+          <span className="sha">{latest.authorLogin || latest.authorName}</span>
         </div>
       )}
       <div className={`panel ${latest ? "attached" : ""}`}>

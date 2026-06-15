@@ -28,6 +28,11 @@ logs: ## Tail stack logs
 ps: ## Show stack status
 	$(COMPOSE) ps
 
+## ---- forgejo --------------------------------------------------------------
+.PHONY: forgejo
+fj-run: ## Run Forgejo locally (http://localhost:3000)
+	$(COMPOSE) up -d forgejo
+
 ## ---- backend --------------------------------------------------------------
 
 .PHONY: be-run
