@@ -990,6 +990,8 @@ async function postNoContent(
   } catch {
     return { ok: false, error: "Can't reach the Quill backend." };
   }
+}
+
 // ---- pipelines (CI) --------------------------------------------------------
 
 // PipelineRunStatus is the lifecycle state of a run, job, or step.
