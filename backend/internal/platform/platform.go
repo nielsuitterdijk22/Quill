@@ -1,7 +1,7 @@
 // Package platform contains Quill's domain services that sit above the data
 // store and the Forgejo client. They own the write-through choreography that
 // keeps Quill's Postgres metadata and Forgejo's git-side objects in agreement:
-// organizations and repositories are created in Forgejo first, then recorded in
+// projects and repositories are created in Forgejo first, then recorded in
 // Postgres, and Forgejo state is compensated (deleted) if the local transaction
 // fails.
 package platform
@@ -37,17 +37,17 @@ const (
 	VisibilityPrivate  = "private"
 )
 
-// defaultOwningTeamSlug is the team created with every org; new repos default to
-// it as their required owning team.
-const defaultOwningTeamSlug = "owners"
+// defaultTenantSlug is the seeded billing/SSO boundary every project attaches to
+// until multi-tenant management lands.
+const defaultTenantSlug = "default"
 
 // slugRe matches handles that are safe for both Quill and Forgejo: lowercase
 // alphanumerics plus '-', '_' and '.', starting alphanumeric, up to 63 chars.
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
-// reservedSlugs are handles Quill keeps for itself so org/repo slugs never
-// collide with reserved frontend routes (e.g. the "/orgs/new" create form or a
-// repo's "/new" create form).
+// reservedSlugs are handles Quill keeps for itself so project/repo slugs never
+// collide with reserved frontend routes (e.g. the "/projects/new" create form or
+// a repo's "/new" create form).
 var reservedSlugs = map[string]bool{
 	"new":      true,
 	"edit":     true,

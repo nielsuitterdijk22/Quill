@@ -33,9 +33,10 @@ func newService(t *testing.T) (*platform.Service, *store.Store) {
 	}
 	t.Cleanup(st.Close)
 	reset := func() {
-		// TRUNCATE ... CASCADE clears dependent repos/teams/members too; a plain
-		// DELETE on organizations would be blocked by repositories (ON DELETE RESTRICT).
-		_, _ = st.Pool().Exec(context.Background(), "TRUNCATE organizations, users CASCADE")
+		// TRUNCATE ... CASCADE clears dependent repos/members too; a plain DELETE
+		// on projects would be blocked by repositories (ON DELETE RESTRICT). The
+		// seeded default tenant is intentionally left in place.
+		_, _ = st.Pool().Exec(context.Background(), "TRUNCATE projects, users CASCADE")
 	}
 	reset()
 	t.Cleanup(reset)
@@ -61,75 +62,62 @@ func makeUser(t *testing.T, st *store.Store, username string) uuid.UUID {
 // actor is a non-admin platform.Actor for the given user id.
 func actor(id uuid.UUID) platform.Actor { return platform.Actor{UserID: id} }
 
-func TestCreateOrgProvisionsTeamAndMembership(t *testing.T) {
+func TestCreateProjectProvisionsMembership(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 
-	org, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: "Acme", Name: "Acme Inc"})
+	project, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "Acme", Name: "Acme Inc"})
 	if err != nil {
-		t.Fatalf("create org: %v", err)
+		t.Fatalf("create project: %v", err)
 	}
-	if org.Slug != "acme" {
-		t.Fatalf("slug should be normalised to lowercase, got %q", org.Slug)
+	if project.Slug != "acme" {
+		t.Fatalf("slug should be normalised to lowercase, got %q", project.Slug)
 	}
 
-	// Default owning team exists.
-	team, err := st.GetTeamBySlug(ctx, db.GetTeamBySlugParams{OrgID: org.ID, Lower: "owners"})
+	// Creator is the sole project owner.
+	members, err := st.ListProjectMembers(ctx, project.ID)
 	if err != nil {
-		t.Fatalf("expected default owners team: %v", err)
+		t.Fatalf("list project members: %v", err)
 	}
-
-	// Creator is an org owner and a maintainer of the owners team.
-	orgMembers, err := st.ListOrgMembers(ctx, org.ID)
-	if err != nil {
-		t.Fatalf("list org members: %v", err)
-	}
-	if len(orgMembers) != 1 || orgMembers[0].ID != creator || orgMembers[0].MemberRole != "owner" {
-		t.Fatalf("creator should be sole org owner, got %+v", orgMembers)
-	}
-	teamMembers, err := st.ListTeamMembers(ctx, team.ID)
-	if err != nil {
-		t.Fatalf("list team members: %v", err)
-	}
-	if len(teamMembers) != 1 || teamMembers[0].ID != creator || teamMembers[0].MemberRole != "maintainer" {
-		t.Fatalf("creator should maintain owners team, got %+v", teamMembers)
+	if len(members) != 1 || members[0].ID != creator || members[0].MemberRole != "owner" {
+		t.Fatalf("creator should be sole project owner, got %+v", members)
 	}
 }
 
-func TestCreateOrgRejectsDuplicateSlug(t *testing.T) {
+func TestCreateProjectRejectsDuplicateSlug(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 
-	if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: "acme"}); err != nil {
+	if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "acme"}); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 	// Case-insensitive duplicate must conflict.
-	if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: "ACME"}); !errors.Is(err, platform.ErrConflict) {
+	if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "ACME"}); !errors.Is(err, platform.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
 }
 
-func TestCreateOrgValidatesSlug(t *testing.T) {
+func TestCreateProjectValidatesSlug(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 
 	for _, bad := range []string{"", "-bad", "has space", "_underscore"} {
-		if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: bad}); !errors.Is(err, platform.ErrInvalidInput) {
+		if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: bad}); !errors.Is(err, platform.ErrInvalidInput) {
 			t.Fatalf("slug %q: expected ErrInvalidInput, got %v", bad, err)
 		}
 	}
 }
 
-func TestCreateRepoUnderOrg(t *testing.T) {
+func TestCreateRepoUnderProject(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
-	org, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: "acme"})
+	project, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "acme"})
 	if err != nil {
-		t.Fatalf("create org: %v", err)
+		t.Fatalf("create project: %v", err)
 	}
 
 	repo, err := svc.CreateRepo(ctx, actor(creator), "acme", platform.CreateRepoInput{Slug: "Widget", Name: "Widget"})
@@ -145,17 +133,11 @@ func TestCreateRepoUnderOrg(t *testing.T) {
 	if repo.DefaultBranch != "main" {
 		t.Fatalf("default branch should be main, got %q", repo.DefaultBranch)
 	}
-	if repo.OrgID != org.ID {
-		t.Fatalf("repo org mismatch")
+	if repo.ProjectID != project.ID {
+		t.Fatalf("repo project mismatch")
 	}
 
-	// Owning team defaults to owners.
-	owners, _ := st.GetTeamBySlug(ctx, db.GetTeamBySlugParams{OrgID: org.ID, Lower: "owners"})
-	if repo.OwningTeamID != owners.ID {
-		t.Fatalf("repo should be owned by owners team")
-	}
-
-	_, repos, err := svc.ListReposByOrg(ctx, actor(creator), "acme", 0, 0)
+	_, repos, err := svc.ListReposByProject(ctx, actor(creator), "acme", 0, 0)
 	if err != nil {
 		t.Fatalf("list repos: %v", err)
 	}
@@ -164,7 +146,7 @@ func TestCreateRepoUnderOrg(t *testing.T) {
 	}
 }
 
-func TestCreateRepoRejectsUnknownOrg(t *testing.T) {
+func TestCreateRepoRejectsUnknownProject(t *testing.T) {
 	svc, st := newService(t)
 	creator := makeUser(t, st, "alice")
 	if _, err := svc.CreateRepo(context.Background(), actor(creator), "ghost", platform.CreateRepoInput{Slug: "x"}); !errors.Is(err, platform.ErrNotFound) {
@@ -176,8 +158,8 @@ func TestCreateRepoRejectsDuplicate(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
-	if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: "acme"}); err != nil {
-		t.Fatalf("create org: %v", err)
+	if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+		t.Fatalf("create project: %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, actor(creator), "acme", platform.CreateRepoInput{Slug: "widget"}); err != nil {
 		t.Fatalf("first repo: %v", err)
@@ -187,34 +169,21 @@ func TestCreateRepoRejectsDuplicate(t *testing.T) {
 	}
 }
 
-func TestCreateRepoRejectsUnknownTeam(t *testing.T) {
-	svc, st := newService(t)
-	ctx := context.Background()
-	creator := makeUser(t, st, "alice")
-	if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: "acme"}); err != nil {
-		t.Fatalf("create org: %v", err)
-	}
-	_, err := svc.CreateRepo(ctx, actor(creator), "acme", platform.CreateRepoInput{Slug: "widget", OwningTeamSlug: "ghosts"})
-	if !errors.Is(err, platform.ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput for unknown team, got %v", err)
-	}
-}
-
-func TestOrgAccessRequiresMembership(t *testing.T) {
+func TestProjectAccessRequiresMembership(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	owner := makeUser(t, st, "alice")
 	outsider := makeUser(t, st, "mallory")
-	if _, err := svc.CreateOrg(ctx, owner, platform.CreateOrgInput{Slug: "acme"}); err != nil {
-		t.Fatalf("create org: %v", err)
+	if _, err := svc.CreateProject(ctx, owner, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+		t.Fatalf("create project: %v", err)
 	}
 
 	// A non-member is denied reads and writes.
-	if _, err := svc.GetOrg(ctx, actor(outsider), "acme"); !errors.Is(err, platform.ErrForbidden) {
-		t.Fatalf("outsider GetOrg: expected ErrForbidden, got %v", err)
+	if _, err := svc.GetProject(ctx, actor(outsider), "acme"); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("outsider GetProject: expected ErrForbidden, got %v", err)
 	}
-	if _, _, err := svc.ListReposByOrg(ctx, actor(outsider), "acme", 0, 0); !errors.Is(err, platform.ErrForbidden) {
-		t.Fatalf("outsider ListReposByOrg: expected ErrForbidden, got %v", err)
+	if _, _, err := svc.ListReposByProject(ctx, actor(outsider), "acme", 0, 0); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("outsider ListReposByProject: expected ErrForbidden, got %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, actor(outsider), "acme", platform.CreateRepoInput{Slug: "secret"}); !errors.Is(err, platform.ErrForbidden) {
 		t.Fatalf("outsider CreateRepo: expected ErrForbidden, got %v", err)
@@ -222,13 +191,13 @@ func TestOrgAccessRequiresMembership(t *testing.T) {
 
 	// A platform admin bypasses membership.
 	admin := platform.Actor{UserID: outsider, IsAdmin: true}
-	if _, err := svc.GetOrg(ctx, admin, "acme"); err != nil {
-		t.Fatalf("admin GetOrg: %v", err)
+	if _, err := svc.GetProject(ctx, admin, "acme"); err != nil {
+		t.Fatalf("admin GetProject: %v", err)
 	}
 
-	// Unknown org resolves before the membership check, surfacing ErrNotFound.
-	if _, err := svc.GetOrg(ctx, actor(outsider), "ghost"); !errors.Is(err, platform.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound for unknown org, got %v", err)
+	// Unknown project resolves before the membership check, surfacing ErrNotFound.
+	if _, err := svc.GetProject(ctx, actor(outsider), "ghost"); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown project, got %v", err)
 	}
 }
 
@@ -237,8 +206,8 @@ func TestBrowseAuthorizationAndAvailability(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, st, "alice")
 	outsider := makeUser(t, st, "mallory")
-	if _, err := svc.CreateOrg(ctx, owner, platform.CreateOrgInput{Slug: "acme"}); err != nil {
-		t.Fatalf("create org: %v", err)
+	if _, err := svc.CreateProject(ctx, owner, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+		t.Fatalf("create project: %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, actor(owner), "acme", platform.CreateRepoInput{Slug: "widget"}); err != nil {
 		t.Fatalf("create repo: %v", err)
@@ -274,12 +243,12 @@ func TestBrowseAuthorizationAndAvailability(t *testing.T) {
 	}
 }
 
-func TestCreateOrgRejectsReservedSlug(t *testing.T) {
+func TestCreateProjectRejectsReservedSlug(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 	for _, reserved := range []string{"new", "settings", "api"} {
-		if _, err := svc.CreateOrg(ctx, creator, platform.CreateOrgInput{Slug: reserved}); !errors.Is(err, platform.ErrInvalidInput) {
+		if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: reserved}); !errors.Is(err, platform.ErrInvalidInput) {
 			t.Fatalf("reserved slug %q: expected ErrInvalidInput, got %v", reserved, err)
 		}
 	}
@@ -287,17 +256,17 @@ func TestCreateOrgRejectsReservedSlug(t *testing.T) {
 
 func ptr[T any](v T) *T { return &v }
 
-// seedRepo creates an org owned by a fresh user plus a repository in it, and
+// seedRepo creates an project owned by a fresh user plus a repository in it, and
 // returns the owner id. Forgejo is disabled in these tests, so updates and
 // deletes exercise the metadata path only.
-func seedRepo(t *testing.T, svc *platform.Service, st *store.Store, orgSlug, repoSlug string) uuid.UUID {
+func seedRepo(t *testing.T, svc *platform.Service, st *store.Store, projectSlug, repoSlug string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	owner := makeUser(t, st, "owner-"+orgSlug+"-"+repoSlug)
-	if _, err := svc.CreateOrg(ctx, owner, platform.CreateOrgInput{Slug: orgSlug}); err != nil {
-		t.Fatalf("create org: %v", err)
+	owner := makeUser(t, st, "owner-"+projectSlug+"-"+repoSlug)
+	if _, err := svc.CreateProject(ctx, owner, platform.CreateProjectInput{Slug: projectSlug}); err != nil {
+		t.Fatalf("create project: %v", err)
 	}
-	if _, err := svc.CreateRepo(ctx, actor(owner), orgSlug, platform.CreateRepoInput{Slug: repoSlug, Name: repoSlug}); err != nil {
+	if _, err := svc.CreateRepo(ctx, actor(owner), projectSlug, platform.CreateRepoInput{Slug: repoSlug, Name: repoSlug}); err != nil {
 		t.Fatalf("create repo: %v", err)
 	}
 	return owner
@@ -413,11 +382,11 @@ func TestUpdateRepoRequiresOwner(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	owner := seedRepo(t, svc, st, "acme", "widget")
-	org, _ := st.GetOrganizationBySlug(ctx, "acme")
+	project, _ := st.GetProjectBySlug(ctx, "acme")
 
 	// A plain (non-owner) member may not change settings.
 	member := makeUser(t, st, "bob")
-	if err := st.AddOrgMember(ctx, db.AddOrgMemberParams{OrgID: org.ID, UserID: member, Role: "member"}); err != nil {
+	if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: project.ID, UserID: member, Role: "member"}); err != nil {
 		t.Fatalf("add member: %v", err)
 	}
 	if _, err := svc.UpdateRepo(ctx, actor(member), "acme", "widget", platform.UpdateRepoInput{Description: ptr("nope")}); !errors.Is(err, platform.ErrForbidden) {
@@ -454,7 +423,7 @@ func TestDeleteRepoCascadesPolicies(t *testing.T) {
 	if _, err := svc.GetRepo(ctx, actor(owner), "acme", "widget"); !errors.Is(err, platform.ErrNotFound) {
 		t.Fatalf("repo should be gone, got %v", err)
 	}
-	_, repos, err := svc.ListReposByOrg(ctx, actor(owner), "acme", 0, 0)
+	_, repos, err := svc.ListReposByProject(ctx, actor(owner), "acme", 0, 0)
 	if err != nil {
 		t.Fatalf("list repos: %v", err)
 	}

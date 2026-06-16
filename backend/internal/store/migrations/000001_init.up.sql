@@ -1,8 +1,12 @@
 -- Quill core schema.
 --
--- Identity, namespaces, ownership, and audit. Forgejo owns git; these tables hold
--- the platform metadata Forgejo can't. Case-insensitive uniqueness is enforced
--- with lower() indexes (no citext extension), and the store normalizes on write.
+-- Identity, tenancy, namespaces, ownership, and audit. Forgejo owns git; these
+-- tables hold the platform metadata Forgejo can't. The model is intentionally
+-- flat for the MVP: Tenant > Project > Resource (repositories / pipelines).
+-- A tenant is the billing / SSO boundary; a project is a team/app namespace and
+-- can own multiple repositories and pipelines. Case-insensitive uniqueness is
+-- enforced with lower() indexes (no citext extension); the store normalizes on
+-- write.
 
 BEGIN;
 
@@ -49,68 +53,59 @@ CREATE INDEX auth_identities_user_id_idx ON auth_identities (user_id);
 CREATE TRIGGER auth_identities_set_updated_at BEFORE UPDATE ON auth_identities
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- ---- organizations: top-level namespaces -----------------------------------
--- parent_id is reserved for nested groups later; it is NULL for flat orgs today.
-CREATE TABLE organizations (
+-- ---- tenants: billing / SSO boundary ---------------------------------------
+-- The top of the hierarchy. A tenant owns projects and is where billing and SSO
+-- configuration will hang off later. The MVP ships a single seeded 'default'
+-- tenant and has no tenant-management UI yet.
+CREATE TABLE tenants (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug        text NOT NULL,
+  name        text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX tenants_slug_lower_idx ON tenants (lower(slug));
+CREATE TRIGGER tenants_set_updated_at BEFORE UPDATE ON tenants
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- The default tenant every project attaches to until multi-tenant UI lands.
+INSERT INTO tenants (slug, name) VALUES ('default', 'Default');
+
+-- ---- projects: team/app namespaces under a tenant --------------------------
+-- A project groups repositories and pipelines for one team or app. The slug is
+-- globally unique because a project maps 1:1 to a Forgejo org, whose handle
+-- lives in a single global namespace.
+CREATE TABLE projects (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id        uuid NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
   slug             text NOT NULL,
   name             text NOT NULL,
   description      text NOT NULL DEFAULT '',
-  parent_id        uuid REFERENCES organizations(id) ON DELETE RESTRICT,
   forgejo_org_name text,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX organizations_slug_lower_idx ON organizations (lower(slug));
-CREATE INDEX organizations_parent_id_idx ON organizations (parent_id);
-CREATE TRIGGER organizations_set_updated_at BEFORE UPDATE ON organizations
+CREATE UNIQUE INDEX projects_slug_lower_idx ON projects (lower(slug));
+CREATE INDEX projects_tenant_id_idx ON projects (tenant_id);
+CREATE TRIGGER projects_set_updated_at BEFORE UPDATE ON projects
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- ---- org membership --------------------------------------------------------
-CREATE TABLE org_members (
-  org_id     uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+-- ---- project membership ----------------------------------------------------
+CREATE TABLE project_members (
+  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role       text NOT NULL DEFAULT 'member', -- 'owner' | 'member'
   created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (org_id, user_id)
+  PRIMARY KEY (project_id, user_id)
 );
-CREATE INDEX org_members_user_id_idx ON org_members (user_id);
+CREATE INDEX project_members_user_id_idx ON project_members (user_id);
 
--- ---- teams: access + ownership unit within an org --------------------------
-CREATE TABLE teams (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id      uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  slug        text NOT NULL,
-  name        text NOT NULL,
-  description text NOT NULL DEFAULT '',
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now(),
-  -- composite uniqueness lets repositories pin "owning team is in this org".
-  UNIQUE (id, org_id)
-);
-CREATE UNIQUE INDEX teams_org_slug_lower_idx ON teams (org_id, lower(slug));
-CREATE INDEX teams_org_id_idx ON teams (org_id);
-CREATE TRIGGER teams_set_updated_at BEFORE UPDATE ON teams
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- ---- team membership -------------------------------------------------------
-CREATE TABLE team_members (
-  team_id    uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-  user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role       text NOT NULL DEFAULT 'member', -- 'maintainer' | 'member'
-  created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (team_id, user_id)
-);
-CREATE INDEX team_members_user_id_idx ON team_members (user_id);
-
--- ---- repositories: every repo has a required owning team -------------------
--- ownership-as-data: owning_team_id is NOT NULL and (with the composite FK) must
--- belong to the repo's org. RESTRICT keeps orgs/teams from being deleted out
--- from under live repos.
+-- ---- repositories: a project owns many repos -------------------------------
+-- ownership-as-data: project_id is NOT NULL and RESTRICT keeps a project from
+-- being deleted out from under live repos.
 CREATE TABLE repositories (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id          uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  owning_team_id  uuid NOT NULL,
+  project_id      uuid NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
   slug            text NOT NULL,
   name            text NOT NULL,
   description     text NOT NULL DEFAULT '',
@@ -121,12 +116,10 @@ CREATE TABLE repositories (
   forgejo_owner   text,
   forgejo_name    text,
   created_at      timestamptz NOT NULL DEFAULT now(),
-  updated_at      timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (owning_team_id, org_id) REFERENCES teams (id, org_id) ON DELETE RESTRICT
+  updated_at      timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX repositories_org_slug_lower_idx ON repositories (org_id, lower(slug));
-CREATE INDEX repositories_org_id_idx ON repositories (org_id);
-CREATE INDEX repositories_owning_team_id_idx ON repositories (owning_team_id);
+CREATE UNIQUE INDEX repositories_project_slug_lower_idx ON repositories (project_id, lower(slug));
+CREATE INDEX repositories_project_id_idx ON repositories (project_id);
 CREATE TRIGGER repositories_set_updated_at BEFORE UPDATE ON repositories
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 

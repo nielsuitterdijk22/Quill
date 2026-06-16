@@ -64,8 +64,8 @@ type TriggerInput struct {
 // ListPipelines returns the repository's workflow files (from .github/workflows)
 // joined with any persisted pipeline + its most recent run, so the overview can
 // show CI status even for workflows that have never run.
-func (s *Service) ListPipelines(ctx context.Context, actor Actor, orgSlug, repoSlug string) (db.Repository, []PipelineSummary, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListPipelines(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []PipelineSummary, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -106,8 +106,8 @@ func (s *Service) ListPipelines(ctx context.Context, actor Actor, orgSlug, repoS
 }
 
 // ListRuns returns the most recent runs across every pipeline in a repository.
-func (s *Service) ListRuns(ctx context.Context, actor Actor, orgSlug, repoSlug string) (db.Repository, []db.PipelineRun, error) {
-	repo, _, _, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, false)
+func (s *Service) ListRuns(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []db.PipelineRun, error) {
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -120,8 +120,8 @@ func (s *Service) ListRuns(ctx context.Context, actor Actor, orgSlug, repoSlug s
 
 // GetRun returns a single run (by its per-pipeline run number) with its full
 // job/step tree.
-func (s *Service) GetRun(ctx context.Context, actor Actor, orgSlug, repoSlug, workflowPath string, runNumber int) (db.Repository, RunDetail, error) {
-	repo, _, _, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, false)
+func (s *Service) GetRun(ctx context.Context, actor Actor, projectSlug, repoSlug, workflowPath string, runNumber int) (db.Repository, RunDetail, error) {
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
 		return db.Repository{}, RunDetail{}, err
 	}
@@ -157,10 +157,10 @@ func (s *Service) GetRun(ctx context.Context, actor Actor, orgSlug, repoSlug, wo
 
 // ---- triggering ------------------------------------------------------------
 
-// TriggerRun runs a workflow for an authorized org member. It reads the workflow
+// TriggerRun runs a workflow for an authorized project member. It reads the workflow
 // YAML from git, executes it through the runner, and records the run tree.
-func (s *Service) TriggerRun(ctx context.Context, actor Actor, orgSlug, repoSlug string, in TriggerInput) (db.Repository, db.PipelineRun, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) TriggerRun(ctx context.Context, actor Actor, projectSlug, repoSlug string, in TriggerInput) (db.Repository, db.PipelineRun, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, db.PipelineRun{}, err
 	}
@@ -408,20 +408,20 @@ func toTS(t time.Time) pgtype.Timestamptz {
 
 // resolveRepoForWebhook resolves the repository a Forgejo webhook targets by its
 // Forgejo owner/name, returning the Quill repo plus its Forgejo target. It scans
-// the repos in each org because Forgejo's owner is an org-level name; the set of
-// orgs/repos is small for the PoC.
+// the repos in each project because Forgejo's owner is a project-level name; the set of
+// projects/repos is small for the PoC.
 func (s *Service) resolveRepoForWebhook(ctx context.Context, owner, name string) (db.Repository, string, string, error) {
-	orgs, err := s.store.ListOrganizations(ctx, db.ListOrganizationsParams{Limit: 500, Offset: 0})
+	projects, err := s.store.ListProjects(ctx, db.ListProjectsParams{Limit: 500, Offset: 0})
 	if err != nil {
-		return db.Repository{}, "", "", fmt.Errorf("list orgs: %w", err)
+		return db.Repository{}, "", "", fmt.Errorf("list projects: %w", err)
 	}
-	for _, org := range orgs {
-		repos, err := s.store.ListRepositoriesByOrg(ctx, db.ListRepositoriesByOrgParams{OrgID: org.ID, Limit: 500, Offset: 0})
+	for _, project := range projects {
+		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 500, Offset: 0})
 		if err != nil {
 			return db.Repository{}, "", "", fmt.Errorf("list repos: %w", err)
 		}
 		for _, repo := range repos {
-			fo, fn, ok := forgejoTarget(repo, org)
+			fo, fn, ok := forgejoTarget(repo, project)
 			if ok && strings.EqualFold(fo, owner) && strings.EqualFold(fn, name) {
 				return repo, fo, fn, nil
 			}

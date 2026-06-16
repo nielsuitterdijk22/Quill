@@ -1,8 +1,8 @@
 -- name: CreateRepository :one
 INSERT INTO repositories (
-  org_id, owning_team_id, slug, name, description, visibility, default_branch
+  project_id, slug, name, description, visibility, default_branch
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetRepositoryByID :one
@@ -10,18 +10,13 @@ SELECT * FROM repositories WHERE id = $1;
 
 -- name: GetRepositoryBySlug :one
 SELECT * FROM repositories
-WHERE org_id = $1 AND lower(slug) = lower($2);
+WHERE project_id = $1 AND lower(slug) = lower($2);
 
--- name: ListRepositoriesByOrg :many
+-- name: ListRepositoriesByProject :many
 SELECT * FROM repositories
-WHERE org_id = $1
+WHERE project_id = $1
 ORDER BY slug
 LIMIT $2 OFFSET $3;
-
--- name: ListRepositoriesByTeam :many
-SELECT * FROM repositories
-WHERE owning_team_id = $1
-ORDER BY slug;
 
 -- name: SetRepositoryForgejoLink :one
 UPDATE repositories

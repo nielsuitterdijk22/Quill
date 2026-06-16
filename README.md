@@ -4,8 +4,8 @@
 requests, branch policies, and pipelines — built as a clean layer on top of
 [Forgejo](https://forgejo.org/). Forgejo runs as a separate service and owns git
 storage and low-level repo/PR operations; Quill wraps its REST API and adds the
-platform layer (orgs, teams, branch policies, pipelines, pluggable auth) with its
-own Postgres for metadata.
+platform layer (tenants, projects, branch policies, pipelines, pluggable auth)
+with its own Postgres for metadata.
 
 Quill is the home for two companion tools that surface inside it:
 
@@ -29,14 +29,17 @@ Quill is the home for two companion tools that surface inside it:
 ```
 
 - **Forgejo is wrapped, never forked.** All git/repo/PR primitives go through its
-  REST API. Quill stores only what Forgejo can't: orgs/teams, ownership, branch
-  policies, pipeline config, and auth identity mapping.
+  REST API. Quill stores only what Forgejo can't: tenants, projects, ownership,
+  branch policies, pipeline config, and auth identity mapping.
 - **Auth is abstracted.** A local username/password provider issues Quill JWTs
   today; Keycloak / Entra / GitHub OIDC drop in behind the same `AuthProvider`
   interface later.
-- **Namespaces are shallow.** Org → Repo with Teams and an explicit owning team.
-  The schema supports nesting (`parent_id`) so groups can be enabled later
-  without a painful migration; discovery is handled by the catalog (Yaly).
+- **A flat MVP model: Tenant → Project → Resource.** A **Tenant** is the billing
+  and SSO boundary; a **Project** is a team/app namespace that owns repositories
+  and pipelines; **Resources** (repos, pipelines) live directly under a project.
+  Each project maps 1:1 to a Forgejo org. The cross-cutting views (Repositories,
+  Pull requests, Pipelines) are scoped to the current project, chosen via the
+  switcher in the top-left under the signed-in user.
 
 ## Repository layout
 
@@ -100,7 +103,7 @@ Foundation-first; each item is one focused PR.
 - [x] **PR 2 — Postgres schema & store** (migrations, sqlc, core tables)
 - [x] **PR 3 — Auth abstraction + local provider** (JWT, middleware, login)
 - [x] **PR 4 — Forgejo integration** (admin client, provisioning, identity map)
-- [x] **PR 5 — Org & repo browsing** (orgs, repos, file tree, branches, commits)
+- [x] **PR 5 — Project & repo browsing** (projects, repos, file tree, branches, commits)
 - [x] **PR 6 — Pull requests** (list/create/view, diff, review, merge)
 - [x] **PR 7 — Branch policies** (protected branches, required reviews, merge gate)
 - [ ] **PR 8 — Pipelines** (runner integration, runs, logs, status checks)

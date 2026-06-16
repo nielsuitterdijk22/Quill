@@ -1,37 +1,14 @@
--- name: AddOrgMember :exec
-INSERT INTO org_members (org_id, user_id, role)
+-- name: AddProjectMember :exec
+INSERT INTO project_members (project_id, user_id, role)
 VALUES ($1, $2, $3)
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role;
+ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role;
 
--- name: RemoveOrgMember :exec
-DELETE FROM org_members WHERE org_id = $1 AND user_id = $2;
+-- name: RemoveProjectMember :exec
+DELETE FROM project_members WHERE project_id = $1 AND user_id = $2;
 
--- name: ListOrgMembers :many
+-- name: ListProjectMembers :many
 SELECT u.*, m.role AS member_role
-FROM org_members m
+FROM project_members m
 JOIN users u ON u.id = m.user_id
-WHERE m.org_id = $1
+WHERE m.project_id = $1
 ORDER BY u.username;
-
--- name: AddTeamMember :exec
-INSERT INTO team_members (team_id, user_id, role)
-VALUES ($1, $2, $3)
-ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role;
-
--- name: RemoveTeamMember :exec
-DELETE FROM team_members WHERE team_id = $1 AND user_id = $2;
-
--- name: ListTeamMembers :many
-SELECT u.*, m.role AS member_role
-FROM team_members m
-JOIN users u ON u.id = m.user_id
-WHERE m.team_id = $1
-ORDER BY u.username;
-
--- name: ListTeamsByUser :many
-SELECT t.*, o.slug AS org_slug, o.name AS org_name, m.role AS member_role
-FROM team_members m
-JOIN teams t ON t.id = m.team_id
-JOIN organizations o ON o.id = t.org_id
-WHERE m.user_id = $1
-ORDER BY o.slug, t.slug;

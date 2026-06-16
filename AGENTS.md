@@ -7,12 +7,15 @@ file orients automated contributors. Keep changes small, typed, and tested.
 
 - **Forgejo is wrapped, never forked.** Git/repo/PR primitives go through Forgejo's
   REST API (`internal/forgejo`, added in PR 4). Quill's Postgres holds only the
-  platform metadata Forgejo can't: orgs/teams, ownership, branch policies,
+  platform metadata Forgejo can't: tenants, projects, ownership, branch policies,
   pipelines, and auth identity mapping.
 - **Auth stays behind an interface.** Never call a specific provider directly;
   go through `AuthProvider` (PR 3) so OIDC providers drop in later.
-- **Namespaces are shallow but nest-ready.** Org → Repo + Teams + owning team.
-  The `namespace` table carries `parent_id`; don't hardcode a flat assumption.
+- **Flat MVP model: Tenant → Project → Resource.** A Tenant is the billing/SSO
+  boundary; a Project is a team/app namespace that owns repositories and
+  pipelines directly (no teams layer). Each project maps 1:1 to a Forgejo org.
+  Cross-cutting views filter by the current project (sidebar switcher, cookie
+  `quill_current_project`).
 - **One shared design system.** Style with the classes in
   `frontend/app/globals.css` (ported from Forge). Don't add Tailwind or inline
   ad-hoc styles; extend the system with new classes instead.

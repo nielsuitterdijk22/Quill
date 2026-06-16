@@ -1,5 +1,6 @@
 import { Sidebar } from "../components/Sidebar";
-import { requireSession } from "../lib/session";
+import { getToken, requireSession } from "../lib/session";
+import { resolveCurrentProject } from "../lib/projects";
 
 // AppLayout is the authenticated shell: a fixed sidebar plus the page body.
 // requireSession gates every route in this group, redirecting to /login when
@@ -11,10 +12,16 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await requireSession();
+  const token = getToken();
+  const resolved = token ? await resolveCurrentProject(token) : null;
 
   return (
     <div className="app">
-      <Sidebar user={user} />
+      <Sidebar
+        user={user}
+        projects={resolved?.projects ?? []}
+        currentProject={resolved?.current.slug ?? null}
+      />
       <main className="main">{children}</main>
     </div>
   );

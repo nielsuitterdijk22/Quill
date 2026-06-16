@@ -100,7 +100,7 @@ func (s *Server) setupRoutes() {
 			})
 		})
 
-		// Organizations and repositories require authentication.
+		// Projects and repositories require authentication.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
 			r.Get("/me/pulls", s.handleListMyPulls)
@@ -108,21 +108,12 @@ func (s *Server) setupRoutes() {
 			r.Post("/me/git-token", s.handleCreateGitToken)
 			r.Get("/me/git-tokens", s.handleListGitTokens)
 			r.Delete("/me/git-tokens/{id}", s.handleRevokeGitToken)
-			r.Get("/me/teams", s.handleListMyTeams)
-			r.Route("/orgs", func(r chi.Router) {
-				r.Get("/", s.handleListOrgs)
-				r.Post("/", s.handleCreateOrg)
+			r.Get("/me/projects", s.handleListMyProjects)
+			r.Route("/projects", func(r chi.Router) {
+				r.Get("/", s.handleListProjects)
+				r.Post("/", s.handleCreateProject)
 				r.Route("/{slug}", func(r chi.Router) {
-					r.Get("/", s.handleGetOrg)
-					r.Route("/teams", func(r chi.Router) {
-						r.Get("/", s.handleListTeams)
-						r.Post("/", s.handleCreateTeam)
-						r.Route("/{team}", func(r chi.Router) {
-							r.Get("/", s.handleGetTeam)
-							r.Post("/members", s.handleAddTeamMember)
-							r.Delete("/members/{userID}", s.handleRemoveTeamMember)
-						})
-					})
+					r.Get("/", s.handleGetProject)
 					r.Route("/repos", func(r chi.Router) {
 						r.Get("/", s.handleListRepos)
 						r.Post("/", s.handleCreateRepo)

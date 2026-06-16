@@ -97,7 +97,7 @@ type updateRepoRequest struct {
 	Archived      *bool   `json:"archived"`
 }
 
-// handleUpdateRepo changes a repository's general settings (org owners / admins).
+// handleUpdateRepo changes a repository's general settings (project owners / admins).
 func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -123,7 +123,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newRepoResponse(repo))
 }
 
-// handleDeleteRepo permanently deletes a repository (org owners / admins).
+// handleDeleteRepo permanently deletes a repository (project owners / admins).
 func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {

@@ -1,21 +1,21 @@
-import { getMeta, getOpenPullRequestCount, listOrgs, listReposByOrg, type Repo } from "../lib/api";
+import { getMeta, getOpenPullRequestCount, listProjects, listReposByProject, type Repo } from "../lib/api";
 import { getToken } from "../lib/session";
 
 export default async function DashboardPage() {
   const token = getToken();
-  const [meta, orgs] = await Promise.all([
+  const [meta, projects] = await Promise.all([
     getMeta(),
-    token ? listOrgs(token) : Promise.resolve([]),
+    token ? listProjects(token) : Promise.resolve([]),
   ]);
   const online = meta !== null;
   const forgejo = meta?.forgejo;
 
-  // Repo counts per org (and the total) drive the dashboard cards.
+  // Repo counts per project (and the total) drive the dashboard cards.
   const repoLists = token
-    ? await Promise.all(orgs.map((o) => listReposByOrg(token, o.slug)))
+    ? await Promise.all(projects.map((o) => listReposByProject(token, o.slug)))
     : [];
-  const reposByOrg = new Map<string, Repo[]>();
-  orgs.forEach((o, i) => reposByOrg.set(o.slug, repoLists[i] ?? []));
+  const reposByProject = new Map<string, Repo[]>();
+  projects.forEach((o, i) => reposByProject.set(o.slug, repoLists[i] ?? []));
   const totalRepos = repoLists.reduce((sum, list) => sum + list.length, 0);
 
   // Open PR count across all repos, aggregated server-side (best-effort; 0 on failure).
@@ -55,9 +55,9 @@ export default async function DashboardPage() {
 
       <div className="cards">
         <div className="card">
-          <div className="k">Organizations</div>
+          <div className="k">Projects</div>
           <div className="v">
-            {orgs.length} <small>total</small>
+            {projects.length} <small>total</small>
           </div>
         </div>
         <div className="card">
@@ -69,7 +69,7 @@ export default async function DashboardPage() {
         <div className="card">
           <div className="k">Open pull requests</div>
           <div className="v">
-            {totalOpenPRs} <small>across orgs</small>
+            {totalOpenPRs} <small>across projects</small>
           </div>
         </div>
         <div className="card">
@@ -81,20 +81,19 @@ export default async function DashboardPage() {
       </div>
 
       <div className="panel">
-        <h2>Organizations</h2>
-        {orgs.length === 0 ? (
+        <h2>Projects</h2>
+        {projects.length === 0 ? (
           <div className="empty">
-            No organizations yet. Create one from{" "}
-            <a href="/orgs">Organizations</a> — each is mirrored into Forgejo and
-            gets a default owning team, then you can add repositories and browse
-            their code.
+            No projects yet. Create one from{" "}
+            <a href="/projects">Projects</a> — each is mirrored into Forgejo,
+            then you can add repositories and browse their code.
           </div>
         ) : (
-          orgs.map((o) => (
-            <a className="row-item" key={o.id} href={`/orgs/${o.slug}`}>
+          projects.map((o) => (
+            <a className="row-item" key={o.id} href={`/projects/${o.slug}`}>
               <span className="nm">{o.name}</span>
               <span className="sub">
-                · {reposByOrg.get(o.slug)?.length ?? 0} repos
+                · {reposByProject.get(o.slug)?.length ?? 0} repos
               </span>
               <span className="spacer" />
               {o.forgejoOrg ? (

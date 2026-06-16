@@ -35,7 +35,7 @@ func testStore(t *testing.T) *store.Store {
 	return st
 }
 
-// TestStoreRoundTrip creates the full ownership chain (user → org → team → repo),
+// TestStoreRoundTrip creates the ownership chain (user → tenant → project → repo),
 // reads each entity back by id and by slug, and asserts the values persisted.
 func TestStoreRoundTrip(t *testing.T) {
 	st := testStore(t)
@@ -53,27 +53,23 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 	t.Cleanup(func() { cleanupUser(t, st, user.ID) })
 
-	org, err := st.CreateOrganization(ctx, db.CreateOrganizationParams{
-		Slug: "org-" + suffix,
-		Name: "Org " + suffix,
-	})
+	tenant, err := st.GetTenantBySlug(ctx, "default")
 	if err != nil {
-		t.Fatalf("create org: %v", err)
+		t.Fatalf("get default tenant: %v", err)
 	}
-	t.Cleanup(func() { cleanupOrg(t, st, org.ID) })
 
-	team, err := st.CreateTeam(ctx, db.CreateTeamParams{
-		OrgID: org.ID,
-		Slug:  "team-" + suffix,
-		Name:  "Team " + suffix,
+	project, err := st.CreateProject(ctx, db.CreateProjectParams{
+		TenantID: tenant.ID,
+		Slug:     "proj-" + suffix,
+		Name:     "Project " + suffix,
 	})
 	if err != nil {
-		t.Fatalf("create team: %v", err)
+		t.Fatalf("create project: %v", err)
 	}
+	t.Cleanup(func() { cleanupProject(t, st, project.ID) })
 
 	repo, err := st.CreateRepository(ctx, db.CreateRepositoryParams{
-		OrgID:         org.ID,
-		OwningTeamID:  team.ID,
+		ProjectID:     project.ID,
 		Slug:          "repo-" + suffix,
 		Name:          "Repo " + suffix,
 		Visibility:    "private",
@@ -88,14 +84,14 @@ func TestStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get repo by id: %v", err)
 	}
-	if got.OwningTeamID != team.ID || got.OrgID != org.ID {
-		t.Fatalf("repo ownership mismatch: org=%v team=%v", got.OrgID, got.OwningTeamID)
+	if got.ProjectID != project.ID {
+		t.Fatalf("repo ownership mismatch: project=%v", got.ProjectID)
 	}
 
-	// Read back by (org, slug); slug lookup normalizes via lower().
+	// Read back by (project, slug); slug lookup normalizes via lower().
 	bySlug, err := st.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
-		OrgID: org.ID,
-		Lower: strings.ToUpper(repo.Slug), // prove case-insensitive lookup
+		ProjectID: project.ID,
+		Lower:     strings.ToUpper(repo.Slug), // prove case-insensitive lookup
 	})
 	if err != nil {
 		t.Fatalf("get repo by slug: %v", err)
@@ -105,54 +101,54 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
-// TestOwningTeamMustBelongToRepoOrg asserts the composite foreign key blocks a
-// repository from being owned by a team in a different org (ownership-as-data).
-func TestOwningTeamMustBelongToRepoOrg(t *testing.T) {
+// TestProjectRestrictsDeleteWithRepos asserts a project carrying live repos can't
+// be deleted out from under them (ownership-as-data via ON DELETE RESTRICT).
+func TestProjectRestrictsDeleteWithRepos(t *testing.T) {
 	st := testStore(t)
 	ctx := context.Background()
 	suffix := uuid.NewString()[:8]
 
-	orgA, err := st.CreateOrganization(ctx, db.CreateOrganizationParams{Slug: "orga-" + suffix, Name: "OrgA"})
+	tenant, err := st.GetTenantBySlug(ctx, "default")
 	if err != nil {
-		t.Fatalf("create orgA: %v", err)
-	}
-	t.Cleanup(func() { cleanupOrg(t, st, orgA.ID) })
-
-	orgB, err := st.CreateOrganization(ctx, db.CreateOrganizationParams{Slug: "orgb-" + suffix, Name: "OrgB"})
-	if err != nil {
-		t.Fatalf("create orgB: %v", err)
-	}
-	t.Cleanup(func() { cleanupOrg(t, st, orgB.ID) })
-
-	teamA, err := st.CreateTeam(ctx, db.CreateTeamParams{OrgID: orgA.ID, Slug: "core-" + suffix, Name: "Core"})
-	if err != nil {
-		t.Fatalf("create teamA: %v", err)
+		t.Fatalf("get default tenant: %v", err)
 	}
 
-	// Repo in orgB owned by a team from orgA must be rejected by the composite FK.
-	_, err = st.CreateRepository(ctx, db.CreateRepositoryParams{
-		OrgID:         orgB.ID,
-		OwningTeamID:  teamA.ID,
-		Slug:          "bad-" + suffix,
-		Name:          "bad",
+	project, err := st.CreateProject(ctx, db.CreateProjectParams{
+		TenantID: tenant.ID,
+		Slug:     "proj2-" + suffix,
+		Name:     "Project2",
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	t.Cleanup(func() { cleanupProject(t, st, project.ID) })
+
+	if _, err := st.CreateRepository(ctx, db.CreateRepositoryParams{
+		ProjectID:     project.ID,
+		Slug:          "repo2-" + suffix,
+		Name:          "repo2",
 		Visibility:    "private",
 		DefaultBranch: "main",
-	})
-	if err == nil {
-		t.Fatal("expected cross-org ownership to be rejected by composite FK, got nil error")
+	}); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	// Deleting the project while it still owns a repo must be rejected by RESTRICT.
+	if _, err := st.Pool().Exec(ctx, "DELETE FROM projects WHERE id = $1", project.ID); err == nil {
+		t.Fatal("expected RESTRICT to block deleting a project with live repos, got nil error")
 	}
 }
 
-func cleanupOrg(t *testing.T, st *store.Store, id uuid.UUID) {
+func cleanupProject(t *testing.T, st *store.Store, id uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	// repositories use ON DELETE RESTRICT, so remove them before the org; teams
-	// cascade with the org.
-	if _, err := st.Pool().Exec(ctx, "DELETE FROM repositories WHERE org_id = $1", id); err != nil {
-		t.Logf("cleanup repos for org %v: %v", id, err)
+	// repositories use ON DELETE RESTRICT, so remove them before the project;
+	// project_members cascade with the project.
+	if _, err := st.Pool().Exec(ctx, "DELETE FROM repositories WHERE project_id = $1", id); err != nil {
+		t.Logf("cleanup repos for project %v: %v", id, err)
 	}
-	if _, err := st.Pool().Exec(ctx, "DELETE FROM organizations WHERE id = $1", id); err != nil {
-		t.Logf("cleanup org %v: %v", id, err)
+	if _, err := st.Pool().Exec(ctx, "DELETE FROM projects WHERE id = $1", id); err != nil {
+		t.Logf("cleanup project %v: %v", id, err)
 	}
 }
 

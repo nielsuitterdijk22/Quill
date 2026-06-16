@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-function treeHref(org: string, repo: string, ref: string, path = "") {
+function treeHref(project: string, repo: string, ref: string, path = "") {
   const slugParts = [...ref.split("/"), ...(path ? path.split("/") : [])];
 
   const slug = slugParts
@@ -10,19 +10,19 @@ function treeHref(org: string, repo: string, ref: string, path = "") {
     .map((part) => encodeURIComponent(part))
     .join("/");
 
-  return `/orgs/${encodeURIComponent(org)}/repos/${encodeURIComponent(
+  return `/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(
     repo,
   )}/tree/${slug}`;
 }
 
 export function BranchSelector({
-  org,
+  project,
   repo,
   selectedBranch,
   branches,
   path,
 }: {
-  org: string;
+  project: string;
   repo: string;
   selectedBranch: string;
   branches: string[];
@@ -40,7 +40,7 @@ export function BranchSelector({
         aria-label="Switch branch"
         value={selectedBranch}
         onChange={(e) => {
-          router.push(treeHref(org, repo, e.target.value, path));
+          router.push(treeHref(project, repo, e.target.value, path));
         }}
       >
         {branches.map((branch) => (

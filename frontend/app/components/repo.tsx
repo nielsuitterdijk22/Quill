@@ -6,22 +6,22 @@ import Link from "next/link";
 import type { Commit, ContentEntry } from "../lib/api";
 
 // repoBase is the URL prefix for a repository's pages.
-export function repoBase(org: string, repo: string): string {
-  return `/orgs/${encodeURIComponent(org)}/repos/${encodeURIComponent(repo)}`;
+export function repoBase(project: string, repo: string): string {
+  return `/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}`;
 }
 
 // cloneHttpUrl builds the public HTTPS git URL for a repository, used by the
-// clone widget. owner/name fall back to the org/repo slugs when Forgejo hasn't
+// clone widget. owner/name fall back to the project/repo slugs when Forgejo hasn't
 // reported them.
 export function cloneHttpUrl(
   publicUrl: string | undefined,
   owner: string | undefined,
   name: string | undefined,
-  org: string,
+  project: string,
   repo: string,
 ): string {
   const base = (publicUrl ?? "http://localhost:3000").replace(/\/+$/, "");
-  return `${base}/${owner ?? org}/${name ?? repo}.git`;
+  return `${base}/${owner ?? project}/${name ?? repo}.git`;
 }
 
 // encodeRef encodes a ref for a catch-all route segment: each slash-separated
@@ -51,28 +51,28 @@ export function splitRef(
 
 // treeHref links to a directory listing at a ref/path.
 export function treeHref(
-  org: string,
+  project: string,
   repo: string,
   ref: string,
   path = "",
 ): string {
-  const base = `${repoBase(org, repo)}/tree/${encodeRef(ref)}`;
+  const base = `${repoBase(project, repo)}/tree/${encodeRef(ref)}`;
   return path ? `${base}/${encodePath(path)}` : base;
 }
 
 // blobHref links to a file view at a ref/path.
 export function blobHref(
-  org: string,
+  project: string,
   repo: string,
   ref: string,
   path: string,
 ): string {
-  return `${repoBase(org, repo)}/blob/${encodeRef(ref)}/${encodePath(path)}`;
+  return `${repoBase(project, repo)}/blob/${encodeRef(ref)}/${encodePath(path)}`;
 }
 
 // commitsHref links to the commit log at a ref.
-export function commitsHref(org: string, repo: string, ref: string): string {
-  return `${repoBase(org, repo)}/commits/${encodeRef(ref)}`;
+export function commitsHref(project: string, repo: string, ref: string): string {
+  return `${repoBase(project, repo)}/commits/${encodeRef(ref)}`;
 }
 
 // encodePath encodes each path segment while keeping the slashes between them.
@@ -111,22 +111,22 @@ export type RepoTab =
 // RepoHeader renders the repo title, visibility, and the code/commits/branches/
 // pull-requests/settings tab navigation shared across every repository page.
 export function RepoHeader({
-  org,
+  project,
   repo,
   visibility,
   refName,
   active,
 }: {
-  org: string;
+  project: string;
   repo: string;
   visibility: string;
   refName: string;
   active: RepoTab;
 }) {
-  const base = repoBase(org, repo);
+  const base = repoBase(project, repo);
   const tabs: { key: RepoTab; label: string; href: string }[] = [
-    { key: "code", label: "Code", href: treeHref(org, repo, refName) },
-    { key: "commits", label: "Commits", href: commitsHref(org, repo, refName) },
+    { key: "code", label: "Code", href: treeHref(project, repo, refName) },
+    { key: "commits", label: "Commits", href: commitsHref(project, repo, refName) },
     { key: "branches", label: "Branches", href: `${base}/branches` },
     { key: "pulls", label: "Pull requests", href: `${base}/pulls` },
     { key: "pipelines", label: "Pipelines", href: `${base}/pipelines` },
@@ -135,13 +135,13 @@ export function RepoHeader({
   return (
     <>
       <div className="crumbs">
-        <Link href="/orgs">Organizations</Link> <span>/</span>{" "}
-        <Link href={`/orgs/${encodeURIComponent(org)}`}>{org}</Link>{" "}
+        <Link href="/projects">Projects</Link> <span>/</span>{" "}
+        <Link href={`/projects/${encodeURIComponent(project)}`}>{project}</Link>{" "}
         <span>/</span> <span>{repo}</span>
       </div>
       <div className="top">
         <h1>
-          {org}/<b>{repo}</b>
+          {project}/<b>{repo}</b>
         </h1>
         <VisibilityBadge visibility={visibility} />
       </div>
@@ -162,12 +162,12 @@ export function RepoHeader({
 
 // PathBreadcrumb renders a clickable path within the code browser at a ref.
 export function PathBreadcrumb({
-  org,
+  project,
   repo,
   refName,
   path,
 }: {
-  org: string;
+  project: string;
   repo: string;
   refName: string;
   path: string;
@@ -176,7 +176,7 @@ export function PathBreadcrumb({
   let acc = "";
   return (
     <div className="path-crumbs">
-      <Link href={treeHref(org, repo, refName)}>{repo}</Link>
+      <Link href={treeHref(project, repo, refName)}>{repo}</Link>
       {parts.map((part, i) => {
         acc = acc ? `${acc}/${part}` : part;
         const last = i === parts.length - 1;
@@ -186,7 +186,7 @@ export function PathBreadcrumb({
             {last ? (
               <span className="cur">{part}</span>
             ) : (
-              <Link href={treeHref(org, repo, refName, acc)}>{part}</Link>
+              <Link href={treeHref(project, repo, refName, acc)}>{part}</Link>
             )}
           </span>
         );
@@ -248,12 +248,12 @@ export function shortSha(sha: string): string {
 // BrowseError renders a non-404 browse failure (403 no-access, 502 git backend
 // unavailable, or an unreachable backend) with repository breadcrumbs.
 export function BrowseError({
-  org,
+  project,
   repo,
   status,
   message,
 }: {
-  org: string;
+  project: string;
   repo: string;
   status: number;
   message: string;
@@ -261,16 +261,16 @@ export function BrowseError({
   return (
     <>
       <div className="crumbs">
-        <Link href="/orgs">Organizations</Link> <span>/</span>{" "}
-        <Link href={`/orgs/${encodeURIComponent(org)}`}>{org}</Link>{" "}
+        <Link href="/projects">Projects</Link> <span>/</span>{" "}
+        <Link href={`/projects/${encodeURIComponent(project)}`}>{project}</Link>{" "}
         <span>/</span> <span>{repo}</span>
       </div>
       <h1>
-        {org}/{repo}
+        {project}/{repo}
       </h1>
       <div className="banner">
         {status === 403
-          ? "You are not a member of this organization."
+          ? "You are not a member of this project."
           : status === 502
             ? "The git backend is unavailable for this repository."
             : message}
@@ -310,14 +310,14 @@ export function fmtDate(iso: string): string {
 // ".." row links to the parent. An optional latest commit renders as a strip
 // attached to the top of the panel.
 export function DirView({
-  org,
+  project,
   repo,
   refName,
   path,
   entries,
   latest,
 }: {
-  org: string;
+  project: string;
   repo: string;
   refName: string;
   path: string;
@@ -339,7 +339,7 @@ export function DirView({
         {showUp && (
           <Link
             className="row-item"
-            href={treeHref(org, repo, refName, parent)}
+            href={treeHref(project, repo, refName, parent)}
           >
             <span className="tree-icon dir">⤴</span>
             <span className="nm">..</span>
@@ -353,7 +353,7 @@ export function DirView({
               <Link
                 className="row-item"
                 key={e.path}
-                href={treeHref(org, repo, refName, e.path)}
+                href={treeHref(project, repo, refName, e.path)}
               >
                 <span className="tree-icon dir">▸</span>
                 <span className="nm">{e.name}</span>
@@ -362,7 +362,7 @@ export function DirView({
               <Link
                 className="row-item"
                 key={e.path}
-                href={blobHref(org, repo, refName, e.path)}
+                href={blobHref(project, repo, refName, e.path)}
               >
                 <span className="tree-icon">▤</span>
                 <span className="nm">{e.name}</span>

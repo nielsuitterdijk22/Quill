@@ -13,49 +13,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addOrgMember = `-- name: AddOrgMember :exec
-INSERT INTO org_members (org_id, user_id, role)
+const addProjectMember = `-- name: AddProjectMember :exec
+INSERT INTO project_members (project_id, user_id, role)
 VALUES ($1, $2, $3)
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role
+ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
 `
 
-type AddOrgMemberParams struct {
-	OrgID  uuid.UUID `json:"orgId"`
-	UserID uuid.UUID `json:"userId"`
-	Role   string    `json:"role"`
+type AddProjectMemberParams struct {
+	ProjectID uuid.UUID `json:"projectId"`
+	UserID    uuid.UUID `json:"userId"`
+	Role      string    `json:"role"`
 }
 
-func (q *Queries) AddOrgMember(ctx context.Context, arg AddOrgMemberParams) error {
-	_, err := q.db.Exec(ctx, addOrgMember, arg.OrgID, arg.UserID, arg.Role)
+func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberParams) error {
+	_, err := q.db.Exec(ctx, addProjectMember, arg.ProjectID, arg.UserID, arg.Role)
 	return err
 }
 
-const addTeamMember = `-- name: AddTeamMember :exec
-INSERT INTO team_members (team_id, user_id, role)
-VALUES ($1, $2, $3)
-ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role
-`
-
-type AddTeamMemberParams struct {
-	TeamID uuid.UUID `json:"teamId"`
-	UserID uuid.UUID `json:"userId"`
-	Role   string    `json:"role"`
-}
-
-func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) error {
-	_, err := q.db.Exec(ctx, addTeamMember, arg.TeamID, arg.UserID, arg.Role)
-	return err
-}
-
-const listOrgMembers = `-- name: ListOrgMembers :many
+const listProjectMembers = `-- name: ListProjectMembers :many
 SELECT u.id, u.username, u.email, u.display_name, u.is_admin, u.is_active, u.forgejo_user_id, u.forgejo_username, u.created_at, u.updated_at, m.role AS member_role
-FROM org_members m
+FROM project_members m
 JOIN users u ON u.id = m.user_id
-WHERE m.org_id = $1
+WHERE m.project_id = $1
 ORDER BY u.username
 `
 
-type ListOrgMembersRow struct {
+type ListProjectMembersRow struct {
 	ID              uuid.UUID   `json:"id"`
 	Username        string      `json:"username"`
 	Email           string      `json:"email"`
@@ -69,15 +52,15 @@ type ListOrgMembersRow struct {
 	MemberRole      string      `json:"memberRole"`
 }
 
-func (q *Queries) ListOrgMembers(ctx context.Context, orgID uuid.UUID) ([]ListOrgMembersRow, error) {
-	rows, err := q.db.Query(ctx, listOrgMembers, orgID)
+func (q *Queries) ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ListProjectMembersRow, error) {
+	rows, err := q.db.Query(ctx, listProjectMembers, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListOrgMembersRow{}
+	items := []ListProjectMembersRow{}
 	for rows.Next() {
-		var i ListOrgMembersRow
+		var i ListProjectMembersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Username,
@@ -101,137 +84,16 @@ func (q *Queries) ListOrgMembers(ctx context.Context, orgID uuid.UUID) ([]ListOr
 	return items, nil
 }
 
-const listTeamMembers = `-- name: ListTeamMembers :many
-SELECT u.id, u.username, u.email, u.display_name, u.is_admin, u.is_active, u.forgejo_user_id, u.forgejo_username, u.created_at, u.updated_at, m.role AS member_role
-FROM team_members m
-JOIN users u ON u.id = m.user_id
-WHERE m.team_id = $1
-ORDER BY u.username
+const removeProjectMember = `-- name: RemoveProjectMember :exec
+DELETE FROM project_members WHERE project_id = $1 AND user_id = $2
 `
 
-type ListTeamMembersRow struct {
-	ID              uuid.UUID   `json:"id"`
-	Username        string      `json:"username"`
-	Email           string      `json:"email"`
-	DisplayName     string      `json:"displayName"`
-	IsAdmin         bool        `json:"isAdmin"`
-	IsActive        bool        `json:"isActive"`
-	ForgejoUserID   pgtype.Int8 `json:"forgejoUserId"`
-	ForgejoUsername pgtype.Text `json:"forgejoUsername"`
-	CreatedAt       time.Time   `json:"createdAt"`
-	UpdatedAt       time.Time   `json:"updatedAt"`
-	MemberRole      string      `json:"memberRole"`
+type RemoveProjectMemberParams struct {
+	ProjectID uuid.UUID `json:"projectId"`
+	UserID    uuid.UUID `json:"userId"`
 }
 
-func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]ListTeamMembersRow, error) {
-	rows, err := q.db.Query(ctx, listTeamMembers, teamID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListTeamMembersRow{}
-	for rows.Next() {
-		var i ListTeamMembersRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Username,
-			&i.Email,
-			&i.DisplayName,
-			&i.IsAdmin,
-			&i.IsActive,
-			&i.ForgejoUserID,
-			&i.ForgejoUsername,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.MemberRole,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTeamsByUser = `-- name: ListTeamsByUser :many
-SELECT t.id, t.org_id, t.slug, t.name, t.description, t.created_at, t.updated_at, o.slug AS org_slug, o.name AS org_name, m.role AS member_role
-FROM team_members m
-JOIN teams t ON t.id = m.team_id
-JOIN organizations o ON o.id = t.org_id
-WHERE m.user_id = $1
-ORDER BY o.slug, t.slug
-`
-
-type ListTeamsByUserRow struct {
-	ID          uuid.UUID `json:"id"`
-	OrgID       uuid.UUID `json:"orgId"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-	OrgSlug     string    `json:"orgSlug"`
-	OrgName     string    `json:"orgName"`
-	MemberRole  string    `json:"memberRole"`
-}
-
-func (q *Queries) ListTeamsByUser(ctx context.Context, userID uuid.UUID) ([]ListTeamsByUserRow, error) {
-	rows, err := q.db.Query(ctx, listTeamsByUser, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListTeamsByUserRow{}
-	for rows.Next() {
-		var i ListTeamsByUserRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrgID,
-			&i.Slug,
-			&i.Name,
-			&i.Description,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.OrgSlug,
-			&i.OrgName,
-			&i.MemberRole,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const removeOrgMember = `-- name: RemoveOrgMember :exec
-DELETE FROM org_members WHERE org_id = $1 AND user_id = $2
-`
-
-type RemoveOrgMemberParams struct {
-	OrgID  uuid.UUID `json:"orgId"`
-	UserID uuid.UUID `json:"userId"`
-}
-
-func (q *Queries) RemoveOrgMember(ctx context.Context, arg RemoveOrgMemberParams) error {
-	_, err := q.db.Exec(ctx, removeOrgMember, arg.OrgID, arg.UserID)
-	return err
-}
-
-const removeTeamMember = `-- name: RemoveTeamMember :exec
-DELETE FROM team_members WHERE team_id = $1 AND user_id = $2
-`
-
-type RemoveTeamMemberParams struct {
-	TeamID uuid.UUID `json:"teamId"`
-	UserID uuid.UUID `json:"userId"`
-}
-
-func (q *Queries) RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberParams) error {
-	_, err := q.db.Exec(ctx, removeTeamMember, arg.TeamID, arg.UserID)
+func (q *Queries) RemoveProjectMember(ctx context.Context, arg RemoveProjectMemberParams) error {
+	_, err := q.db.Exec(ctx, removeProjectMember, arg.ProjectID, arg.UserID)
 	return err
 }

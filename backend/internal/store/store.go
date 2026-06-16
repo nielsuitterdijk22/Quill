@@ -47,7 +47,7 @@ func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
 // InTx runs fn inside a transaction, committing on success and rolling back on
 // error. Use it for operations that must write several tables atomically (e.g.
-// creating an org together with its first owning team and membership).
+// creating a project together with its first membership).
 func (s *Store) InTx(ctx context.Context, fn func(q *db.Queries) error) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

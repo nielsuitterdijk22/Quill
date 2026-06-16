@@ -14,7 +14,7 @@ import (
 
 // This file holds the branch-policy endpoints added in PR 7: listing, upserting,
 // and deleting the protection rules Quill stores for a repository's branches.
-// Reads are open to org members; writes require an org owner (or platform admin)
+// Reads are open to project members; writes require a project owner (or platform admin)
 // and are enforced in the platform service.
 
 // branchPolicyResponse is the public JSON shape for a branch policy.

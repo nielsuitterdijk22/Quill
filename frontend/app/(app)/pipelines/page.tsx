@@ -3,10 +3,10 @@ import { notFound } from "next/navigation";
 
 import {
   getPipelines,
-  listReposByOrg,
+  listReposByProject,
   type PipelineRun,
 } from "../../lib/api";
-import { getDefaultOrg } from "../../lib/orgs";
+import { getCurrentProject } from "../../lib/projects";
 import { getToken } from "../../lib/session";
 import { fmtDate } from "../../components/repo";
 import { RunStatusBadge } from "../../components/pipelines";
@@ -22,13 +22,13 @@ type PipelineRow = {
 };
 
 // PipelinesOverviewPage lists every pipeline (workflow) across the repositories in
-// the user's default org, each with its source repository and latest CI status.
+// the user's default project, each with its source repository and latest CI status.
 export default async function PipelinesOverviewPage() {
   const token = getToken();
   if (!token) notFound();
 
-  const org = await getDefaultOrg();
-  if (!org) {
+  const project = await getCurrentProject();
+  if (!project) {
     return (
       <>
         <div className="top">
@@ -36,19 +36,19 @@ export default async function PipelinesOverviewPage() {
         </div>
         <div className="panel">
           <div className="empty">
-            Create an organization and a repository to start running pipelines.
+            Create a project and a repository to start running pipelines.
           </div>
         </div>
       </>
     );
   }
 
-  const repos = await listReposByOrg(token, org);
+  const repos = await listReposByProject(token, project);
 
   // Fetch each repo's workflows and flatten them into a single pipeline list.
   const perRepo = await Promise.all(
     repos.map(async (repo) => {
-      const res = await getPipelines(token, org, repo.slug);
+      const res = await getPipelines(token, project, repo.slug);
       const pipelines = res.ok ? res.data.pipelines : [];
       return pipelines.map<PipelineRow>((p) => ({
         repoSlug: repo.slug,
@@ -70,7 +70,7 @@ export default async function PipelinesOverviewPage() {
   return (
     <>
       <div className="top">
-        <h1>Pipelines in {org}</h1>
+        <h1>Pipelines in {project}</h1>
       </div>
 
       <div className="panel">
@@ -89,7 +89,7 @@ export default async function PipelinesOverviewPage() {
             <Link
               className="row-item"
               key={`${row.repoSlug}:${row.workflowPath}`}
-              href={`/orgs/${org}/repos/${row.repoSlug}/pipelines`}
+              href={`/projects/${project}/repos/${row.repoSlug}/pipelines`}
             >
               <span className="tree-icon">◇</span>
               <div className="pr-main">

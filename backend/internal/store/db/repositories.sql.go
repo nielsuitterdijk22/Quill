@@ -14,15 +14,14 @@ import (
 
 const createRepository = `-- name: CreateRepository :one
 INSERT INTO repositories (
-  org_id, owning_team_id, slug, name, description, visibility, default_branch
+  project_id, slug, name, description, visibility, default_branch
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
 `
 
 type CreateRepositoryParams struct {
-	OrgID         uuid.UUID `json:"orgId"`
-	OwningTeamID  uuid.UUID `json:"owningTeamId"`
+	ProjectID     uuid.UUID `json:"projectId"`
 	Slug          string    `json:"slug"`
 	Name          string    `json:"name"`
 	Description   string    `json:"description"`
@@ -32,8 +31,7 @@ type CreateRepositoryParams struct {
 
 func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error) {
 	row := q.db.QueryRow(ctx, createRepository,
-		arg.OrgID,
-		arg.OwningTeamID,
+		arg.ProjectID,
 		arg.Slug,
 		arg.Name,
 		arg.Description,
@@ -43,8 +41,7 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 	var i Repository
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
-		&i.OwningTeamID,
+		&i.ProjectID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -70,7 +67,7 @@ func (q *Queries) DeleteRepository(ctx context.Context, id uuid.UUID) error {
 }
 
 const getRepositoryByID = `-- name: GetRepositoryByID :one
-SELECT id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories WHERE id = $1
+SELECT id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories WHERE id = $1
 `
 
 func (q *Queries) GetRepositoryByID(ctx context.Context, id uuid.UUID) (Repository, error) {
@@ -78,8 +75,7 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id uuid.UUID) (Reposito
 	var i Repository
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
-		&i.OwningTeamID,
+		&i.ProjectID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -96,22 +92,21 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id uuid.UUID) (Reposito
 }
 
 const getRepositoryBySlug = `-- name: GetRepositoryBySlug :one
-SELECT id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories
-WHERE org_id = $1 AND lower(slug) = lower($2)
+SELECT id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories
+WHERE project_id = $1 AND lower(slug) = lower($2)
 `
 
 type GetRepositoryBySlugParams struct {
-	OrgID uuid.UUID `json:"orgId"`
-	Lower string    `json:"lower"`
+	ProjectID uuid.UUID `json:"projectId"`
+	Lower     string    `json:"lower"`
 }
 
 func (q *Queries) GetRepositoryBySlug(ctx context.Context, arg GetRepositoryBySlugParams) (Repository, error) {
-	row := q.db.QueryRow(ctx, getRepositoryBySlug, arg.OrgID, arg.Lower)
+	row := q.db.QueryRow(ctx, getRepositoryBySlug, arg.ProjectID, arg.Lower)
 	var i Repository
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
-		&i.OwningTeamID,
+		&i.ProjectID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -127,21 +122,21 @@ func (q *Queries) GetRepositoryBySlug(ctx context.Context, arg GetRepositoryBySl
 	return i, err
 }
 
-const listRepositoriesByOrg = `-- name: ListRepositoriesByOrg :many
-SELECT id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories
-WHERE org_id = $1
+const listRepositoriesByProject = `-- name: ListRepositoriesByProject :many
+SELECT id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories
+WHERE project_id = $1
 ORDER BY slug
 LIMIT $2 OFFSET $3
 `
 
-type ListRepositoriesByOrgParams struct {
-	OrgID  uuid.UUID `json:"orgId"`
-	Limit  int32     `json:"limit"`
-	Offset int32     `json:"offset"`
+type ListRepositoriesByProjectParams struct {
+	ProjectID uuid.UUID `json:"projectId"`
+	Limit     int32     `json:"limit"`
+	Offset    int32     `json:"offset"`
 }
 
-func (q *Queries) ListRepositoriesByOrg(ctx context.Context, arg ListRepositoriesByOrgParams) ([]Repository, error) {
-	rows, err := q.db.Query(ctx, listRepositoriesByOrg, arg.OrgID, arg.Limit, arg.Offset)
+func (q *Queries) ListRepositoriesByProject(ctx context.Context, arg ListRepositoriesByProjectParams) ([]Repository, error) {
+	rows, err := q.db.Query(ctx, listRepositoriesByProject, arg.ProjectID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -151,49 +146,7 @@ func (q *Queries) ListRepositoriesByOrg(ctx context.Context, arg ListRepositorie
 		var i Repository
 		if err := rows.Scan(
 			&i.ID,
-			&i.OrgID,
-			&i.OwningTeamID,
-			&i.Slug,
-			&i.Name,
-			&i.Description,
-			&i.Visibility,
-			&i.DefaultBranch,
-			&i.IsArchived,
-			&i.ForgejoRepoID,
-			&i.ForgejoOwner,
-			&i.ForgejoName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRepositoriesByTeam = `-- name: ListRepositoriesByTeam :many
-SELECT id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at FROM repositories
-WHERE owning_team_id = $1
-ORDER BY slug
-`
-
-func (q *Queries) ListRepositoriesByTeam(ctx context.Context, owningTeamID uuid.UUID) ([]Repository, error) {
-	rows, err := q.db.Query(ctx, listRepositoriesByTeam, owningTeamID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Repository{}
-	for rows.Next() {
-		var i Repository
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrgID,
-			&i.OwningTeamID,
+			&i.ProjectID,
 			&i.Slug,
 			&i.Name,
 			&i.Description,
@@ -220,7 +173,7 @@ const setRepositoryArchived = `-- name: SetRepositoryArchived :one
 UPDATE repositories
 SET is_archived = $2
 WHERE id = $1
-RETURNING id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
+RETURNING id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
 `
 
 type SetRepositoryArchivedParams struct {
@@ -233,8 +186,7 @@ func (q *Queries) SetRepositoryArchived(ctx context.Context, arg SetRepositoryAr
 	var i Repository
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
-		&i.OwningTeamID,
+		&i.ProjectID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -254,7 +206,7 @@ const setRepositoryForgejoLink = `-- name: SetRepositoryForgejoLink :one
 UPDATE repositories
 SET forgejo_repo_id = $2, forgejo_owner = $3, forgejo_name = $4
 WHERE id = $1
-RETURNING id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
+RETURNING id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
 `
 
 type SetRepositoryForgejoLinkParams struct {
@@ -274,8 +226,7 @@ func (q *Queries) SetRepositoryForgejoLink(ctx context.Context, arg SetRepositor
 	var i Repository
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
-		&i.OwningTeamID,
+		&i.ProjectID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -301,7 +252,7 @@ SET slug = $2,
     is_archived = $7,
     forgejo_name = $8
 WHERE id = $1
-RETURNING id, org_id, owning_team_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
+RETURNING id, project_id, slug, name, description, visibility, default_branch, is_archived, forgejo_repo_id, forgejo_owner, forgejo_name, created_at, updated_at
 `
 
 type UpdateRepositoryParams struct {
@@ -329,8 +280,7 @@ func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryPara
 	var i Repository
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
-		&i.OwningTeamID,
+		&i.ProjectID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,

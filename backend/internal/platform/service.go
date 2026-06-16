@@ -16,17 +16,17 @@ import (
 )
 
 // Actor is the authenticated principal performing a platform operation. Platform
-// admins bypass org membership checks; everyone else must belong to the org they
-// act on.
+// admins bypass project membership checks; everyone else must belong to the
+// project they act on.
 type Actor struct {
 	UserID  uuid.UUID
 	IsAdmin bool
 }
 
-// Service implements org and repository management on top of the store and the
-// Forgejo client. The Forgejo client may be disabled (see forgejo.Client.Enabled),
-// in which case Quill records metadata only and skips git-side provisioning so
-// local development works without a running Forgejo.
+// Service implements project and repository management on top of the store and
+// the Forgejo client. The Forgejo client may be disabled (see
+// forgejo.Client.Enabled), in which case Quill records metadata only and skips
+// git-side provisioning so local development works without a running Forgejo.
 type Service struct {
 	store   *store.Store
 	forgejo *forgejo.Client
@@ -58,16 +58,16 @@ func (s *Service) forgejoEnabled() bool {
 	return s.forgejo != nil && s.forgejo.Enabled()
 }
 
-// authorizeOrgMember returns nil when the actor is a platform admin or a member
-// of orgID, and ErrForbidden otherwise. Membership is read from the org roster;
-// rosters are small (org owners/maintainers), so a full read is acceptable here.
-func (s *Service) authorizeOrgMember(ctx context.Context, actor Actor, orgID uuid.UUID) error {
+// authorizeProjectMember returns nil when the actor is a platform admin or a
+// member of projectID, and ErrForbidden otherwise. Membership is read from the
+// project roster; rosters are small, so a full read is acceptable here.
+func (s *Service) authorizeProjectMember(ctx context.Context, actor Actor, projectID uuid.UUID) error {
 	if actor.IsAdmin {
 		return nil
 	}
-	members, err := s.store.ListOrgMembers(ctx, orgID)
+	members, err := s.store.ListProjectMembers(ctx, projectID)
 	if err != nil {
-		return fmt.Errorf("check org membership: %w", err)
+		return fmt.Errorf("check project membership: %w", err)
 	}
 	for _, m := range members {
 		if m.ID == actor.UserID {
@@ -77,16 +77,16 @@ func (s *Service) authorizeOrgMember(ctx context.Context, actor Actor, orgID uui
 	return ErrForbidden
 }
 
-// authorizeOrgAdmin returns nil when the actor is a platform admin or an owner
-// of orgID, and ErrForbidden otherwise. It gates configuration changes (such as
-// editing branch policies) that ordinary members may not perform.
-func (s *Service) authorizeOrgAdmin(ctx context.Context, actor Actor, orgID uuid.UUID) error {
+// authorizeProjectAdmin returns nil when the actor is a platform admin or an
+// owner of projectID, and ErrForbidden otherwise. It gates configuration changes
+// (such as editing branch policies) that ordinary members may not perform.
+func (s *Service) authorizeProjectAdmin(ctx context.Context, actor Actor, projectID uuid.UUID) error {
 	if actor.IsAdmin {
 		return nil
 	}
-	members, err := s.store.ListOrgMembers(ctx, orgID)
+	members, err := s.store.ListProjectMembers(ctx, projectID)
 	if err != nil {
-		return fmt.Errorf("check org membership: %w", err)
+		return fmt.Errorf("check project membership: %w", err)
 	}
 	for _, m := range members {
 		if m.ID == actor.UserID {

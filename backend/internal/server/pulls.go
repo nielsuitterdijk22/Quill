@@ -189,17 +189,17 @@ func (s *Server) handleOpenPullCount(w http.ResponseWriter, r *http.Request) {
 }
 
 // repoPullResponse is one entry in the cross-repository pull-request overview: a
-// pull request together with the org/repo context needed to link back to it.
+// pull request together with the project/repo context needed to link back to it.
 type repoPullResponse struct {
-	OrgSlug  string       `json:"orgSlug"`
-	RepoSlug string       `json:"repoSlug"`
-	RepoName string       `json:"repoName"`
-	Pull     pullResponse `json:"pull"`
+	ProjectSlug string       `json:"projectSlug"`
+	RepoSlug    string       `json:"repoSlug"`
+	RepoName    string       `json:"repoName"`
+	Pull        pullResponse `json:"pull"`
 }
 
 // handleListMyPulls returns open pull requests across every repository the
 // authenticated user can see — the top-level "/pulls" overview. Cheap filters:
-// ?state=open|closed|all and ?org=<slug>.
+// ?state=open|closed|all and ?project=<slug>.
 func (s *Server) handleListMyPulls(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -207,8 +207,8 @@ func (s *Server) handleListMyPulls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pulls, err := s.platform.ListOpenPulls(r.Context(), actor, platform.ListOpenPullsInput{
-		State:   r.URL.Query().Get("state"),
-		OrgSlug: r.URL.Query().Get("org"),
+		State:       r.URL.Query().Get("state"),
+		ProjectSlug: r.URL.Query().Get("project"),
 	})
 	if err != nil {
 		s.writePlatformError(w, err, "could not list pull requests")
@@ -217,10 +217,10 @@ func (s *Server) handleListMyPulls(w http.ResponseWriter, r *http.Request) {
 	out := make([]repoPullResponse, 0, len(pulls))
 	for _, p := range pulls {
 		out = append(out, repoPullResponse{
-			OrgSlug:  p.OrgSlug,
-			RepoSlug: p.RepoSlug,
-			RepoName: p.RepoName,
-			Pull:     newPullResponse(p.Pull),
+			ProjectSlug: p.ProjectSlug,
+			RepoSlug:    p.RepoSlug,
+			RepoName:    p.RepoName,
+			Pull:        newPullResponse(p.Pull),
 		})
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"pulls": out})

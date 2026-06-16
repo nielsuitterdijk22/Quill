@@ -52,24 +52,6 @@ type GitToken struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
-type OrgMember struct {
-	OrgID     uuid.UUID `json:"orgId"`
-	UserID    uuid.UUID `json:"userId"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-type Organization struct {
-	ID             uuid.UUID     `json:"id"`
-	Slug           string        `json:"slug"`
-	Name           string        `json:"name"`
-	Description    string        `json:"description"`
-	ParentID       uuid.NullUUID `json:"parentId"`
-	ForgejoOrgName pgtype.Text   `json:"forgejoOrgName"`
-	CreatedAt      time.Time     `json:"createdAt"`
-	UpdatedAt      time.Time     `json:"updatedAt"`
-}
-
 type Pipeline struct {
 	ID           uuid.UUID `json:"id"`
 	RepoID       uuid.UUID `json:"repoId"`
@@ -122,10 +104,27 @@ type PipelineStep struct {
 	UpdatedAt  time.Time          `json:"updatedAt"`
 }
 
+type Project struct {
+	ID             uuid.UUID   `json:"id"`
+	TenantID       uuid.UUID   `json:"tenantId"`
+	Slug           string      `json:"slug"`
+	Name           string      `json:"name"`
+	Description    string      `json:"description"`
+	ForgejoOrgName pgtype.Text `json:"forgejoOrgName"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
+}
+
+type ProjectMember struct {
+	ProjectID uuid.UUID `json:"projectId"`
+	UserID    uuid.UUID `json:"userId"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type Repository struct {
 	ID            uuid.UUID   `json:"id"`
-	OrgID         uuid.UUID   `json:"orgId"`
-	OwningTeamID  uuid.UUID   `json:"owningTeamId"`
+	ProjectID     uuid.UUID   `json:"projectId"`
 	Slug          string      `json:"slug"`
 	Name          string      `json:"name"`
 	Description   string      `json:"description"`
@@ -139,21 +138,12 @@ type Repository struct {
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
-type Team struct {
-	ID          uuid.UUID `json:"id"`
-	OrgID       uuid.UUID `json:"orgId"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-}
-
-type TeamMember struct {
-	TeamID    uuid.UUID `json:"teamId"`
-	UserID    uuid.UUID `json:"userId"`
-	Role      string    `json:"role"`
+type Tenant struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type User struct {

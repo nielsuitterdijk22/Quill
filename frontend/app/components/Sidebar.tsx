@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { logoutAction } from "../lib/actions";
-import type { User } from "../lib/api";
+import { logoutAction, setCurrentProjectAction } from "../lib/actions";
+import type { MyProject, User } from "../lib/api";
 
 export type NavItem = {
   href: string;
@@ -18,37 +18,37 @@ const NAV: NavItem[] = [
   { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭" },
   { href: "/pipelines", label: "Pipelines", icon: "▷" },
-  { href: "/teams", label: "Teams", icon: "◎" },
-  { href: "/orgs", label: "Organizations", icon: "▤" },
+  { href: "/projects", label: "Projects", icon: "▤" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
 // isRepoScoped is true for any path inside a specific repository, i.e.
-// /orgs/{org}/repos/{repo} and everything beneath it (code/commits/branches/
-// blob/tree/pulls/settings). These browse code, not org management, so the
-// top-level "Repositories" entry should light up for them.
+// /projects/{project}/repos/{repo} and everything beneath it (code/commits/
+// branches/blob/tree/pulls/settings). These browse code, not project
+// management, so the top-level "Repositories" entry should light up for them.
 function isRepoScoped(pathname: string): boolean {
-  return /^\/orgs\/[^/]+\/repos\/[^/]+(\/|$)/.test(pathname);
+  return /^\/projects\/[^/]+\/repos\/[^/]+(\/|$)/.test(pathname);
 }
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   // "Repositories" owns both the standalone /repositories listing and every
-  // repo-scoped /orgs/{org}/repos/{repo}/... page.
+  // repo-scoped /projects/{project}/repos/{repo}/... page.
   if (href === "/repositories") {
     if (pathname === href || pathname.startsWith(href + "/")) return true;
     return isRepoScoped(pathname);
   }
-  // "Organizations" stays active only for genuine org-management pages
-  // (/orgs, /orgs/new, /orgs/{org} landing) — never while browsing a repo.
-  if (href === "/orgs") {
+  // "Projects" stays active only for genuine project-management pages
+  // (/projects, /projects/new, /projects/{project} landing) — never while
+  // browsing a repo.
+  if (href === "/projects") {
     if (isRepoScoped(pathname)) return false;
     return pathname === href || pathname.startsWith(href + "/");
   }
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-type RepoCtx = { org: string; repo: string; ref: string };
+type RepoCtx = { project: string; repo: string; ref: string };
 
 // safeDecode decodes a URL path segment, returning it unchanged if it isn't
 // valid percent-encoding. decodeURIComponent throws on malformed input (e.g. a
@@ -61,15 +61,16 @@ function safeDecode(segment: string): string {
   }
 }
 
-// Extract repo context from /orgs/{org}/repos/{repo}/* paths. Returns null for
-// org-management pages (/orgs, /orgs/new, /orgs/{org}, /orgs/{org}/repos/new)
-// and non-repo routes. Refs can contain slashes (e.g. feature/login-page), so
-// the commits route — which never carries a path — keeps its whole tail as the
-// ref, while tree/blob fall back to the first segment (their tail mixes ref and
-// file path, which we can't split here).
+// Extract repo context from /projects/{project}/repos/{repo}/* paths. Returns
+// null for project-management pages (/projects, /projects/new,
+// /projects/{project}, /projects/{project}/repos/new) and non-repo routes. Refs
+// can contain slashes (e.g. feature/login-page), so the commits route — which
+// never carries a path — keeps its whole tail as the ref, while tree/blob fall
+// back to the first segment (their tail mixes ref and file path, which we can't
+// split here).
 function parseRepoCtx(pathname: string): RepoCtx | null {
   const m = pathname.match(
-    /^\/orgs\/([^/]+)\/repos\/([^/]+)(?:\/(branches|tree|commits|blob|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
+    /^\/projects\/([^/]+)\/repos\/([^/]+)(?:\/(branches|tree|commits|blob|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
   );
   if (!m || !m[2] || m[2] === "new") return null;
   let ref = "main";
@@ -81,7 +82,7 @@ function parseRepoCtx(pathname: string): RepoCtx | null {
     }
   }
   return {
-    org: safeDecode(m[1]),
+    project: safeDecode(m[1]),
     repo: safeDecode(m[2]),
     ref,
   };
@@ -99,7 +100,7 @@ const REPO_TABS = [
 type RepoTabKey = (typeof REPO_TABS)[number]["key"];
 
 function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
-  const b = `/orgs/${encodeURIComponent(ctx.org)}/repos/${encodeURIComponent(ctx.repo)}`;
+  const b = `/projects/${encodeURIComponent(ctx.project)}/repos/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
     case "code":
       return b;
@@ -121,7 +122,7 @@ function repoTabActive(
   key: RepoTabKey,
   ctx: RepoCtx,
 ): boolean {
-  const b = `/orgs/${encodeURIComponent(ctx.org)}/repos/${encodeURIComponent(ctx.repo)}`;
+  const b = `/projects/${encodeURIComponent(ctx.project)}/repos/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
     case "code":
       return (
@@ -142,7 +143,15 @@ function repoTabActive(
   }
 }
 
-export function Sidebar({ user }: { user: User }) {
+export function Sidebar({
+  user,
+  projects,
+  currentProject,
+}: {
+  user: User;
+  projects: MyProject[];
+  currentProject: string | null;
+}) {
   const pathname = usePathname() || "/";
   const repoCtx = parseRepoCtx(pathname);
 
@@ -152,9 +161,26 @@ export function Sidebar({ user }: { user: User }) {
         <span className="dot" /> Quill
       </div>
 
-      <div className="org">
+      <div className="project">
         <span className="who">Signed in as</span>
         <b>{user.displayName || user.username}</b>
+        {projects.length > 0 && (
+          <form action={setCurrentProjectAction} className="project-switcher">
+            <span className="project-switcher-label">Project</span>
+            <select
+              name="project"
+              defaultValue={currentProject ?? projects[0].slug}
+              aria-label="Current project"
+              onChange={(e) => e.currentTarget.form?.requestSubmit()}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.slug}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </form>
+        )}
       </div>
 
       <nav className="nav">
@@ -174,12 +200,12 @@ export function Sidebar({ user }: { user: User }) {
       {repoCtx && (
         <div className="repo-ctx">
           <div className="repo-ctx-label">
-            <Link href={`/orgs/${encodeURIComponent(repoCtx.org)}`}>
-              {repoCtx.org}
+            <Link href={`/projects/${encodeURIComponent(repoCtx.project)}`}>
+              {repoCtx.project}
             </Link>
             {" / "}
             <Link
-              href={`/orgs/${encodeURIComponent(repoCtx.org)}/repos/${encodeURIComponent(repoCtx.repo)}`}
+              href={`/projects/${encodeURIComponent(repoCtx.project)}/repos/${encodeURIComponent(repoCtx.repo)}`}
             >
               <b>{repoCtx.repo}</b>
             </Link>

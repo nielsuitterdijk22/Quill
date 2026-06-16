@@ -33,9 +33,9 @@ type BranchPolicyInput struct {
 }
 
 // ListBranchPolicies returns a repository's branch policies for an authorized
-// org member.
-func (s *Service) ListBranchPolicies(ctx context.Context, actor Actor, orgSlug, repoSlug string) (db.Repository, []db.BranchPolicy, error) {
-	repo, _, _, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, false)
+// project member.
+func (s *Service) ListBranchPolicies(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []db.BranchPolicy, error) {
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -46,20 +46,20 @@ func (s *Service) ListBranchPolicies(ctx context.Context, actor Actor, orgSlug, 
 	return repo, policies, nil
 }
 
-// SetBranchPolicy creates or updates the policy for a branch pattern. Only org
+// SetBranchPolicy creates or updates the policy for a branch pattern. Only project
 // owners and platform admins may call it. The policy is recorded in Postgres and
 // then mirrored (best-effort) into Forgejo branch protection.
-func (s *Service) SetBranchPolicy(ctx context.Context, actor Actor, orgSlug, repoSlug string, in BranchPolicyInput) (db.BranchPolicy, error) {
-	org, err := s.getOrg(ctx, orgSlug)
+func (s *Service) SetBranchPolicy(ctx context.Context, actor Actor, projectSlug, repoSlug string, in BranchPolicyInput) (db.BranchPolicy, error) {
+	project, err := s.getProject(ctx, projectSlug)
 	if err != nil {
 		return db.BranchPolicy{}, err
 	}
-	if err := s.authorizeOrgAdmin(ctx, actor, org.ID); err != nil {
+	if err := s.authorizeProjectAdmin(ctx, actor, project.ID); err != nil {
 		return db.BranchPolicy{}, err
 	}
 	repo, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
-		OrgID: org.ID,
-		Lower: normalizeSlug(repoSlug),
+		ProjectID: project.ID,
+		Lower:     normalizeSlug(repoSlug),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return db.BranchPolicy{}, ErrNotFound
@@ -104,23 +104,23 @@ func (s *Service) SetBranchPolicy(ctx context.Context, actor Actor, orgSlug, rep
 		return db.BranchPolicy{}, fmt.Errorf("upsert branch policy: %w", err)
 	}
 
-	s.mirrorPolicyToForgejo(ctx, repo, org, policy)
+	s.mirrorPolicyToForgejo(ctx, repo, project, policy)
 	return policy, nil
 }
 
-// DeleteBranchPolicy removes the policy for a branch pattern (org owners and
+// DeleteBranchPolicy removes the policy for a branch pattern (project owners and
 // platform admins only) and clears the mirrored Forgejo branch protection.
-func (s *Service) DeleteBranchPolicy(ctx context.Context, actor Actor, orgSlug, repoSlug, pattern string) error {
-	org, err := s.getOrg(ctx, orgSlug)
+func (s *Service) DeleteBranchPolicy(ctx context.Context, actor Actor, projectSlug, repoSlug, pattern string) error {
+	project, err := s.getProject(ctx, projectSlug)
 	if err != nil {
 		return err
 	}
-	if err := s.authorizeOrgAdmin(ctx, actor, org.ID); err != nil {
+	if err := s.authorizeProjectAdmin(ctx, actor, project.ID); err != nil {
 		return err
 	}
 	repo, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
-		OrgID: org.ID,
-		Lower: normalizeSlug(repoSlug),
+		ProjectID: project.ID,
+		Lower:     normalizeSlug(repoSlug),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -138,7 +138,7 @@ func (s *Service) DeleteBranchPolicy(ctx context.Context, actor Actor, orgSlug, 
 	}
 	// Best-effort: clear the mirrored protection for an exact branch name.
 	if s.forgejoEnabled() && !strings.ContainsAny(pattern, "*?[") {
-		if owner, name, ok := forgejoTarget(repo, org); ok {
+		if owner, name, ok := forgejoTarget(repo, project); ok {
 			if err := s.forgejo.DeleteBranchProtection(ctx, owner, name, pattern); err != nil {
 				s.logger.Warn("could not delete forgejo branch protection",
 					"repo", owner+"/"+name, "branch", pattern, "error", err)
@@ -153,11 +153,11 @@ func (s *Service) DeleteBranchPolicy(ctx context.Context, actor Actor, orgSlug, 
 // the request, because Quill enforces the merge gate itself for the PR flow.
 // Only concrete branch names are mirrored (Forgejo rule globs differ from
 // path.Match semantics, so glob policies are enforced by Quill at merge time).
-func (s *Service) mirrorPolicyToForgejo(ctx context.Context, repo db.Repository, org db.Organization, policy db.BranchPolicy) {
+func (s *Service) mirrorPolicyToForgejo(ctx context.Context, repo db.Repository, project db.Project, policy db.BranchPolicy) {
 	if !s.forgejoEnabled() || strings.ContainsAny(policy.Pattern, "*?[") {
 		return
 	}
-	owner, name, ok := forgejoTarget(repo, org)
+	owner, name, ok := forgejoTarget(repo, project)
 	if !ok {
 		return
 	}

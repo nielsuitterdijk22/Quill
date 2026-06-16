@@ -17,7 +17,7 @@ import (
 )
 
 // This file exposes pull-request operations on top of Forgejo. Reads use the
-// admin token (Quill enforces visibility via org membership, exactly like code
+// admin token (Quill enforces visibility via project membership, exactly like code
 // browsing). Writes that create user-visible content (opening a PR, commenting,
 // merging) are attributed to the acting Quill user via Forgejo's sudo facility;
 // to make that attribution work the user is first ensured as a Forgejo
@@ -43,8 +43,8 @@ var validReviewEvents = map[string]bool{
 
 // ListPulls returns a repository's pull requests filtered by state ("open",
 // "closed", or "all").
-func (s *Service) ListPulls(ctx context.Context, actor Actor, orgSlug, repoSlug, state string) (db.Repository, []forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListPulls(ctx context.Context, actor Actor, projectSlug, repoSlug, state string) (db.Repository, []forgejo.PullRequest, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -60,7 +60,7 @@ func (s *Service) ListPulls(ctx context.Context, actor Actor, orgSlug, repoSlug,
 const maxPullCountConcurrency = 8
 
 // OpenPullRequestCount returns the total number of open pull requests across
-// every repository in the organizations the actor belongs to. Counts come from
+// every repository in the projects the actor belongs to. Counts come from
 // Forgejo's exact total (not a capped page), and repositories are queried
 // concurrently with a bounded worker pool. It is best-effort: a repository whose
 // count can't be read is treated as zero and logged, mirroring the dashboard's
@@ -70,28 +70,28 @@ func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, e
 		return 0, nil
 	}
 
-	orgs, err := s.store.ListOrganizations(ctx, db.ListOrganizationsParams{Limit: 200, Offset: 0})
+	projects, err := s.store.ListProjects(ctx, db.ListProjectsParams{Limit: 200, Offset: 0})
 	if err != nil {
-		return 0, fmt.Errorf("list orgs: %w", err)
+		return 0, fmt.Errorf("list projects: %w", err)
 	}
 
 	type target struct{ owner, name string }
 	var targets []target
-	for _, org := range orgs {
-		// Only count repos in orgs the actor can see; skip the rest silently so the
+	for _, project := range projects {
+		// Only count repos in projects the actor can see; skip the rest silently so the
 		// total matches what the dashboard would list for this user.
-		if err := s.authorizeOrgMember(ctx, actor, org.ID); err != nil {
+		if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
 			if errors.Is(err, ErrForbidden) {
 				continue
 			}
 			return 0, err
 		}
-		repos, err := s.store.ListRepositoriesByOrg(ctx, db.ListRepositoriesByOrgParams{OrgID: org.ID, Limit: 200, Offset: 0})
+		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 200, Offset: 0})
 		if err != nil {
 			return 0, fmt.Errorf("list repos: %w", err)
 		}
 		for _, repo := range repos {
-			if owner, name, ok := forgejoTarget(repo, org); ok {
+			if owner, name, ok := forgejoTarget(repo, project); ok {
 				targets = append(targets, target{owner: owner, name: name})
 			}
 		}
@@ -122,22 +122,22 @@ func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, e
 	return int(total), nil
 }
 
-// RepoPull pairs a pull request with the repository and organization it belongs
+// RepoPull pairs a pull request with the repository and project it belongs
 // to, so a cross-repository listing carries the context the frontend needs to
 // link back to each PR.
 type RepoPull struct {
-	OrgSlug  string
-	RepoSlug string
-	RepoName string
-	Pull     forgejo.PullRequest
+	ProjectSlug string
+	RepoSlug    string
+	RepoName    string
+	Pull        forgejo.PullRequest
 }
 
 // ListOpenPullsInput holds the optional cheap filters for ListOpenPulls.
 type ListOpenPullsInput struct {
 	// State is "open" (default), "closed", or "all".
 	State string
-	// OrgSlug, when non-empty, restricts the listing to a single organization.
-	OrgSlug string
+	// ProjectSlug, when non-empty, restricts the listing to a single project.
+	ProjectSlug string
 }
 
 // maxPullListConcurrency bounds how many repositories Quill queries Forgejo for
@@ -150,10 +150,10 @@ const maxPullListConcurrency = 8
 const maxPullsPerRepo = 50
 
 // ListOpenPulls returns pull requests across every repository in the
-// organizations the actor belongs to, newest-updated first. Like
+// projects the actor belongs to, newest-updated first. Like
 // OpenPullRequestCount it is best-effort: a repository whose pulls can't be read
 // is skipped and logged, mirroring the dashboard's tolerance for partial data.
-// The optional input narrows the result by state and/or organization.
+// The optional input narrows the result by state and/or project.
 func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPullsInput) ([]RepoPull, error) {
 	if !s.forgejoEnabled() {
 		return nil, nil
@@ -163,39 +163,39 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 		state = "open"
 	}
 
-	orgs, err := s.store.ListOrganizations(ctx, db.ListOrganizationsParams{Limit: 200, Offset: 0})
+	projects, err := s.store.ListProjects(ctx, db.ListProjectsParams{Limit: 200, Offset: 0})
 	if err != nil {
-		return nil, fmt.Errorf("list orgs: %w", err)
+		return nil, fmt.Errorf("list projects: %w", err)
 	}
 
 	type target struct {
-		owner, name, orgSlug, repoSlug, repoName string
+		owner, name, projectSlug, repoSlug, repoName string
 	}
 	var targets []target
-	for _, org := range orgs {
-		if in.OrgSlug != "" && org.Slug != in.OrgSlug {
+	for _, project := range projects {
+		if in.ProjectSlug != "" && project.Slug != in.ProjectSlug {
 			continue
 		}
-		// Only list repos in orgs the actor can see; skip the rest silently so the
+		// Only list repos in projects the actor can see; skip the rest silently so the
 		// result matches what the dashboard would show for this user.
-		if err := s.authorizeOrgMember(ctx, actor, org.ID); err != nil {
+		if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
 			if errors.Is(err, ErrForbidden) {
 				continue
 			}
 			return nil, err
 		}
-		repos, err := s.store.ListRepositoriesByOrg(ctx, db.ListRepositoriesByOrgParams{OrgID: org.ID, Limit: 200, Offset: 0})
+		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 200, Offset: 0})
 		if err != nil {
 			return nil, fmt.Errorf("list repos: %w", err)
 		}
 		for _, repo := range repos {
-			if owner, name, ok := forgejoTarget(repo, org); ok {
+			if owner, name, ok := forgejoTarget(repo, project); ok {
 				targets = append(targets, target{
-					owner:    owner,
-					name:     name,
-					orgSlug:  org.Slug,
-					repoSlug: repo.Slug,
-					repoName: repo.Name,
+					owner:       owner,
+					name:        name,
+					projectSlug: project.Slug,
+					repoSlug:    repo.Slug,
+					repoName:    repo.Name,
 				})
 			}
 		}
@@ -218,7 +218,7 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 			}
 			out := make([]RepoPull, 0, len(pulls))
 			for _, p := range pulls {
-				out = append(out, RepoPull{OrgSlug: t.orgSlug, RepoSlug: t.repoSlug, RepoName: t.repoName, Pull: p})
+				out = append(out, RepoPull{ProjectSlug: t.projectSlug, RepoSlug: t.repoSlug, RepoName: t.repoName, Pull: p})
 			}
 			results[i] = out
 			return nil
@@ -238,8 +238,8 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 }
 
 // GetPull returns a single pull request by number.
-func (s *Service) GetPull(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) GetPull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, forgejo.PullRequest, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
@@ -251,8 +251,8 @@ func (s *Service) GetPull(ctx context.Context, actor Actor, orgSlug, repoSlug st
 }
 
 // GetPullDiff returns a pull request's changes as parsed diff files.
-func (s *Service) GetPullDiff(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, []forgejo.DiffFile, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) GetPullDiff(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.DiffFile, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -264,8 +264,8 @@ func (s *Service) GetPullDiff(ctx context.Context, actor Actor, orgSlug, repoSlu
 }
 
 // ListPullComments returns the conversation comments on a pull request.
-func (s *Service) ListPullComments(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) ([]forgejo.IssueComment, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListPullComments(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) ([]forgejo.IssueComment, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return nil, err
 	}
@@ -277,8 +277,8 @@ func (s *Service) ListPullComments(ctx context.Context, actor Actor, orgSlug, re
 }
 
 // CreatePull opens a pull request from head into base, attributed to the actor.
-func (s *Service) CreatePull(ctx context.Context, actor Actor, orgSlug, repoSlug string, in CreatePullInput) (db.Repository, forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) CreatePull(ctx context.Context, actor Actor, projectSlug, repoSlug string, in CreatePullInput) (db.Repository, forgejo.PullRequest, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
@@ -309,8 +309,8 @@ func (s *Service) CreatePull(ctx context.Context, actor Actor, orgSlug, repoSlug
 }
 
 // CreatePullComment adds a comment to a pull request, attributed to the actor.
-func (s *Service) CreatePullComment(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, body string) (forgejo.IssueComment, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) CreatePullComment(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, body string) (forgejo.IssueComment, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return forgejo.IssueComment{}, err
 	}
@@ -327,8 +327,8 @@ func (s *Service) CreatePullComment(ctx context.Context, actor Actor, orgSlug, r
 }
 
 // ListPullCommits returns the commits contained in a pull request.
-func (s *Service) ListPullCommits(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, []forgejo.Commit, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListPullCommits(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.Commit, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -351,8 +351,8 @@ type LineComment struct {
 
 // ListLineComments returns every line-anchored review comment on a pull request,
 // flattened across all of its reviews and ordered by creation time.
-func (s *Service) ListLineComments(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) (db.Repository, []LineComment, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListLineComments(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []LineComment, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -384,8 +384,8 @@ func (s *Service) ListLineComments(ctx context.Context, actor Actor, orgSlug, re
 // CreateLineComment posts a single line-anchored comment on a pull request's
 // diff, attributed to the actor. line is the line number in the new version of
 // the file (matching the diff's new-side gutter).
-func (s *Service) CreateLineComment(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, path string, line int, body string) (LineComment, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, path string, line int, body string) (LineComment, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return LineComment{}, err
 	}
@@ -418,8 +418,8 @@ func (s *Service) CreateLineComment(ctx context.Context, actor Actor, orgSlug, r
 // and returns the refreshed pull request. Before merging it enforces any branch
 // policy governing the PR's base branch (required approvals, no outstanding
 // change requests) — the authoritative gate for the PR flow.
-func (s *Service) MergePull(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, method string) (db.Repository, forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, method string) (db.Repository, forgejo.PullRequest, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
@@ -460,8 +460,8 @@ type ReviewState struct {
 // ReviewsAndState returns a pull request's reviews together with the policy gate
 // evaluated against its base branch — what the frontend needs to render review
 // status and the merge box in a single call.
-func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int) ([]forgejo.Review, ReviewState, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) ([]forgejo.Review, ReviewState, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return nil, ReviewState{}, err
 	}
@@ -562,8 +562,8 @@ func summarizeReviews(reviews []forgejo.Review, author *forgejo.User, dismissSta
 }
 
 // pull request, attributed to the actor.
-func (s *Service) CreatePullReview(ctx context.Context, actor Actor, orgSlug, repoSlug string, number int, event, body string) (forgejo.Review, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) CreatePullReview(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, event, body string) (forgejo.Review, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return forgejo.Review{}, err
 	}

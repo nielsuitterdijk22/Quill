@@ -13,18 +13,18 @@ import (
 
 // This file exposes the read-only "browse the code" operations: resolving a
 // repository, listing its branches and commits, and reading directory or file
-// contents. Each call authorizes org membership first, then delegates the git
+// contents. Each call authorizes project membership first, then delegates the git
 // read to Forgejo using the repository's stored owner/name linkage.
 
 // GetRepo returns a repository's metadata for an authorized actor.
-func (s *Service) GetRepo(ctx context.Context, actor Actor, orgSlug, repoSlug string) (db.Repository, error) {
-	repo, _, _, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, false)
+func (s *Service) GetRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, error) {
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	return repo, err
 }
 
 // ListBranches returns the git branches of a repository.
-func (s *Service) ListBranches(ctx context.Context, actor Actor, orgSlug, repoSlug string) (db.Repository, []forgejo.Branch, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListBranches(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []forgejo.Branch, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -37,8 +37,8 @@ func (s *Service) ListBranches(ctx context.Context, actor Actor, orgSlug, repoSl
 
 // ListCommits returns the commit log of a repository at ref, optionally filtered
 // to commits touching path.
-func (s *Service) ListCommits(ctx context.Context, actor Actor, orgSlug, repoSlug, ref, path string, limit int) (db.Repository, []forgejo.Commit, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) ListCommits(ctx context.Context, actor Actor, projectSlug, repoSlug, ref, path string, limit int) (db.Repository, []forgejo.Commit, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -54,8 +54,8 @@ func (s *Service) ListCommits(ctx context.Context, actor Actor, orgSlug, repoSlu
 
 // GetCommit returns a single commit's metadata together with its diff parsed
 // into per-file hunks — what the commit detail page needs in one call.
-func (s *Service) GetCommit(ctx context.Context, actor Actor, orgSlug, repoSlug, sha string) (db.Repository, forgejo.Commit, []forgejo.DiffFile, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) GetCommit(ctx context.Context, actor Actor, projectSlug, repoSlug, sha string) (db.Repository, forgejo.Commit, []forgejo.DiffFile, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, forgejo.Commit{}, nil, err
 	}
@@ -72,8 +72,8 @@ func (s *Service) GetCommit(ctx context.Context, actor Actor, orgSlug, repoSlug,
 
 // GetContents returns a directory listing or single file at path/ref within a
 // repository. An empty ref resolves to the repository's default branch.
-func (s *Service) GetContents(ctx context.Context, actor Actor, orgSlug, repoSlug, path, ref string) (db.Repository, *forgejo.Contents, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) GetContents(ctx context.Context, actor Actor, projectSlug, repoSlug, path, ref string) (db.Repository, *forgejo.Contents, error) {
+	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -90,8 +90,8 @@ func (s *Service) GetContents(ctx context.Context, actor Actor, orgSlug, repoSlu
 // RenderMarkdown renders markdown text to sanitized HTML in the context of a
 // repository, for an authorized actor. It is used to render READMEs the way
 // Forgejo would (repo-relative links, references), returning safe HTML.
-func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, orgSlug, repoSlug, text string) (string, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, projectSlug, repoSlug, text string) (string, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return "", err
 	}
@@ -102,21 +102,21 @@ func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, orgSlug, repo
 	return html, nil
 }
 
-// resolveRepo loads a repository by org+repo slug, authorizes the actor as an org
+// resolveRepo loads a repository by project+repo slug, authorizes the actor as an project
 // member, and (when requireGit is set) resolves the Forgejo owner/name needed for
 // git-side reads. It returns ErrNotFound, ErrForbidden, or ErrUnavailable as
 // appropriate.
-func (s *Service) resolveRepo(ctx context.Context, actor Actor, orgSlug, repoSlug string, requireGit bool) (db.Repository, string, string, error) {
-	org, err := s.getOrg(ctx, orgSlug)
+func (s *Service) resolveRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string, requireGit bool) (db.Repository, string, string, error) {
+	project, err := s.getProject(ctx, projectSlug)
 	if err != nil {
 		return db.Repository{}, "", "", err
 	}
-	if err := s.authorizeOrgMember(ctx, actor, org.ID); err != nil {
+	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
 		return db.Repository{}, "", "", err
 	}
 	repo, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
-		OrgID: org.ID,
-		Lower: normalizeSlug(repoSlug),
+		ProjectID: project.ID,
+		Lower:     normalizeSlug(repoSlug),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return db.Repository{}, "", "", ErrNotFound
@@ -130,7 +130,7 @@ func (s *Service) resolveRepo(ctx context.Context, actor Actor, orgSlug, repoSlu
 	if !s.forgejoEnabled() {
 		return db.Repository{}, "", "", ErrUnavailable
 	}
-	owner, name, ok := forgejoTarget(repo, org)
+	owner, name, ok := forgejoTarget(repo, project)
 	if !ok {
 		return db.Repository{}, "", "", ErrUnavailable
 	}
@@ -140,14 +140,14 @@ func (s *Service) resolveRepo(ctx context.Context, actor Actor, orgSlug, repoSlu
 // forgejoTarget computes the Forgejo (owner, name) pair for a repository, falling
 // back to slugs when the explicit linkage columns are unset. ok is false when no
 // usable target can be derived.
-func forgejoTarget(repo db.Repository, org db.Organization) (owner, name string, ok bool) {
+func forgejoTarget(repo db.Repository, project db.Project) (owner, name string, ok bool) {
 	switch {
 	case repo.ForgejoOwner.Valid && repo.ForgejoOwner.String != "":
 		owner = repo.ForgejoOwner.String
-	case org.ForgejoOrgName.Valid && org.ForgejoOrgName.String != "":
-		owner = org.ForgejoOrgName.String
+	case project.ForgejoOrgName.Valid && project.ForgejoOrgName.String != "":
+		owner = project.ForgejoOrgName.String
 	default:
-		owner = org.Slug
+		owner = project.Slug
 	}
 	if repo.ForgejoName.Valid && repo.ForgejoName.String != "" {
 		name = repo.ForgejoName.String

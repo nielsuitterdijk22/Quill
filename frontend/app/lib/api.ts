@@ -20,7 +20,7 @@ export type Meta = {
   forgejo?: ForgejoStatus;
 };
 
-export type Org = {
+export type Project = {
   id: string;
   slug: string;
   name: string;
@@ -231,29 +231,29 @@ export async function fetchMe(token: string): Promise<User | null> {
   }
 }
 
-// listOrgs returns all organizations visible to the authenticated user, or an
+// listProjects returns all projects visible to the authenticated user, or an
 // empty list when the backend is unreachable so pages can render a degraded state.
-export async function listOrgs(token: string): Promise<Org[]> {
+export async function listProjects(token: string): Promise<Project[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/orgs`, {
+    const res = await fetch(`${API_BASE}/api/v1/projects`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
     if (!res.ok) return [];
-    const data = (await res.json()) as { organizations?: Org[] };
-    return data.organizations ?? [];
+    const data = (await res.json()) as { projects?: Project[] };
+    return data.projects ?? [];
   } catch {
     return [];
   }
 }
 
-// listReposByOrg returns the repositories within an org, or an empty list on error.
-export async function listReposByOrg(
+// listReposByProject returns the repositories within an project, or an empty list on error.
+export async function listReposByProject(
   token: string,
   slug: string,
 ): Promise<Repo[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/orgs/${slug}/repos`, {
+    const res = await fetch(`${API_BASE}/api/v1/projects/${slug}/repos`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
@@ -358,29 +358,29 @@ async function authGet<T>(token: string, path: string): Promise<Result<T>> {
   }
 }
 
-// getOrg fetches a single organization.
-export function getOrg(token: string, slug: string): Promise<Result<Org>> {
-  return authGet<Org>(token, `/api/v1/orgs/${slug}`);
+// getProject fetches a single project.
+export function getProject(token: string, slug: string): Promise<Result<Project>> {
+  return authGet<Project>(token, `/api/v1/projects/${slug}`);
 }
 
-// reposResult is the org-detail repository listing payload.
-export type ReposResult = { organization: Org; repositories: Repo[] };
+// reposResult is the project-detail repository listing payload.
+export type ReposResult = { project: Project; repositories: Repo[] };
 
-// getReposByOrg returns an org plus its repositories, preserving HTTP status.
-export function getReposByOrg(
+// getReposByProject returns an project plus its repositories, preserving HTTP status.
+export function getReposByProject(
   token: string,
   slug: string,
 ): Promise<Result<ReposResult>> {
-  return authGet<ReposResult>(token, `/api/v1/orgs/${slug}/repos`);
+  return authGet<ReposResult>(token, `/api/v1/projects/${slug}/repos`);
 }
 
 // getRepo fetches a single repository's metadata.
 export function getRepo(
   token: string,
-  org: string,
+  project: string,
   repo: string,
 ): Promise<Result<Repo>> {
-  return authGet<Repo>(token, `/api/v1/orgs/${org}/repos/${repo}`);
+  return authGet<Repo>(token, `/api/v1/projects/${project}/repos/${repo}`);
 }
 
 // branchesResult is the branch listing payload.
@@ -392,12 +392,12 @@ export type BranchesResult = {
 
 export function getBranches(
   token: string,
-  org: string,
+  project: string,
   repo: string,
 ): Promise<Result<BranchesResult>> {
   return authGet<BranchesResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/branches`,
+    `/api/v1/projects/${project}/repos/${repo}/branches`,
   );
 }
 
@@ -406,7 +406,7 @@ export type CommitsResult = { repository: Repo; commits: Commit[] };
 
 export function getCommits(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   ref?: string,
   path?: string,
@@ -418,7 +418,7 @@ export function getCommits(
   q.set("limit", String(limit));
   return authGet<CommitsResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/commits?${q.toString()}`,
+    `/api/v1/projects/${project}/repos/${repo}/commits?${q.toString()}`,
   );
 }
 
@@ -432,13 +432,13 @@ export type CommitDetailResult = {
 // getCommit returns a single commit's metadata and the diff it introduced.
 export function getCommit(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   sha: string,
 ): Promise<Result<CommitDetailResult>> {
   return authGet<CommitDetailResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/commits/${sha}`,
+    `/api/v1/projects/${project}/repos/${repo}/commits/${sha}`,
   );
 }
 
@@ -447,7 +447,7 @@ export type ContentsResult = { repository: Repo; contents: Contents };
 
 export function getContents(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   path?: string,
   ref?: string,
@@ -458,7 +458,7 @@ export function getContents(
   const qs = q.toString();
   return authGet<ContentsResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/contents${qs ? `?${qs}` : ""}`,
+    `/api/v1/projects/${project}/repos/${repo}/contents${qs ? `?${qs}` : ""}`,
   );
 }
 
@@ -467,13 +467,13 @@ export function getContents(
 // callers can fall back to plain text.
 export async function renderMarkdown(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   text: string,
 ): Promise<string | null> {
   const res = await postData<{ html: string }>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/markup`,
+    `/api/v1/projects/${project}/repos/${repo}/markup`,
     { text },
   );
   return res.ok ? res.data.html : null;
@@ -512,18 +512,18 @@ async function postCreate(
   }
 }
 
-// createOrg provisions an organization (and its Forgejo mirror).
-export function createOrg(
+// createProject provisions an project (and its Forgejo mirror).
+export function createProject(
   token: string,
   input: { slug: string; name: string; description: string },
 ): Promise<MutationResult> {
-  return postCreate(token, "/api/v1/orgs", input);
+  return postCreate(token, "/api/v1/projects", input);
 }
 
-// createRepo provisions a repository under an org (and its Forgejo mirror).
+// createRepo provisions a repository under an project (and its Forgejo mirror).
 export function createRepo(
   token: string,
-  org: string,
+  project: string,
   input: {
     slug: string;
     name: string;
@@ -531,7 +531,7 @@ export function createRepo(
     visibility: string;
   },
 ): Promise<MutationResult> {
-  return postCreate(token, `/api/v1/orgs/${org}/repos`, input);
+  return postCreate(token, `/api/v1/projects/${project}/repos`, input);
 }
 
 // UpdateRepoInput is a partial repository update. Only the provided fields change;
@@ -545,24 +545,24 @@ export type UpdateRepoInput = {
   archived?: boolean;
 };
 
-// updateRepo changes a repository's general settings (org owners / admins only)
+// updateRepo changes a repository's general settings (project owners / admins only)
 // and returns the repository's new state.
 export function updateRepo(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   input: UpdateRepoInput,
 ): Promise<DataResult<Repo>> {
-  return sendData<Repo>(token, "PATCH", `/api/v1/orgs/${org}/repos/${repo}`, input);
+  return sendData<Repo>(token, "PATCH", `/api/v1/projects/${project}/repos/${repo}`, input);
 }
 
-// deleteRepo permanently removes a repository (org owners / admins only).
+// deleteRepo permanently removes a repository (project owners / admins only).
 export function deleteRepo(
   token: string,
-  org: string,
+  project: string,
   repo: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  return deleteResource(token, `/api/v1/orgs/${org}/repos/${repo}`);
+  return deleteResource(token, `/api/v1/projects/${project}/repos/${repo}`);
 }
 
 // ---- pull requests ---------------------------------------------------------
@@ -573,20 +573,20 @@ export type PullsResult = { repository: Repo; pulls: PullRequest[] };
 // getPulls returns a repository's pull requests filtered by state.
 export function getPulls(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   state: "open" | "closed" | "all" = "open",
 ): Promise<Result<PullsResult>> {
   return authGet<PullsResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls?state=${state}`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls?state=${state}`,
   );
 }
 
 // RepoPull is one entry in the cross-repository pull-request overview: a pull
-// request together with the org/repo it belongs to, so the row can link back.
+// request together with the project/repo it belongs to, so the row can link back.
 export type RepoPull = {
-  orgSlug: string;
+  projectSlug: string;
   repoSlug: string;
   repoName: string;
   pull: PullRequest;
@@ -596,14 +596,14 @@ export type RepoPull = {
 export type MyPullsResult = { pulls: RepoPull[] };
 
 // getMyPulls returns open pull requests across every repository the signed-in
-// user can access, newest-updated first. Optional cheap filters: state and org.
+// user can access, newest-updated first. Optional cheap filters: state and project.
 export function getMyPulls(
   token: string,
-  opts: { state?: "open" | "closed" | "all"; org?: string } = {},
+  opts: { state?: "open" | "closed" | "all"; project?: string } = {},
 ): Promise<Result<MyPullsResult>> {
   const q = new URLSearchParams();
   if (opts.state) q.set("state", opts.state);
-  if (opts.org) q.set("org", opts.org);
+  if (opts.project) q.set("project", opts.project);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   return authGet<MyPullsResult>(token, `/api/v1/me/pulls${suffix}`);
 }
@@ -613,13 +613,13 @@ export type PullResult = { repository: Repo; pull: PullRequest };
 
 export function getPull(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
 ): Promise<Result<PullResult>> {
   return authGet<PullResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}`,
   );
 }
 
@@ -628,13 +628,13 @@ export type DiffResult = { files: DiffFile[] };
 
 export function getPullDiff(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
 ): Promise<Result<DiffResult>> {
   return authGet<DiffResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/diff`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/diff`,
   );
 }
 
@@ -643,13 +643,13 @@ export type CommentsResult = { comments: PullComment[] };
 
 export function getPullComments(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
 ): Promise<Result<CommentsResult>> {
   return authGet<CommentsResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/comments`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/comments`,
   );
 }
 
@@ -658,13 +658,13 @@ export type ReviewsResult = { reviews: Review[]; gate: PolicyGate };
 
 export function getPullReviews(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
 ): Promise<Result<ReviewsResult>> {
   return authGet<ReviewsResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/reviews`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/reviews`,
   );
 }
 
@@ -673,12 +673,12 @@ export type PoliciesResult = { repository: Repo; policies: BranchPolicy[] };
 
 export function getBranchPolicies(
   token: string,
-  org: string,
+  project: string,
   repo: string,
 ): Promise<Result<PoliciesResult>> {
   return authGet<PoliciesResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/policies`,
+    `/api/v1/projects/${project}/repos/${repo}/policies`,
   );
 }
 
@@ -751,24 +751,24 @@ async function deleteResource(
 // createPull opens a pull request from head into base.
 export function createPull(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   input: { title: string; body: string; head: string; base: string },
 ): Promise<DataResult<{ pull: PullRequest }>> {
-  return postData(token, `/api/v1/orgs/${org}/repos/${repo}/pulls`, input);
+  return postData(token, `/api/v1/projects/${project}/repos/${repo}/pulls`, input);
 }
 
 // createPullComment adds a comment to a pull request's conversation.
 export function createPullComment(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
   body: string,
 ): Promise<DataResult<{ comment: PullComment }>> {
   return postData(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/comments`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/comments`,
     { body },
   );
 }
@@ -776,14 +776,14 @@ export function createPullComment(
 // mergePull merges a pull request using the given method.
 export function mergePull(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
   method: "merge" | "squash" | "rebase",
 ): Promise<DataResult<{ pull: PullRequest }>> {
   return postData(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/merge`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/merge`,
     { method },
   );
 }
@@ -791,14 +791,14 @@ export function mergePull(
 // createPullReview submits a review (approve, request changes, or comment).
 export function createPullReview(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
   input: { event: ReviewState; body: string },
 ): Promise<DataResult<{ review: Review }>> {
   return postData(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/reviews`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/reviews`,
     input,
   );
 }
@@ -806,13 +806,13 @@ export function createPullReview(
 // getPullCommits returns the commits contained in a pull request.
 export function getPullCommits(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
 ): Promise<Result<{ commits: Commit[] }>> {
   return authGet<{ commits: Commit[] }>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/commits`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/commits`,
   );
 }
 
@@ -830,27 +830,27 @@ export type LineComment = {
 // getLineComments returns a pull request's line-anchored review comments.
 export function getLineComments(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
 ): Promise<Result<{ comments: LineComment[] }>> {
   return authGet<{ comments: LineComment[] }>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/line-comments`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/line-comments`,
   );
 }
 
 // createLineComment posts a single line-anchored comment on a PR's diff.
 export function createLineComment(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
   input: { path: string; line: number; body: string },
 ): Promise<DataResult<{ comment: LineComment }>> {
   return postData(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pulls/${number}/line-comments`,
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/line-comments`,
     input,
   );
 }
@@ -866,128 +866,42 @@ export type BranchPolicyInput = {
   requirePullRequest: boolean;
 };
 
-// setBranchPolicy creates or updates a branch policy (org owners / admins only).
+// setBranchPolicy creates or updates a branch policy (project owners / admins only).
 export function setBranchPolicy(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   input: BranchPolicyInput,
 ): Promise<DataResult<{ policy: BranchPolicy }>> {
-  return sendData(token, "PUT", `/api/v1/orgs/${org}/repos/${repo}/policies`, input);
+  return sendData(token, "PUT", `/api/v1/projects/${project}/repos/${repo}/policies`, input);
 }
 
 // deleteBranchPolicy removes the policy for a branch pattern.
 export function deleteBranchPolicy(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   pattern: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return deleteResource(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/policies?pattern=${encodeURIComponent(pattern)}`,
+    `/api/v1/projects/${project}/repos/${repo}/policies?pattern=${encodeURIComponent(pattern)}`,
   );
 }
 
-// ---- teams -----------------------------------------------------------------
+// ---- my projects ----------------------------------------------------------
 
-// Team is an access + ownership unit within an organization.
-export type Team = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  createdAt: string;
-};
+// MyProject is a project the signed-in user belongs to, annotated with their
+// role so the project switcher and dashboard can show membership context.
+export type MyProject = Project & { role: string };
 
-// TeamMember is a user that belongs to a team, with their role in that team.
-export type TeamMember = {
-  id: string;
-  username: string;
-  email: string;
-  displayName: string;
-  role: string;
-};
-
-// MyTeam is a team the signed-in user belongs to, annotated with its org so the
-// cross-org teams page can link back to each one.
-export type MyTeam = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  role: string;
-  orgSlug: string;
-  orgName: string;
-};
-
-// teamsResult is the org-scoped team listing payload.
-export type TeamsResult = { organization: Org; teams: Team[] };
-
-// getTeamsByOrg returns an org plus its teams, preserving HTTP status.
-export function getTeamsByOrg(
-  token: string,
-  org: string,
-): Promise<Result<TeamsResult>> {
-  return authGet<TeamsResult>(token, `/api/v1/orgs/${org}/teams`);
-}
-
-// teamResult is the single-team payload, including its members.
-export type TeamResult = {
-  organization: Org;
-  team: Team;
-  members: TeamMember[];
-};
-
-// getTeam returns a single team with its members.
-export function getTeam(
-  token: string,
-  org: string,
-  team: string,
-): Promise<Result<TeamResult>> {
-  return authGet<TeamResult>(token, `/api/v1/orgs/${org}/teams/${team}`);
-}
-
-// createTeam provisions a team under an org (org owners only).
-export function createTeam(
-  token: string,
-  org: string,
-  input: { slug: string; name: string; description: string },
-): Promise<MutationResult> {
-  return postCreate(token, `/api/v1/orgs/${org}/teams`, input);
-}
-
-// addTeamMember adds (or updates the role of) a user in a team by username.
-export function addTeamMember(
-  token: string,
-  org: string,
-  team: string,
-  input: { username: string; role: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  return postNoContent(
+// getMyProjects returns every project the signed-in user belongs to.
+export async function getMyProjects(token: string): Promise<MyProject[]> {
+  const res = await authGet<{ projects?: MyProject[] }>(
     token,
-    `/api/v1/orgs/${org}/teams/${team}/members`,
-    input,
+    "/api/v1/me/projects",
   );
-}
-
-// removeTeamMember removes a user from a team by user id.
-export function removeTeamMember(
-  token: string,
-  org: string,
-  team: string,
-  userID: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  return deleteResource(
-    token,
-    `/api/v1/orgs/${org}/teams/${team}/members/${userID}`,
-  );
-}
-
-// getMyTeams returns every team the signed-in user belongs to, across all orgs.
-export async function getMyTeams(token: string): Promise<MyTeam[]> {
-  const res = await authGet<{ teams?: MyTeam[] }>(token, "/api/v1/me/teams");
-  return res.ok ? (res.data.teams ?? []) : [];
+  return res.ok ? (res.data.projects ?? []) : [];
 }
 
 // ---- profile ---------------------------------------------------------------
@@ -1097,12 +1011,12 @@ export type PipelinesResult = {
 // getPipelines returns a repository's workflows with their latest run status.
 export function getPipelines(
   token: string,
-  org: string,
+  project: string,
   repo: string,
 ): Promise<Result<PipelinesResult>> {
   return authGet<PipelinesResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pipelines`,
+    `/api/v1/projects/${project}/repos/${repo}/pipelines`,
   );
 }
 
@@ -1112,12 +1026,12 @@ export type RunsResult = { repository: Repo; runs: PipelineRun[] };
 // getPipelineRuns returns a repository's most recent runs across all pipelines.
 export function getPipelineRuns(
   token: string,
-  org: string,
+  project: string,
   repo: string,
 ): Promise<Result<RunsResult>> {
   return authGet<RunsResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pipelines/runs`,
+    `/api/v1/projects/${project}/repos/${repo}/pipelines/runs`,
   );
 }
 
@@ -1128,23 +1042,23 @@ export type RunDetailResult = { repository: Repo; run: PipelineRunDetail };
 // workflow is the repo-relative workflow path the run belongs to.
 export function getPipelineRun(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   number: number,
   workflow: string,
 ): Promise<Result<RunDetailResult>> {
   return authGet<RunDetailResult>(
     token,
-    `/api/v1/orgs/${org}/repos/${repo}/pipelines/runs/${number}?workflow=${encodeURIComponent(workflow)}`,
+    `/api/v1/projects/${project}/repos/${repo}/pipelines/runs/${number}?workflow=${encodeURIComponent(workflow)}`,
   );
 }
 
 // triggerPipelineRun runs a workflow manually on the given ref (empty = default).
 export function triggerPipelineRun(
   token: string,
-  org: string,
+  project: string,
   repo: string,
   input: { workflow: string; ref?: string },
 ): Promise<DataResult<{ run: PipelineRun }>> {
-  return postData(token, `/api/v1/orgs/${org}/repos/${repo}/pipelines`, input);
+  return postData(token, `/api/v1/projects/${project}/repos/${repo}/pipelines`, input);
 }
