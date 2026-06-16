@@ -25,6 +25,17 @@ function runHref(
   )}`;
 }
 
+function shortSha(sha: string): string {
+  return sha ? sha.slice(0, 7) : "";
+}
+
+function workflowName(
+  workflows: Map<string, string>,
+  workflowPath: string,
+): string {
+  return workflows.get(workflowPath) ?? workflowPath.split("/").pop() ?? "Workflow";
+}
+
 // PipelinesPage shows a repository's workflows and recent runs, and lets the
 // user trigger a workflow manually.
 export default async function PipelinesPage({
@@ -59,9 +70,11 @@ export default async function PipelinesPage({
   const branches = branchesRes.ok ? branchesRes.data.branches : [];
   const defaultBranch = repo.defaultBranch;
 
-  // Map run number → workflow path so each recent-run row can link correctly.
+  // Map known run ids to workflow paths so recent-run rows can link correctly.
   const workflowByRunId = new Map<string, string>();
+  const workflowNameByPath = new Map<string, string>();
   for (const p of pipelines) {
+    workflowNameByPath.set(p.workflowPath, p.name);
     if (p.lastRun) workflowByRunId.set(p.lastRun.id, p.workflowPath);
   }
 
@@ -85,7 +98,59 @@ export default async function PipelinesPage({
 
       <div className="panel">
         <h2>
-          Workflows
+          Recent runs
+          <span className="tag">{runs.length}</span>
+        </h2>
+        {runs.length === 0 ? (
+          <div className="empty">No runs yet. Run a workflow to get started.</div>
+        ) : (
+          runs.map((run) => {
+            const workflowPath = workflowByRunId.get(run.id) ?? run.workflowPath ?? "";
+            const body = (
+              <>
+                <span className={`run-glyph ${run.status}`}>
+                  {statusGlyph(run.status)}
+                </span>
+                <div className="pr-main">
+                  <span className="nm">
+                    {workflowPath
+                      ? workflowName(workflowNameByPath, workflowPath)
+                      : `Run #${run.runNumber}`}
+                  </span>
+                  <span className="sub run-row-meta">
+                    <span>#{run.runNumber}</span>
+                    <span>{run.event}</span>
+                    <span>{run.ref || "—"}</span>
+                    {run.commitSha && (
+                      <span className="mono">{shortSha(run.commitSha)}</span>
+                    )}
+                    <span>{fmtDate(run.createdAt)}</span>
+                  </span>
+                </div>
+                <span className="spacer" />
+                <RunStatusBadge status={run.status} />
+              </>
+            );
+            return workflowPath ? (
+              <Link
+                className="row-item run-row"
+                key={run.id}
+                href={runHref(params.org, params.repo, workflowPath, run)}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div className="row-item run-row" key={run.id}>
+                {body}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="panel workflows-panel">
+        <h2>
+          Workflow definitions
           <span className="tag">{pipelines.length}</span>
         </h2>
         {pipelines.length === 0 ? (
@@ -96,7 +161,7 @@ export default async function PipelinesPage({
         ) : (
           pipelines.map((p) => (
             <div className="row-item" key={p.workflowPath}>
-              <span className="tree-icon">▷</span>
+              <span className="tree-icon">◇</span>
               <div className="pr-main">
                 <span className="nm">{p.name}</span>
                 <span className="sub mono">{p.workflowPath}</span>
@@ -117,50 +182,6 @@ export default async function PipelinesPage({
               )}
             </div>
           ))
-        )}
-      </div>
-
-      <div className="panel">
-        <h2>
-          Recent runs
-          <span className="tag">{runs.length}</span>
-        </h2>
-        {runs.length === 0 ? (
-          <div className="empty">No runs yet. Run a workflow to get started.</div>
-        ) : (
-          runs.map((run) => {
-            const workflowPath = workflowByRunId.get(run.id) ?? run.workflowPath ?? "";
-            const body = (
-              <>
-                <span className={`run-glyph ${run.status}`}>
-                  {statusGlyph(run.status)}
-                </span>
-                <div className="pr-main">
-                  <span className="nm">
-                    Run #{run.runNumber} · {run.event}
-                  </span>
-                  <span className="sub">
-                    {run.ref || "—"} · {fmtDate(run.createdAt)}
-                  </span>
-                </div>
-                <span className="spacer" />
-                <RunStatusBadge status={run.status} />
-              </>
-            );
-            return workflowPath ? (
-              <Link
-                className="row-item"
-                key={run.id}
-                href={runHref(params.org, params.repo, workflowPath, run)}
-              >
-                {body}
-              </Link>
-            ) : (
-              <div className="row-item" key={run.id}>
-                {body}
-              </div>
-            );
-          })
         )}
       </div>
     </>

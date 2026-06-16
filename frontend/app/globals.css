@@ -1560,11 +1560,42 @@ h2.section {
 }
 
 /* ---- pipelines (CI) ------------------------------------------------------ */
+.run-action-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+}
+.run-action-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+}
+.run-action-copy strong {
+  font-size: 14px;
+}
+.run-action-copy .sub {
+  color: var(--muted);
+  font-size: 12px;
+}
 .run-workflow-form {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  gap: 10px;
+  align-items: flex-end;
   flex-wrap: wrap;
+  margin-left: auto;
+}
+.run-workflow-form label {
+  display: grid;
+  gap: 5px;
+}
+.run-workflow-form label > span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
 }
 .run-workflow-form select {
   background: var(--panel2);
@@ -1573,6 +1604,7 @@ h2.section {
   border-radius: var(--radius-sm);
   padding: 6px 8px;
   font-size: 13px;
+  min-width: 160px;
 }
 .run-glyph {
   display: inline-flex;
@@ -1596,12 +1628,56 @@ h2.section {
   align-items: center;
   gap: 8px;
 }
+.run-row {
+  align-items: flex-start;
+}
+.run-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.run-row-meta span:not(:last-child)::after {
+  content: "·";
+  color: var(--muted);
+  margin-left: 8px;
+}
 .run-meta {
   display: flex;
   gap: 14px;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.run-hero {
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+.run-hero-main {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+.run-hero-main .run-glyph {
+  margin-top: 3px;
+}
+.run-hero h1 {
+  margin: 0 0 7px;
+  font-size: 20px;
+}
+.run-hero-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.workflows-panel {
+  opacity: 0.92;
 }
 .pipeline-step {
   border: 1px solid var(--line);
