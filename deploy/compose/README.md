@@ -1,7 +1,8 @@
 # Local development stack
 
 Brings up Postgres, Forgejo, the Quill backend (`api`), and the Quill frontend
-(`web`) on one Docker network.
+(`web`) on one Docker network. The backend is also wired to Docker so local
+pipeline runs can launch their job containers from inside the compose stack.
 
 ```bash
 # from the repo root
@@ -13,7 +14,7 @@ make down      # stop everything
 | Service  | URL                     | Notes                                   |
 | -------- | ----------------------- | --------------------------------------- |
 | web      | http://localhost:3001   | Quill UI                                |
-| api      | http://localhost:8080   | Quill backend (`/healthz`, `/api/v1`)   |
+| api      | http://localhost:8080   | Quill backend (`/healthz`, `/api/v1`) + pipeline runner |
 | forgejo  | http://localhost:3000   | Git backend wrapped by Quill            |
 | postgres | localhost:5432          | `quill` + `forgejo` databases           |
 
@@ -43,3 +44,10 @@ curl -s -u quill-admin:change-me \
 
 Copy the returned `sha1` token into `QUILL_FORGEJO_ADMIN_TOKEN` and
 `make up` again to apply.
+
+## Pipeline runner
+
+Pipeline execution uses `nektos/act` in the `api` container. The compose stack
+mounts `/var/run/docker.sock` and sets `DOCKER_HOST` so `act` can launch Docker
+job containers, while the backend image includes `git` for checking out Forgejo
+repositories before a workflow runs.

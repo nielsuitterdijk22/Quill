@@ -14,13 +14,13 @@ import (
 )
 
 // actRunner is the concrete Runner Quill ships: it interprets a workflow with
-// nektos/act and executes it for real on the host's container engine (Docker).
-// act is the GitHub Actions runtime, so this gives authentic semantics — `on:`
+// nektos/act and executes it for real through the configured Docker engine. act
+// is the GitHub Actions runtime, so this gives authentic semantics — `on:`
 // filtering, `uses:` actions (incl. actions/checkout), composite/Docker actions,
-// matrices and expressions — running on-host rather than dispatched to Forge.
+// matrices and expressions — without a separate Forge runner yet.
 //
-// "On-host" is the deliberate choice here: containers run on this machine's
-// Docker. The Runner interface remains the seam where a forgeRunner can later
+// In local compose, the API container reaches Docker through the mounted daemon
+// socket. The Runner interface remains the seam where a forgeRunner can later
 // dispatch the same JobSpec to Forge's ephemeral, confidential runners instead.
 type actRunner struct {
 	// images maps a runs-on label to the container image act runs the job in.

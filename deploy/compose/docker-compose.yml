@@ -5,7 +5,7 @@
 # Services:
 #   postgres  5432  metadata for Quill + Forgejo (separate databases)
 #   forgejo   3000  git backend that Quill wraps via REST (SSH on 2222)
-#   api       8080  Quill Go backend
+#   api       8080  Quill Go backend + Docker-backed pipeline execution
 #   web       3001  Quill Next.js frontend
 #
 # After first boot, create a Forgejo admin token and set QUILL_FORGEJO_ADMIN_TOKEN
@@ -67,6 +67,9 @@ services:
   api:
     build:
       context: ../../backend
+    # Local pipeline runs use nektos/act inside the API process and need access
+    # to the Docker daemon to launch job containers.
+    user: "0:0"
     environment:
       QUILL_ENV: development
       QUILL_HTTP_ADDR: ":8080"
@@ -77,8 +80,11 @@ services:
       QUILL_FORGEJO_PUBLIC_URL: ${QUILL_FORGEJO_PUBLIC_URL:-}
       QUILL_JWT_SECRET: ${QUILL_JWT_SECRET:-dev-insecure-secret-change-me}
       QUILL_CORS_ALLOWED_ORIGINS: http://localhost:3001
+      DOCKER_HOST: unix:///var/run/docker.sock
     ports:
       - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy

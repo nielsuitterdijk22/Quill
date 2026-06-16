@@ -11,8 +11,10 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-api ./cmd/api
 
 # ---- run ----
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates git
+RUN adduser -D -H -u 10001 quill
 COPY --from=build /out/quill-api /quill-api
 EXPOSE 8080
-USER nonroot:nonroot
+USER quill:quill
 ENTRYPOINT ["/quill-api"]

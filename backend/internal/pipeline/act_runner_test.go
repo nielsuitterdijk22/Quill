@@ -81,10 +81,10 @@ func TestWorkflowName(t *testing.T) {
 }
 
 // TestActRunnerExecutesOnDocker is the real end-to-end check: it runs a workflow
-// through act on the host's container engine and asserts the step ran, logs were
-// captured, and status rolled up. It is gated on QUILL_PIPELINE_DOCKER_TEST so
-// `make be-test` stays fast and Docker-free; set it (and optionally
-// QUILL_PIPELINE_UBUNTU_IMAGE) to exercise the full path.
+// through act on Docker and asserts the step ran, logs were captured, and status
+// rolled up. It is gated on QUILL_PIPELINE_DOCKER_TEST so `make be-test` stays
+// fast and Docker-free; set it (and optionally QUILL_PIPELINE_UBUNTU_IMAGE) to
+// exercise the full path.
 func TestActRunnerExecutesOnDocker(t *testing.T) {
 	if os.Getenv("QUILL_PIPELINE_DOCKER_TEST") == "" {
 		t.Skip("set QUILL_PIPELINE_DOCKER_TEST=1 to run the Docker-backed pipeline test")

@@ -4,9 +4,10 @@
 //
 // The Runner interface is the seam that lets the executor be swapped without
 // touching the platform service. Today the only implementation is actRunner,
-// which uses nektos/act to interpret and fully execute a workflow on the host's
-// container engine; a forgeRunner that dispatches the same JobSpec to Forge's
-// ephemeral, confidential runners can drop in behind the same interface later.
+// which uses nektos/act to interpret and fully execute a workflow through a
+// configured Docker engine; a forgeRunner that dispatches the same JobSpec to
+// Forge's ephemeral, confidential runners can drop in behind the same interface
+// later.
 package pipeline
 
 import (
