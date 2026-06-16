@@ -49,7 +49,7 @@ export function CloneButton({ httpUrl }: { httpUrl: string }) {
   function generate() {
     setError(null);
     startTransition(async () => {
-      const res = await generateGitTokenAction();
+      const res = await generateGitTokenAction("clone over HTTPS");
       if (res.ok) setCred({ username: res.username, token: res.token });
       else setError(res.error);
     });

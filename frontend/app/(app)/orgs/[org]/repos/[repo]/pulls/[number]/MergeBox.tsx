@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 
 import type { PolicyGate } from "../../../../../../../lib/api";
@@ -7,11 +8,46 @@ import { mergeAction, type MergeState } from "./actions";
 
 const initialState: MergeState = {};
 
-function MergeButton({ blocked }: { blocked: boolean }) {
+const METHODS: { value: string; label: string; hint: string }[] = [
+  {
+    value: "merge",
+    label: "Create a merge commit",
+    hint: "All commits from this branch are added to the base via a merge commit.",
+  },
+  {
+    value: "squash",
+    label: "Squash and merge",
+    hint: "The commits are combined into one commit on the base branch.",
+  },
+  {
+    value: "rebase",
+    label: "Rebase and merge",
+    hint: "The commits are rebased and added individually onto the base branch.",
+  },
+];
+
+// MergeOption is one strategy in the merge popup; submitting it merges with that
+// method. The form's method field carries the chosen strategy.
+function MergeOption({
+  value,
+  label,
+  hint,
+}: {
+  value: string;
+  label: string;
+  hint: string;
+}) {
   const { pending } = useFormStatus();
   return (
-    <button className="btn primary" type="submit" disabled={pending || blocked}>
-      {pending ? "Merging…" : "Merge pull request"}
+    <button
+      className="merge-option"
+      type="submit"
+      name="method"
+      value={value}
+      disabled={pending}
+    >
+      <span className="merge-option-label">{label}</span>
+      <span className="merge-option-hint">{hint}</span>
     </button>
   );
 }
@@ -39,9 +75,10 @@ function GateRow({ gate }: { gate: PolicyGate }) {
   );
 }
 
-// MergeBox lets a member merge an open PR with a chosen strategy. When a branch
-// policy blocks the merge, the button is disabled and the reason is shown (the
-// backend enforces the gate regardless).
+// MergeBox lets a member merge an open PR. The merge control sits top-right; the
+// button opens a popup to pick the merge strategy. When a branch policy blocks
+// the merge, the button is disabled and the reason is shown (the backend enforces
+// the gate regardless).
 export function MergeBox({
   org,
   repo,
@@ -57,28 +94,57 @@ export function MergeBox({
 }) {
   const action = mergeAction.bind(null, org, repo, number);
   const [state, formAction] = useFormState(action, initialState);
+  const [open, setOpen] = useState(false);
   const blocked = gate.applies && gate.blocked;
 
   return (
     <div className="panel merge-box">
-      <GateRow gate={gate} />
-      <div className="merge-head">
-        <span className={`merge-dot ${mergeable ? "ok" : "warn"}`} />
-        <strong>
-          {mergeable
-            ? "This branch has no conflicts with the base branch."
-            : "This pull request may have conflicts."}
-        </strong>
+      <div className="merge-bar">
+        <div className="merge-status">
+          <GateRow gate={gate} />
+          <div className="merge-head">
+            <span className={`merge-dot ${mergeable ? "ok" : "warn"}`} />
+            <strong>
+              {mergeable
+                ? "This branch has no conflicts with the base branch."
+                : "This pull request may have conflicts."}
+            </strong>
+          </div>
+        </div>
+        <div className="merge-actions">
+          <button
+            className="btn primary"
+            type="button"
+            disabled={blocked}
+            aria-expanded={open}
+            aria-haspopup="menu"
+            onClick={() => setOpen((o) => !o)}
+          >
+            Merge pull request ▾
+          </button>
+          {open && !blocked && (
+            <>
+              <button
+                type="button"
+                className="merge-backdrop"
+                aria-label="Close merge menu"
+                onClick={() => setOpen(false)}
+              />
+              <form className="merge-menu" action={formAction} role="menu">
+                {METHODS.map((m) => (
+                  <MergeOption
+                    key={m.value}
+                    value={m.value}
+                    label={m.label}
+                    hint={m.hint}
+                  />
+                ))}
+              </form>
+            </>
+          )}
+        </div>
       </div>
       {state.error && <div className="form-error">{state.error}</div>}
-      <form className="merge-form" action={formAction}>
-        <select name="method" defaultValue="merge">
-          <option value="merge">Create a merge commit</option>
-          <option value="squash">Squash and merge</option>
-          <option value="rebase">Rebase and merge</option>
-        </select>
-        <MergeButton blocked={blocked} />
-      </form>
     </div>
   );
 }

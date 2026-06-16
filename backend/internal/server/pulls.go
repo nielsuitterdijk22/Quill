@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
@@ -226,10 +227,26 @@ func (s *Server) handleListMyPulls(w http.ResponseWriter, r *http.Request) {
 }
 
 // gitTokenResponse is a freshly minted git-over-HTTPS credential. The token is
-// returned only once, at creation time.
+// returned only once, at creation time. ID identifies the stored record so it
+// can be revoked later.
 type gitTokenResponse struct {
+	ID       string `json:"id"`
 	Username string `json:"username"`
 	Token    string `json:"token"`
+}
+
+// createGitTokenRequest is the optional body for minting a git token; name is a
+// user-facing label shown in the token list.
+type createGitTokenRequest struct {
+	Name string `json:"name"`
+}
+
+// gitTokenSummary is the metadata for an outstanding git token. The secret is
+// never returned after creation.
+type gitTokenSummary struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // handleCreateGitToken mints a personal git access token for the authenticated
@@ -240,12 +257,56 @@ func (s *Server) handleCreateGitToken(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	cred, err := s.platform.CreateGitToken(r.Context(), actor)
+	var req createGitTokenRequest
+	if r.ContentLength != 0 {
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+	}
+	cred, err := s.platform.CreateGitToken(r.Context(), actor, req.Name)
 	if err != nil {
 		s.writePlatformError(w, err, "could not create git token")
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, gitTokenResponse{Username: cred.Username, Token: cred.Token})
+	httpx.JSON(w, http.StatusCreated, gitTokenResponse{ID: cred.ID.String(), Username: cred.Username, Token: cred.Token})
+}
+
+// handleListGitTokens returns the authenticated user's outstanding git tokens.
+func (s *Server) handleListGitTokens(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	tokens, err := s.platform.ListGitTokens(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list git tokens")
+		return
+	}
+	out := make([]gitTokenSummary, 0, len(tokens))
+	for _, t := range tokens {
+		out = append(out, gitTokenSummary{ID: t.ID.String(), Name: t.Name, CreatedAt: t.CreatedAt})
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+// handleRevokeGitToken revokes one of the authenticated user's git tokens.
+func (s *Server) handleRevokeGitToken(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "invalid token id")
+		return
+	}
+	if err := s.platform.RevokeGitToken(r.Context(), actor, id); err != nil {
+		s.writePlatformError(w, err, "could not revoke git token")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListPulls(w http.ResponseWriter, r *http.Request) {

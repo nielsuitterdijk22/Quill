@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strconv"
@@ -253,6 +254,45 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 		"repository": newRepoResponse(repo),
 		"contents":   resp,
 	})
+}
+
+// renderMarkupRequest carries raw markdown to render. maxMarkupInputBytes caps
+// it so a request can't ask Forgejo to render an unbounded blob.
+type renderMarkupRequest struct {
+	Text string `json:"text"`
+}
+
+const maxMarkupInputBytes = 512 << 10
+
+// handleRenderMarkup renders markdown text to sanitized HTML in the repository's
+// context (so relative links and references resolve), for the README and other
+// markdown the frontend displays.
+func (s *Server) handleRenderMarkup(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	// READMEs can be larger than the small auth-body cap, so decode with the
+	// markup-specific limit (plus slack for JSON overhead) rather than decodeJSON.
+	r.Body = http.MaxBytesReader(w, r.Body, maxMarkupInputBytes+(4<<10))
+	var req renderMarkupRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid_body", "request body must be valid JSON")
+		return
+	}
+	if len(req.Text) > maxMarkupInputBytes {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "markdown input is too large to render")
+		return
+	}
+	html, err := s.platform.RenderMarkdown(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), req.Text)
+	if err != nil {
+		s.writePlatformError(w, err, "could not render markdown")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"html": html})
 }
 
 // newContentEntries converts and sorts directory entries: directories first,

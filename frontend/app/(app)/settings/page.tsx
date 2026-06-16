@@ -1,11 +1,14 @@
-import { requireSession } from "../../lib/session";
+import { listGitTokens } from "../../lib/api";
+import { getToken, requireSession } from "../../lib/session";
 import { GitTokenPanel } from "./GitTokenPanel";
 import { ProfileForm } from "./ProfileForm";
 
 // SettingsPage lets the signed-in user edit their profile (display name) and mint
-// a personal git access token for cloning and pushing over HTTPS.
+// or revoke personal git access tokens for cloning and pushing over HTTPS.
 export default async function SettingsPage() {
   const user = await requireSession();
+  const token = getToken();
+  const tokens = token ? await listGitTokens(token) : [];
 
   return (
     <>
@@ -25,7 +28,7 @@ export default async function SettingsPage() {
 
       <ProfileForm displayName={user.displayName} />
 
-      <GitTokenPanel />
+      <GitTokenPanel tokens={tokens} />
     </>
   );
 }

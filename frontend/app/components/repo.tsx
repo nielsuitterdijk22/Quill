@@ -209,6 +209,37 @@ export function CodeView({ content }: { content: string }) {
   );
 }
 
+// ReadmeView renders a repository README below the file tree. When rendered HTML
+// is available (markdown via Forgejo's markup engine) it is shown as formatted
+// markup; otherwise the raw text is shown in a monospace block.
+export function ReadmeView({
+  name,
+  html,
+  raw,
+}: {
+  name: string;
+  html: string | null;
+  raw: string;
+}) {
+  return (
+    <div className="panel readme">
+      <h2>
+        <span className="fn">{name}</span>
+      </h2>
+      {html ? (
+        <div
+          className="readme-body markdown-body"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <div className="readme-body">
+          <pre>{raw}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // shortSha trims a commit SHA for display.
 export function shortSha(sha: string): string {
   return sha.slice(0, 7);

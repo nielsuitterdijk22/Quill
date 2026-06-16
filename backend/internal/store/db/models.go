@@ -44,6 +44,14 @@ type BranchPolicy struct {
 	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
+type GitToken struct {
+	ID               uuid.UUID `json:"id"`
+	UserID           uuid.UUID `json:"userId"`
+	Name             string    `json:"name"`
+	ForgejoTokenName string    `json:"forgejoTokenName"`
+	CreatedAt        time.Time `json:"createdAt"`
+}
+
 type OrgMember struct {
 	OrgID     uuid.UUID `json:"orgId"`
 	UserID    uuid.UUID `json:"userId"`

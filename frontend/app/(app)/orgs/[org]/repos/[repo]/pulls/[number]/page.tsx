@@ -10,7 +10,7 @@ import {
   getPullReviews,
   type PolicyGate,
 } from "../../../../../../../lib/api";
-import { getToken } from "../../../../../../../lib/session";
+import { getToken, getSession } from "../../../../../../../lib/session";
 import {
   BrowseError,
   RepoHeader,
@@ -85,6 +85,7 @@ export default async function PullDetailPage({
       getPullCommits(token, params.org, params.repo, number),
       getLineComments(token, params.org, params.repo, number),
     ]);
+  const currentUser = await getSession();
   const comments = commentsRes.ok ? commentsRes.data.comments : [];
   const files = diffRes.ok ? diffRes.data.files : [];
   const allReviews = reviewsRes.ok ? reviewsRes.data.reviews : [];
@@ -92,12 +93,32 @@ export default async function PullDetailPage({
   const commits = commitsRes.ok ? commitsRes.data.commits : [];
   const lineComments = lineCommentsRes.ok ? lineCommentsRes.data.comments : [];
   const isOpen = pull.state === "open" && !pull.merged;
+  // Forgejo rejects reviews on your own pull request, so we hide the review form
+  // for the author and show an explanation instead.
+  const isAuthor =
+    !!currentUser && currentUser.username === pull.author?.login;
 
   // Line comments are carried as empty-bodied COMMENT reviews; hide those from
   // the conversation so they don't show up as blank "reviewed" entries.
   const reviews = allReviews.filter(
     (rv) => !(rv.state === "COMMENT" && !rv.body?.trim()),
   );
+
+  // Group line-anchored review comments by file so the conversation can surface
+  // them (they otherwise only appear in the Files changed tab).
+  const lineCommentGroups = Array.from(
+    lineComments
+      .reduce((map, c) => {
+        const arr = map.get(c.path) ?? [];
+        arr.push(c);
+        map.set(c.path, arr);
+        return map;
+      }, new Map<string, typeof lineComments>())
+      .entries(),
+  ).map(([path, items]) => ({
+    path,
+    items: [...items].sort((a, b) => a.line - b.line),
+  }));
 
   const base = `${repoBase(params.org, params.repo)}/pulls/${number}`;
   const tabHref = (t: Tab) =>
@@ -233,6 +254,43 @@ export default async function PullDetailPage({
             </div>
           ))}
 
+          {lineCommentGroups.length > 0 && (
+            <div className="pr-comment review">
+              <div className="pr-comment-head">
+                <b>Code review comments</b>
+                <span className="subtle">
+                  {" "}
+                  · {lineComments.length} on the diff
+                </span>
+                <span className="spacer" />
+                <Link href={`${base}?tab=files`} className="subtle">
+                  View in Files changed
+                </Link>
+              </div>
+              <div className="pr-comment-body line-comment-groups">
+                {lineCommentGroups.map((g) => (
+                  <div className="line-comment-group" key={g.path}>
+                    <div className="lc-file mono">{g.path}</div>
+                    {g.items.map((c) => (
+                      <div className="line-comment" key={c.id}>
+                        <div className="line-comment-head">
+                          <b>{c.author ?? "unknown"}</b>
+                          <span className="subtle">
+                            {" "}
+                            · line {c.line} · {fmtDate(c.createdAt)}
+                          </span>
+                        </div>
+                        <div className="line-comment-body">
+                          <pre>{c.body}</pre>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {isOpen && (
             <>
               <CommentForm
@@ -240,7 +298,23 @@ export default async function PullDetailPage({
                 repo={params.repo}
                 number={number}
               />
-              <ReviewForm org={params.org} repo={params.repo} number={number} />
+              {isAuthor ? (
+                <div className="review-form review-self">
+                  <div className="review-form-head">
+                    <strong>Review changes</strong>
+                    <span className="subtle">
+                      You can&rsquo;t review your own pull request. Another member
+                      needs to approve it to satisfy the branch policy.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <ReviewForm
+                  org={params.org}
+                  repo={params.repo}
+                  number={number}
+                />
+              )}
             </>
           )}
         </div>

@@ -46,6 +46,14 @@ func (c *Client) CreateAccessToken(ctx context.Context, username, password, name
 	return out.SHA1, nil
 }
 
+// DeleteAccessToken revokes a personal access token by its name, authenticated as
+// the user (Forgejo forbids deleting tokens via the admin token, mirroring
+// creation). A 404 means the token is already gone, which callers may ignore.
+func (c *Client) DeleteAccessToken(ctx context.Context, username, password, tokenName string) error {
+	path := "/users/" + url.PathEscape(username) + "/tokens/" + url.PathEscape(tokenName)
+	return c.doBasicAuth(ctx, http.MethodDelete, path, username, password, nil, nil)
+}
+
 // CloneAuth describes how the CI dispatcher should clone a Forgejo repository.
 type CloneAuth struct {
 	URL        string

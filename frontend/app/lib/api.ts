@@ -277,12 +277,35 @@ export async function getOpenPullRequestCount(token: string): Promise<number> {
 }
 
 // GitCredential is a one-time git-over-HTTPS credential: a username and a freshly
-// minted access token used as the password when cloning or pushing.
-export type GitCredential = { username: string; token: string };
+// minted access token used as the password when cloning or pushing. id
+// identifies the stored token so it can be revoked later.
+export type GitCredential = { id: string; username: string; token: string };
+
+// GitTokenSummary is the metadata for an outstanding git token; the secret is
+// never returned after creation.
+export type GitTokenSummary = { id: string; name: string; createdAt: string };
 
 // createGitToken mints a personal git access token for the user (shown once).
-export function createGitToken(token: string): Promise<DataResult<GitCredential>> {
-  return postData<GitCredential>(token, "/api/v1/me/git-token", {});
+// name is an optional user-facing label.
+export function createGitToken(
+  token: string,
+  name?: string,
+): Promise<DataResult<GitCredential>> {
+  return postData<GitCredential>(token, "/api/v1/me/git-token", { name: name ?? "" });
+}
+
+// listGitTokens returns the user's outstanding git tokens (metadata only).
+export async function listGitTokens(token: string): Promise<GitTokenSummary[]> {
+  const res = await authGet<GitTokenSummary[]>(token, "/api/v1/me/git-tokens");
+  return res.ok ? res.data : [];
+}
+
+// revokeGitToken revokes one of the user's git tokens by id.
+export function revokeGitToken(
+  token: string,
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(token, `/api/v1/me/git-tokens/${id}`);
 }
 
 async function postAuth(path: string, body: unknown): Promise<AuthResult> {
@@ -437,6 +460,23 @@ export function getContents(
     token,
     `/api/v1/orgs/${org}/repos/${repo}/contents${qs ? `?${qs}` : ""}`,
   );
+}
+
+// renderMarkdown renders markdown text to sanitized HTML in the repository's
+// context (so relative links and references resolve). Returns null on failure so
+// callers can fall back to plain text.
+export async function renderMarkdown(
+  token: string,
+  org: string,
+  repo: string,
+  text: string,
+): Promise<string | null> {
+  const res = await postData<{ html: string }>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/markup`,
+    { text },
+  );
+  return res.ok ? res.data.html : null;
 }
 
 // MutationResult reports the outcome of a create call: the created slug on

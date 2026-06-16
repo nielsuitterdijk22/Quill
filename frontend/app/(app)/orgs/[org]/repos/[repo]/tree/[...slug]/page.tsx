@@ -5,6 +5,7 @@ import {
   getContents,
   getCommits,
   getMeta,
+  renderMarkdown,
 } from "../../../../../../../lib/api";
 import { getToken } from "../../../../../../../lib/session";
 import { CloneButton } from "../../../../../../../components/CloneButton";
@@ -13,6 +14,7 @@ import {
   cloneHttpUrl,
   DirView,
   PathBreadcrumb,
+  ReadmeView,
   RepoHeader,
   blobHref,
   splitRef,
@@ -71,6 +73,24 @@ export default async function TreePage({
     latestRes.ok && latestRes.data.commits.length > 0
       ? latestRes.data.commits[0]
       : null;
+
+  // Render the README for this directory, mirroring the repo home page.
+  const entries = contents.entries ?? [];
+  const readmeEntry = entries.find(
+    (e) => e.type === "file" && /^readme(\.md|\.txt)?$/i.test(e.name),
+  );
+  const readmeRes = readmeEntry
+    ? await getContents(token, params.org, params.repo, readmeEntry.path, ref)
+    : null;
+  const readme =
+    readmeRes && readmeRes.ok && readmeRes.data.contents.file?.content
+      ? readmeRes.data.contents.file
+      : null;
+  const readmeHtml =
+    readme && /\.md$/i.test(readme.name)
+      ? await renderMarkdown(token, params.org, params.repo, readme.content ?? "")
+      : null;
+
   const httpUrl = cloneHttpUrl(
     meta?.forgejo?.publicUrl,
     repo.forgejoOwner,
@@ -99,14 +119,25 @@ export default async function TreePage({
         <span className="spacer" />
         <CloneButton httpUrl={httpUrl} />
       </div>
+      {path && (
+        <PathBreadcrumb
+          org={params.org}
+          repo={params.repo}
+          refName={ref}
+          path={path}
+        />
+      )}
       <DirView
         org={params.org}
         repo={params.repo}
         refName={ref}
         path={path}
-        entries={contents.entries ?? []}
+        entries={entries}
         latest={latest}
       />
+      {readme && (
+        <ReadmeView name={readme.name} html={readmeHtml} raw={readme.content ?? ""} />
+      )}
     </>
   );
 }

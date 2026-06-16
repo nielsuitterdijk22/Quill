@@ -16,6 +16,7 @@ type Querier interface {
 	CountOrganizations(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAuthIdentity(ctx context.Context, arg CreateAuthIdentityParams) (AuthIdentity, error)
+	CreateGitToken(ctx context.Context, arg CreateGitTokenParams) (GitToken, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreatePipelineJob(ctx context.Context, arg CreatePipelineJobParams) (PipelineJob, error)
 	CreatePipelineRun(ctx context.Context, arg CreatePipelineRunParams) (PipelineRun, error)
@@ -24,9 +25,11 @@ type Querier interface {
 	CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteBranchPolicy(ctx context.Context, arg DeleteBranchPolicyParams) (int64, error)
+	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	DeleteRepository(ctx context.Context, id uuid.UUID) error
 	GetAuthIdentity(ctx context.Context, arg GetAuthIdentityParams) (AuthIdentity, error)
 	GetBranchPolicy(ctx context.Context, arg GetBranchPolicyParams) (BranchPolicy, error)
+	GetGitToken(ctx context.Context, arg GetGitTokenParams) (GitToken, error)
 	GetOrganizationByID(ctx context.Context, id uuid.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, lower string) (Organization, error)
 	GetPipeline(ctx context.Context, id uuid.UUID) (Pipeline, error)
@@ -44,6 +47,7 @@ type Querier interface {
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	ListAuthIdentitiesForUser(ctx context.Context, userID uuid.UUID) ([]AuthIdentity, error)
 	ListBranchPoliciesByRepo(ctx context.Context, repoID uuid.UUID) ([]BranchPolicy, error)
+	ListGitTokensByUser(ctx context.Context, userID uuid.UUID) ([]GitToken, error)
 	ListJobsByRun(ctx context.Context, runID uuid.UUID) ([]PipelineJob, error)
 	ListOrgMembers(ctx context.Context, orgID uuid.UUID) ([]ListOrgMembersRow, error)
 	ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]Organization, error)

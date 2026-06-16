@@ -32,8 +32,12 @@ export function BranchSelector({
 
   return (
     <div className="branch-selector">
+      <span className="ic" aria-hidden="true">
+        ⎇
+      </span>
       <select
         id="branch-select"
+        aria-label="Switch branch"
         value={selectedBranch}
         onChange={(e) => {
           router.push(treeHref(org, repo, e.target.value, path));

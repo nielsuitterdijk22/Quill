@@ -106,6 +106,8 @@ func (s *Server) setupRoutes() {
 			r.Get("/me/pulls", s.handleListMyPulls)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
 			r.Post("/me/git-token", s.handleCreateGitToken)
+			r.Get("/me/git-tokens", s.handleListGitTokens)
+			r.Delete("/me/git-tokens/{id}", s.handleRevokeGitToken)
 			r.Get("/me/teams", s.handleListMyTeams)
 			r.Route("/orgs", func(r chi.Router) {
 				r.Get("/", s.handleListOrgs)
@@ -132,6 +134,7 @@ func (s *Server) setupRoutes() {
 							r.Get("/commits", s.handleListCommits)
 							r.Get("/commits/{sha}", s.handleGetCommit)
 							r.Get("/contents", s.handleGetContents)
+							r.Post("/markup", s.handleRenderMarkup)
 							r.Route("/policies", func(r chi.Router) {
 								r.Get("/", s.handleListBranchPolicies)
 								r.Put("/", s.handleSetBranchPolicy)

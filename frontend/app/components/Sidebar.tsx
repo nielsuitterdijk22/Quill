@@ -69,7 +69,7 @@ function safeDecode(segment: string): string {
 // file path, which we can't split here).
 function parseRepoCtx(pathname: string): RepoCtx | null {
   const m = pathname.match(
-    /^\/orgs\/([^/]+)\/repos\/([^/]+)(?:\/(tree|commits|blob)\/(.+?))?\/?$/,
+    /^\/orgs\/([^/]+)\/repos\/([^/]+)(?:\/(branches|tree|commits|blob|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
   );
   if (!m || !m[2] || m[2] === "new") return null;
   let ref = "main";

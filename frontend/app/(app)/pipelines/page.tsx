@@ -4,26 +4,25 @@ import { notFound } from "next/navigation";
 import {
   getPipelines,
   listReposByOrg,
-  type PipelineSummary,
+  type PipelineRun,
 } from "../../lib/api";
 import { getDefaultOrg } from "../../lib/orgs";
 import { getToken } from "../../lib/session";
 import { fmtDate } from "../../components/repo";
 import { RunStatusBadge } from "../../components/pipelines";
 
-// latestRun returns the most recent last-run across a repo's workflows, so the
-// overview can show a single status per repository.
-function latestRun(pipelines: PipelineSummary[]): PipelineSummary["lastRun"] {
-  let latest: PipelineSummary["lastRun"];
-  for (const p of pipelines) {
-    if (!p.lastRun) continue;
-    if (!latest || p.lastRun.createdAt > latest.createdAt) latest = p.lastRun;
-  }
-  return latest;
-}
+// PipelineRow is one workflow flattened with the repository it belongs to, so the
+// overview can list pipelines (not repositories) while still naming their source.
+type PipelineRow = {
+  repoSlug: string;
+  repoName: string;
+  workflowPath: string;
+  name: string;
+  lastRun?: PipelineRun;
+};
 
-// PipelinesOverviewPage lists the repositories in the user's default org with a
-// CI status summary, linking each to its pipelines tab.
+// PipelinesOverviewPage lists every pipeline (workflow) across the repositories in
+// the user's default org, each with its source repository and latest CI status.
 export default async function PipelinesOverviewPage() {
   const token = getToken();
   if (!token) notFound();
@@ -46,15 +45,27 @@ export default async function PipelinesOverviewPage() {
 
   const repos = await listReposByOrg(token, org);
 
-  // Fetch each repo's workflows so we can show its latest CI status. Repos
-  // without git or without workflows simply show "No pipelines".
-  const summaries = await Promise.all(
+  // Fetch each repo's workflows and flatten them into a single pipeline list.
+  const perRepo = await Promise.all(
     repos.map(async (repo) => {
       const res = await getPipelines(token, org, repo.slug);
       const pipelines = res.ok ? res.data.pipelines : [];
-      return { repo, pipelines, last: latestRun(pipelines) };
+      return pipelines.map<PipelineRow>((p) => ({
+        repoSlug: repo.slug,
+        repoName: repo.name,
+        workflowPath: p.workflowPath,
+        name: p.name,
+        lastRun: p.lastRun,
+      }));
     }),
   );
+
+  // Most recently active pipelines first; never-run pipelines fall to the end.
+  const rows = perRepo.flat().sort((a, b) => {
+    const at = a.lastRun?.createdAt ?? "";
+    const bt = b.lastRun?.createdAt ?? "";
+    return bt.localeCompare(at);
+  });
 
   return (
     <>
@@ -64,37 +75,40 @@ export default async function PipelinesOverviewPage() {
 
       <div className="panel">
         <h2>
-          Repositories
-          <span className="tag">{repos.length}</span>
+          Pipelines
+          <span className="tag">{rows.length}</span>
         </h2>
-        {repos.length === 0 ? (
-          <div className="empty">No repositories yet. Create one to add CI.</div>
+        {rows.length === 0 ? (
+          <div className="empty">
+            No pipelines yet. Add a workflow under{" "}
+            <span className="mono">.github/workflows</span> in a repository to
+            define one.
+          </div>
         ) : (
-          summaries.map(({ repo, pipelines, last }) => (
+          rows.map((row) => (
             <Link
               className="row-item"
-              key={repo.id}
-              href={`/orgs/${org}/repos/${repo.slug}/pipelines`}
+              key={`${row.repoSlug}:${row.workflowPath}`}
+              href={`/orgs/${org}/repos/${row.repoSlug}/pipelines`}
             >
-              <span className="tree-icon">▷</span>
+              <span className="tree-icon">◇</span>
               <div className="pr-main">
-                <span className="nm">{repo.name}</span>
-                <span className="sub">
-                  {pipelines.length === 0
-                    ? "No pipelines"
-                    : `${pipelines.length} workflow${pipelines.length === 1 ? "" : "s"}`}
+                <span className="nm">{row.name}</span>
+                <span className="sub run-row-meta">
+                  <span className="mono">{row.repoName}</span>
+                  <span className="mono">{row.workflowPath}</span>
                 </span>
               </div>
               <span className="spacer" />
-              {last ? (
+              {row.lastRun ? (
                 <>
                   <span className="sub">
-                    #{last.runNumber} · {fmtDate(last.createdAt)}
+                    #{row.lastRun.runNumber} · {fmtDate(row.lastRun.createdAt)}
                   </span>
-                  <RunStatusBadge status={last.status} />
+                  <RunStatusBadge status={row.lastRun.status} />
                 </>
               ) : (
-                <span className="sub">—</span>
+                <span className="sub">Never run</span>
               )}
             </Link>
           ))

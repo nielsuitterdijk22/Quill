@@ -2,18 +2,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  getBranches,
   getContents,
   getCommits,
   getMeta,
   getRepo,
+  renderMarkdown,
 } from "../../../../../lib/api";
 import { getToken } from "../../../../../lib/session";
 import { CloneButton } from "../../../../../components/CloneButton";
+import { BranchSelector } from "../../../../../components/BranchSelector";
 import {
   BrowseError,
   cloneHttpUrl,
   commitsHref,
   DirView,
+  ReadmeView,
   RepoHeader,
   repoBase,
   VisibilityBadge,
@@ -123,13 +127,17 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
   const readmeEntry = entries.find(
     (e) => e.type === "file" && /^readme(\.md|\.txt)?$/i.test(e.name),
   );
-  const [commitsRes, readmeRes, meta] = await Promise.all([
+  const [branchesRes, commitsRes, readmeRes, meta] = await Promise.all([
+    getBranches(token, params.org, params.repo),
     getCommits(token, params.org, params.repo, ref, "", 1),
     readmeEntry
       ? getContents(token, params.org, params.repo, readmeEntry.path, ref)
       : Promise.resolve(null),
     getMeta(),
   ]);
+  const refNames = branchesRes.ok
+    ? branchesRes.data.branches.map((b) => b.name)
+    : [ref];
   const latest =
     commitsRes.ok && commitsRes.data.commits.length > 0
       ? commitsRes.data.commits[0]
@@ -137,6 +145,12 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
   const readme =
     readmeRes && readmeRes.ok && readmeRes.data.contents.file?.content
       ? readmeRes.data.contents.file
+      : null;
+  // Render markdown READMEs as HTML via Forgejo's markup engine; plain-text
+  // READMEs (.txt) are shown verbatim.
+  const readmeHtml =
+    readme && /\.md$/i.test(readme.name)
+      ? await renderMarkdown(token, params.org, params.repo, readme.content ?? "")
       : null;
   const httpUrl = cloneHttpUrl(
     meta?.forgejo?.publicUrl,
@@ -159,12 +173,13 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
       {repo.description && <p className="subtle">{repo.description}</p>}
 
       <div className="repo-toolbar">
-        <Link
-          className="branch-pick"
-          href={`${repoBase(params.org, params.repo)}/branches`}
-        >
-          <span className="ic">⎇</span> {ref}
-        </Link>
+        <BranchSelector
+          org={params.org}
+          repo={params.repo}
+          selectedBranch={ref}
+          branches={refNames}
+          path=""
+        />
         <span className="spacer" />
         <Link className="pill" href={commitsHref(params.org, params.repo, ref)}>
           commits
@@ -182,14 +197,7 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
       />
 
       {readme && (
-        <div className="panel readme">
-          <h2>
-            <span className="fn">{readme.name}</span>
-          </h2>
-          <div className="readme-body">
-            <pre>{readme.content}</pre>
-          </div>
-        </div>
+        <ReadmeView name={readme.name} html={readmeHtml} raw={readme.content ?? ""} />
       )}
     </>
   );

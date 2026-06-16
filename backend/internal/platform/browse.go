@@ -87,6 +87,21 @@ func (s *Service) GetContents(ctx context.Context, actor Actor, orgSlug, repoSlu
 	return repo, contents, nil
 }
 
+// RenderMarkdown renders markdown text to sanitized HTML in the context of a
+// repository, for an authorized actor. It is used to render READMEs the way
+// Forgejo would (repo-relative links, references), returning safe HTML.
+func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, orgSlug, repoSlug, text string) (string, error) {
+	_, owner, name, err := s.resolveRepo(ctx, actor, orgSlug, repoSlug, true)
+	if err != nil {
+		return "", err
+	}
+	html, err := s.forgejo.RenderMarkup(ctx, text, owner+"/"+name)
+	if err != nil {
+		return "", translateForgejoRead(err)
+	}
+	return html, nil
+}
+
 // resolveRepo loads a repository by org+repo slug, authorizes the actor as an org
 // member, and (when requireGit is set) resolves the Forgejo owner/name needed for
 // git-side reads. It returns ErrNotFound, ErrForbidden, or ErrUnavailable as
