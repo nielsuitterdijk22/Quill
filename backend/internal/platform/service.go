@@ -31,13 +31,14 @@ type Service struct {
 	store   *store.Store
 	forgejo *forgejo.Client
 	logger  *slog.Logger
-	// runner executes CI workflows. It is the seam behind which nektos/act (today)
-	// or Forge's ephemeral runners (later) sit; see internal/pipeline.
+	// runner dispatches CI workflows. In compose this is an HTTP client to the
+	// standalone dispatcher; tests can still inject an in-process runner.
 	runner pipeline.Runner
 }
 
 // NewService wires a platform Service. logger may be nil. The CI runner defaults
-// to the nektos/act-backed runner; override it with WithRunner in tests.
+// to the nektos/act-backed runner; production wiring can override it with the
+// HTTP dispatcher via WithRunner.
 func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
@@ -45,8 +46,8 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 	return &Service{store: st, forgejo: fj, logger: logger, runner: pipeline.NewActRunner()}
 }
 
-// WithRunner overrides the CI runner (used by tests and to swap in a future
-// forgeRunner) and returns the service for chaining.
+// WithRunner overrides the CI runner (used by tests and the HTTP dispatcher
+// client) and returns the service for chaining.
 func (s *Service) WithRunner(r pipeline.Runner) *Service {
 	s.runner = r
 	return s

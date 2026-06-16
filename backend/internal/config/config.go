@@ -25,8 +25,9 @@ type Config struct {
 
 	DatabaseURL string
 
-	JWT     JWTConfig
-	Forgejo ForgejoConfig
+	JWT      JWTConfig
+	Forgejo  ForgejoConfig
+	Pipeline PipelineConfig
 
 	// WebhookSecret authenticates inbound Forgejo webhooks that auto-trigger
 	// pipelines. When empty, signature verification is skipped (dev mode), so set
@@ -52,6 +53,16 @@ type ForgejoConfig struct {
 	PublicURL string
 }
 
+// PipelineConfig controls how workflow runs are dispatched.
+type PipelineConfig struct {
+	// DispatchURL points at the standalone pipeline dispatcher. When empty, the
+	// API falls back to the in-process act runner for tests and simple dev setups.
+	DispatchURL string
+	// DispatchSecret signs API -> dispatcher requests. Leave empty only for local
+	// development on a trusted Docker network.
+	DispatchSecret string
+}
+
 // Load reads configuration from the environment.
 func Load() (*Config, error) {
 	cfg := &Config{
@@ -71,6 +82,10 @@ func Load() (*Config, error) {
 			BaseURL:    getenv("QUILL_FORGEJO_BASE_URL", "http://localhost:3000"),
 			AdminToken: getenv("QUILL_FORGEJO_ADMIN_TOKEN", ""),
 			PublicURL:  getenv("QUILL_FORGEJO_PUBLIC_URL", ""),
+		},
+		Pipeline: PipelineConfig{
+			DispatchURL:    getenv("QUILL_PIPELINE_DISPATCH_URL", ""),
+			DispatchSecret: getenv("QUILL_PIPELINE_DISPATCH_SECRET", ""),
 		},
 		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
