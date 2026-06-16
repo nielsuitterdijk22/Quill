@@ -39,6 +39,10 @@ fj-run: ## Run Forgejo locally (http://localhost:3000)
 be-run: ## Run the backend API locally
 	cd backend && go run ./cmd/api
 
+.PHONY: dispatch-run
+dispatch-run: ## Run the pipeline dispatcher locally
+	cd backend && go run ./cmd/dispatch
+
 .PHONY: be-build
 be-build: ## Build the backend
 	cd backend && go build ./...

@@ -19,9 +19,9 @@ import (
 // filtering, `uses:` actions (incl. actions/checkout), composite/Docker actions,
 // matrices and expressions — without a separate Forge runner yet.
 //
-// In local compose, the API container reaches Docker through the mounted daemon
-// socket. The Runner interface remains the seam where a forgeRunner can later
-// dispatch the same JobSpec to Forge's ephemeral, confidential runners instead.
+// In local compose, the dispatcher container reaches Docker through the mounted
+// daemon socket. The Runner interface remains the seam where a Forge-compatible
+// runner can later dispatch the same JobSpec to ephemeral runners instead.
 type actRunner struct {
 	// images maps a runs-on label to the container image act runs the job in.
 	images map[string]string
@@ -69,9 +69,9 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		return RunResult{Status: StatusSkipped, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 	}
 
-	// act needs a workspace. The platform layer checks the repo out into
-	// spec.Workdir; without it (e.g. Forgejo disabled) we still give act a temp
-	// dir so workflows without repo files can run.
+	// act needs a workspace. Dispatchers can receive an authenticated clone URL
+	// from Quill and perform checkout next to the Docker engine; without either we
+	// still give act a temp dir so workflows without repo files can run.
 	workdir := spec.Workdir
 	if workdir == "" {
 		tmp, err := os.MkdirTemp("", "quill-ci-ws-*")
@@ -80,6 +80,11 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		}
 		defer os.RemoveAll(tmp)
 		workdir = tmp
+		if strings.TrimSpace(spec.CloneURL) != "" {
+			if err := Checkout(ctx, spec.CloneURL, spec.Ref, spec.CommitSHA, workdir); err != nil {
+				return RunResult{}, err
+			}
+		}
 	}
 
 	eventPath, cleanup, err := writeEventFile(spec)

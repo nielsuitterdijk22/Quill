@@ -13,6 +13,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
@@ -35,13 +36,17 @@ type Server struct {
 // nil in tests that only exercise handlers which don't touch the database.
 func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	fj := forgejo.New(cfg.Forgejo)
+	platformSvc := platform.NewService(st, fj, logger)
+	if cfg.Pipeline.DispatchURL != "" {
+		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
+	}
 	s := &Server{
 		cfg:      cfg,
 		logger:   logger,
 		store:    st,
 		auth:     auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
 		forgejo:  fj,
-		platform: platform.NewService(st, fj, logger),
+		platform: platformSvc,
 		router:   chi.NewRouter(),
 	}
 	s.setupMiddleware()

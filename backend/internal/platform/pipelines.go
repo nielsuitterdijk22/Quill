@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -266,8 +265,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		return db.PipelineRun{}, fmt.Errorf("create run: %w", err)
 	}
 
-	workdir, cleanup := s.checkoutWorkspace(ctx, owner, name, ref, commitSHA)
-	defer cleanup()
+	cloneURL := s.cloneURLForRun(owner, name)
 
 	result, runErr := s.runner.Run(ctx, pipeline.JobSpec{
 		WorkflowYAML: yaml,
@@ -275,7 +273,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		Event:        event,
 		Ref:          ref,
 		CommitSHA:    commitSHA,
-		Workdir:      workdir,
+		CloneURL:     cloneURL,
 		RepoFullName: owner + "/" + name,
 	})
 	if runErr != nil {
@@ -291,31 +289,19 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 	return s.finishRun(ctx, run.ID, result.Status)
 }
 
-// checkoutWorkspace clones the repository at ref/sha into a temp directory the
-// runner executes against, returning the path and a cleanup func. On any failure
-// (Forgejo disabled, clone error) it returns an empty workdir and a no-op cleanup
-// — the runner then falls back to an empty workspace, so the run still produces
-// logs (only steps that need repo files will fail).
-func (s *Service) checkoutWorkspace(ctx context.Context, owner, name, ref, sha string) (string, func()) {
-	noop := func() {}
+// cloneURLForRun returns an authenticated clone URL for the dispatcher. On any
+// failure (Forgejo disabled, URL error) it returns empty so the runner falls back
+// to an empty workspace and records startup/step failures normally.
+func (s *Service) cloneURLForRun(owner, name string) string {
 	if !s.forgejoEnabled() {
-		return "", noop
+		return ""
 	}
 	cloneURL, err := s.forgejo.CloneURL(owner, name)
 	if err != nil {
-		return "", noop
+		s.logger.Warn("pipeline clone URL unavailable", "repo", owner+"/"+name, "error", err)
+		return ""
 	}
-	dir, err := os.MkdirTemp("", "quill-ci-repo-*")
-	if err != nil {
-		s.logger.Warn("pipeline workspace mkdir failed", "error", err)
-		return "", noop
-	}
-	if err := pipeline.Checkout(ctx, cloneURL, ref, sha, dir); err != nil {
-		s.logger.Warn("pipeline checkout failed", "repo", owner+"/"+name, "ref", ref, "error", err)
-		os.RemoveAll(dir)
-		return "", noop
-	}
-	return dir, func() { os.RemoveAll(dir) }
+	return cloneURL
 }
 
 // persistResult writes the job/step tree produced by the runner.

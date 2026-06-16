@@ -3,11 +3,10 @@
 // executes them through a pluggable Runner.
 //
 // The Runner interface is the seam that lets the executor be swapped without
-// touching the platform service. Today the only implementation is actRunner,
-// which uses nektos/act to interpret and fully execute a workflow through a
-// configured Docker engine; a forgeRunner that dispatches the same JobSpec to
-// Forge's ephemeral, confidential runners can drop in behind the same interface
-// later.
+// touching the platform service. The API can call an HTTP dispatcher, while the
+// dispatcher uses actRunner to interpret and execute a workflow through a
+// configured Docker engine. A Forge-compatible runner can drop in behind the
+// same dispatch contract later.
 package pipeline
 
 import (
@@ -49,6 +48,9 @@ type JobSpec struct {
 	// Workdir is an optional checked-out working directory the runner executes
 	// against. When empty the runner provisions a transient temp directory.
 	Workdir string
+	// CloneURL is an optional authenticated git URL the runner can clone when the
+	// caller did not provide Workdir. It must never be written to logs.
+	CloneURL string
 	// RepoFullName is "owner/name", used to populate the synthetic event payload
 	// so `github.repository`-style expressions resolve. Optional.
 	RepoFullName string
