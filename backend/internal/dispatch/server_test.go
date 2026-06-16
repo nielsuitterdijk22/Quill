@@ -33,11 +33,11 @@ func TestDispatchRunRequiresValidSignature(t *testing.T) {
 }
 
 func TestHTTPRunnerDispatchesSpec(t *testing.T) {
-	want := pipeline.JobSpec{WorkflowYAML: "on: push\njobs: {}\n", WorkflowPath: ".github/workflows/ci.yml", Event: "push", CloneURL: "http://token@forgejo/acme/widget.git"}
+	want := pipeline.JobSpec{WorkflowYAML: "on: push\njobs: {}\n", WorkflowPath: ".github/workflows/ci.yml", Event: "push", CloneURL: "http://forgejo/acme/widget.git", CloneAuthHeader: "Authorization: token secret"}
 	result := pipeline.RunResult{Status: pipeline.StatusSuccess}
 
 	srv := New(nil, runnerFunc(func(_ context.Context, got pipeline.JobSpec) (pipeline.RunResult, error) {
-		if got.WorkflowPath != want.WorkflowPath || got.Event != want.Event || got.CloneURL != want.CloneURL {
+		if got.WorkflowPath != want.WorkflowPath || got.Event != want.Event || got.CloneURL != want.CloneURL || got.CloneAuthHeader != want.CloneAuthHeader {
 			t.Fatalf("spec = %+v, want %+v", got, want)
 		}
 		return result, nil
