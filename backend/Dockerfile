@@ -8,11 +8,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-api ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-dispatch ./cmd/dispatch
 
 # ---- run ----
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates git
+RUN adduser -D -H -u 10001 quill
 COPY --from=build /out/quill-api /quill-api
+COPY --from=build /out/quill-dispatch /quill-dispatch
 EXPOSE 8080
-USER nonroot:nonroot
-ENTRYPOINT ["/quill-api"]
+USER quill:quill
+CMD ["/quill-api"]

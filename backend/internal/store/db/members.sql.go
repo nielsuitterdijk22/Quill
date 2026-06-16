@@ -155,6 +155,59 @@ func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]List
 	return items, nil
 }
 
+const listTeamsByUser = `-- name: ListTeamsByUser :many
+SELECT t.id, t.org_id, t.slug, t.name, t.description, t.created_at, t.updated_at, o.slug AS org_slug, o.name AS org_name, m.role AS member_role
+FROM team_members m
+JOIN teams t ON t.id = m.team_id
+JOIN organizations o ON o.id = t.org_id
+WHERE m.user_id = $1
+ORDER BY o.slug, t.slug
+`
+
+type ListTeamsByUserRow struct {
+	ID          uuid.UUID `json:"id"`
+	OrgID       uuid.UUID `json:"orgId"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	OrgSlug     string    `json:"orgSlug"`
+	OrgName     string    `json:"orgName"`
+	MemberRole  string    `json:"memberRole"`
+}
+
+func (q *Queries) ListTeamsByUser(ctx context.Context, userID uuid.UUID) ([]ListTeamsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listTeamsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTeamsByUserRow{}
+	for rows.Next() {
+		var i ListTeamsByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.OrgSlug,
+			&i.OrgName,
+			&i.MemberRole,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeOrgMember = `-- name: RemoveOrgMember :exec
 DELETE FROM org_members WHERE org_id = $1 AND user_id = $2
 `

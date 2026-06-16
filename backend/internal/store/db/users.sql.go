@@ -199,3 +199,33 @@ func (q *Queries) SetUserForgejoLink(ctx context.Context, arg SetUserForgejoLink
 	)
 	return i, err
 }
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+SET display_name = $2
+WHERE id = $1
+RETURNING id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at
+`
+
+type UpdateUserProfileParams struct {
+	ID          uuid.UUID `json:"id"`
+	DisplayName string    `json:"displayName"`
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile, arg.ID, arg.DisplayName)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.DisplayName,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.ForgejoUserID,
+		&i.ForgejoUsername,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

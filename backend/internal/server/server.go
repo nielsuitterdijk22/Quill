@@ -13,6 +13,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
@@ -35,13 +36,17 @@ type Server struct {
 // nil in tests that only exercise handlers which don't touch the database.
 func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	fj := forgejo.New(cfg.Forgejo)
+	platformSvc := platform.NewService(st, fj, logger)
+	if cfg.Pipeline.DispatchURL != "" {
+		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
+	}
 	s := &Server{
 		cfg:      cfg,
 		logger:   logger,
 		store:    st,
 		auth:     auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
 		forgejo:  fj,
-		platform: platform.NewService(st, fj, logger),
+		platform: platformSvc,
 		router:   chi.NewRouter(),
 	}
 	s.setupMiddleware()
@@ -79,6 +84,10 @@ func (s *Server) setupRoutes() {
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/meta", s.handleMeta)
 
+		// Forgejo webhook receiver: auto-triggers pipelines on push / pull_request.
+		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
+		r.Post("/webhooks/forgejo", s.handleWebhook)
+
 		// Authentication: register and login are public; me and logout require a token.
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", s.handleRegister)
@@ -86,6 +95,7 @@ func (s *Server) setupRoutes() {
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
+				r.Patch("/me", s.handleUpdateProfile)
 				r.Post("/logout", s.handleLogout)
 			})
 		})
@@ -93,13 +103,24 @@ func (s *Server) setupRoutes() {
 		// Organizations and repositories require authentication.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			r.Get("/me/pulls", s.handleListMyPulls)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
 			r.Post("/me/git-token", s.handleCreateGitToken)
+			r.Get("/me/teams", s.handleListMyTeams)
 			r.Route("/orgs", func(r chi.Router) {
 				r.Get("/", s.handleListOrgs)
 				r.Post("/", s.handleCreateOrg)
 				r.Route("/{slug}", func(r chi.Router) {
 					r.Get("/", s.handleGetOrg)
+					r.Route("/teams", func(r chi.Router) {
+						r.Get("/", s.handleListTeams)
+						r.Post("/", s.handleCreateTeam)
+						r.Route("/{team}", func(r chi.Router) {
+							r.Get("/", s.handleGetTeam)
+							r.Post("/members", s.handleAddTeamMember)
+							r.Delete("/members/{userID}", s.handleRemoveTeamMember)
+						})
+					})
 					r.Route("/repos", func(r chi.Router) {
 						r.Get("/", s.handleListRepos)
 						r.Post("/", s.handleCreateRepo)
@@ -115,6 +136,12 @@ func (s *Server) setupRoutes() {
 								r.Get("/", s.handleListBranchPolicies)
 								r.Put("/", s.handleSetBranchPolicy)
 								r.Delete("/", s.handleDeleteBranchPolicy)
+							})
+							r.Route("/pipelines", func(r chi.Router) {
+								r.Get("/", s.handleListPipelines)
+								r.Post("/", s.handleTriggerRun)
+								r.Get("/runs", s.handleListRuns)
+								r.Get("/runs/{number}", s.handleGetRun)
 							})
 							r.Route("/pulls", func(r chi.Router) {
 								r.Get("/", s.handleListPulls)

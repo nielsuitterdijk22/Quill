@@ -6,6 +6,7 @@
 #   postgres  5432  metadata for Quill + Forgejo (separate databases)
 #   forgejo   3000  git backend that Quill wraps via REST (SSH on 2222)
 #   api       8080  Quill Go backend
+#   dispatch  8090  Pipeline dispatcher + Docker-backed runner
 #   web       3001  Quill Next.js frontend
 #
 # After first boot, create a Forgejo admin token and set QUILL_FORGEJO_ADMIN_TOKEN
@@ -77,10 +78,33 @@ services:
       QUILL_FORGEJO_PUBLIC_URL: ${QUILL_FORGEJO_PUBLIC_URL:-}
       QUILL_JWT_SECRET: ${QUILL_JWT_SECRET:-dev-insecure-secret-change-me}
       QUILL_CORS_ALLOWED_ORIGINS: http://localhost:3001
+      QUILL_PIPELINE_DISPATCH_URL: http://dispatch:8090
+      QUILL_PIPELINE_DISPATCH_SECRET: ${QUILL_PIPELINE_DISPATCH_SECRET:-dev-dispatch-secret}
     ports:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      dispatch:
+        condition: service_started
+
+  dispatch:
+    build:
+      context: ../../backend
+    command: ["/quill-dispatch"]
+    # The dispatcher runs nektos/act and is the only Quill service that needs
+    # Docker daemon access for local job containers.
+    user: "0:0"
+    environment:
+      QUILL_ENV: development
+      QUILL_HTTP_ADDR: ":8090"
+      QUILL_LOG_FORMAT: text
+      QUILL_PIPELINE_DISPATCH_SECRET: ${QUILL_PIPELINE_DISPATCH_SECRET:-dev-dispatch-secret}
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      forgejo:
         condition: service_healthy
 
   web:

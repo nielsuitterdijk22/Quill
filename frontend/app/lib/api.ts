@@ -543,6 +543,31 @@ export function getPulls(
   );
 }
 
+// RepoPull is one entry in the cross-repository pull-request overview: a pull
+// request together with the org/repo it belongs to, so the row can link back.
+export type RepoPull = {
+  orgSlug: string;
+  repoSlug: string;
+  repoName: string;
+  pull: PullRequest;
+};
+
+// MyPullsResult is the cross-repository overview payload.
+export type MyPullsResult = { pulls: RepoPull[] };
+
+// getMyPulls returns open pull requests across every repository the signed-in
+// user can access, newest-updated first. Optional cheap filters: state and org.
+export function getMyPulls(
+  token: string,
+  opts: { state?: "open" | "closed" | "all"; org?: string } = {},
+): Promise<Result<MyPullsResult>> {
+  const q = new URLSearchParams();
+  if (opts.state) q.set("state", opts.state);
+  if (opts.org) q.set("org", opts.org);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return authGet<MyPullsResult>(token, `/api/v1/me/pulls${suffix}`);
+}
+
 // pullResult is the single-PR payload.
 export type PullResult = { repository: Repo; pull: PullRequest };
 
@@ -822,4 +847,264 @@ export function deleteBranchPolicy(
     token,
     `/api/v1/orgs/${org}/repos/${repo}/policies?pattern=${encodeURIComponent(pattern)}`,
   );
+}
+
+// ---- teams -----------------------------------------------------------------
+
+// Team is an access + ownership unit within an organization.
+export type Team = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  createdAt: string;
+};
+
+// TeamMember is a user that belongs to a team, with their role in that team.
+export type TeamMember = {
+  id: string;
+  username: string;
+  email: string;
+  displayName: string;
+  role: string;
+};
+
+// MyTeam is a team the signed-in user belongs to, annotated with its org so the
+// cross-org teams page can link back to each one.
+export type MyTeam = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  role: string;
+  orgSlug: string;
+  orgName: string;
+};
+
+// teamsResult is the org-scoped team listing payload.
+export type TeamsResult = { organization: Org; teams: Team[] };
+
+// getTeamsByOrg returns an org plus its teams, preserving HTTP status.
+export function getTeamsByOrg(
+  token: string,
+  org: string,
+): Promise<Result<TeamsResult>> {
+  return authGet<TeamsResult>(token, `/api/v1/orgs/${org}/teams`);
+}
+
+// teamResult is the single-team payload, including its members.
+export type TeamResult = {
+  organization: Org;
+  team: Team;
+  members: TeamMember[];
+};
+
+// getTeam returns a single team with its members.
+export function getTeam(
+  token: string,
+  org: string,
+  team: string,
+): Promise<Result<TeamResult>> {
+  return authGet<TeamResult>(token, `/api/v1/orgs/${org}/teams/${team}`);
+}
+
+// createTeam provisions a team under an org (org owners only).
+export function createTeam(
+  token: string,
+  org: string,
+  input: { slug: string; name: string; description: string },
+): Promise<MutationResult> {
+  return postCreate(token, `/api/v1/orgs/${org}/teams`, input);
+}
+
+// addTeamMember adds (or updates the role of) a user in a team by username.
+export function addTeamMember(
+  token: string,
+  org: string,
+  team: string,
+  input: { username: string; role: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return postNoContent(
+    token,
+    `/api/v1/orgs/${org}/teams/${team}/members`,
+    input,
+  );
+}
+
+// removeTeamMember removes a user from a team by user id.
+export function removeTeamMember(
+  token: string,
+  org: string,
+  team: string,
+  userID: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/orgs/${org}/teams/${team}/members/${userID}`,
+  );
+}
+
+// getMyTeams returns every team the signed-in user belongs to, across all orgs.
+export async function getMyTeams(token: string): Promise<MyTeam[]> {
+  const res = await authGet<{ teams?: MyTeam[] }>(token, "/api/v1/me/teams");
+  return res.ok ? (res.data.teams ?? []) : [];
+}
+
+// ---- profile ---------------------------------------------------------------
+
+// updateProfile saves the signed-in user's editable profile fields.
+export function updateProfile(
+  token: string,
+  input: { displayName: string },
+): Promise<DataResult<User>> {
+  return sendData<User>(token, "PATCH", "/api/v1/auth/me", input);
+}
+
+// postNoContent issues an authenticated POST for endpoints that return no body
+// (204), mapping transport and HTTP errors into a simple ok/error result.
+async function postNoContent(
+  token: string,
+  path: string,
+  body: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return {
+        ok: false,
+        error: data?.message || `Request failed (${res.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
+// ---- pipelines (CI) --------------------------------------------------------
+
+// PipelineRunStatus is the lifecycle state of a run, job, or step.
+export type PipelineRunStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failure"
+  | "cancelled"
+  | "skipped";
+
+// PipelineRun is one execution of a workflow.
+export type PipelineRun = {
+  id: string;
+  runNumber: number;
+  workflowPath?: string;
+  status: PipelineRunStatus;
+  event: string;
+  ref: string;
+  commitSha: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+};
+
+// PipelineSummary is a workflow file plus its most recent run.
+export type PipelineSummary = {
+  workflowPath: string;
+  name: string;
+  lastRun?: PipelineRun;
+};
+
+// PipelineStep is a single step within a job, including its captured logs.
+export type PipelineStep = {
+  name: string;
+  type: "run" | "uses";
+  status: PipelineRunStatus;
+  logs: string;
+  startedAt?: string;
+  finishedAt?: string;
+};
+
+// PipelineJob is a job and its steps within a run.
+export type PipelineJob = {
+  key: string;
+  name: string;
+  runsOn: string;
+  status: PipelineRunStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  steps: PipelineStep[];
+};
+
+// PipelineRunDetail is a run with its fully expanded job/step tree.
+export type PipelineRunDetail = PipelineRun & { jobs: PipelineJob[] };
+
+// pipelinesResult is the workflow listing payload.
+export type PipelinesResult = {
+  repository: Repo;
+  pipelines: PipelineSummary[];
+};
+
+// getPipelines returns a repository's workflows with their latest run status.
+export function getPipelines(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<PipelinesResult>> {
+  return authGet<PipelinesResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pipelines`,
+  );
+}
+
+// runsResult is the run-listing payload.
+export type RunsResult = { repository: Repo; runs: PipelineRun[] };
+
+// getPipelineRuns returns a repository's most recent runs across all pipelines.
+export function getPipelineRuns(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<Result<RunsResult>> {
+  return authGet<RunsResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pipelines/runs`,
+  );
+}
+
+// runDetailResult is the single-run payload with its job/step tree.
+export type RunDetailResult = { repository: Repo; run: PipelineRunDetail };
+
+// getPipelineRun returns a single run (by number) with its full job/step tree.
+// workflow is the repo-relative workflow path the run belongs to.
+export function getPipelineRun(
+  token: string,
+  org: string,
+  repo: string,
+  number: number,
+  workflow: string,
+): Promise<Result<RunDetailResult>> {
+  return authGet<RunDetailResult>(
+    token,
+    `/api/v1/orgs/${org}/repos/${repo}/pipelines/runs/${number}?workflow=${encodeURIComponent(workflow)}`,
+  );
+}
+
+// triggerPipelineRun runs a workflow manually on the given ref (empty = default).
+export function triggerPipelineRun(
+  token: string,
+  org: string,
+  repo: string,
+  input: { workflow: string; ref?: string },
+): Promise<DataResult<{ run: PipelineRun }>> {
+  return postData(token, `/api/v1/orgs/${org}/repos/${repo}/pipelines`, input);
 }

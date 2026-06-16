@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
@@ -30,14 +31,26 @@ type Service struct {
 	store   *store.Store
 	forgejo *forgejo.Client
 	logger  *slog.Logger
+	// runner dispatches CI workflows. In compose this is an HTTP client to the
+	// standalone dispatcher; tests can still inject an in-process runner.
+	runner pipeline.Runner
 }
 
-// NewService wires a platform Service. logger may be nil.
+// NewService wires a platform Service. logger may be nil. The CI runner defaults
+// to the nektos/act-backed runner; production wiring can override it with the
+// HTTP dispatcher via WithRunner.
 func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{store: st, forgejo: fj, logger: logger}
+	return &Service{store: st, forgejo: fj, logger: logger, runner: pipeline.NewActRunner()}
+}
+
+// WithRunner overrides the CI runner (used by tests and the HTTP dispatcher
+// client) and returns the service for chaining.
+func (s *Service) WithRunner(r pipeline.Runner) *Service {
+	s.runner = r
+	return s
 }
 
 // forgejoEnabled reports whether git-side provisioning is active.

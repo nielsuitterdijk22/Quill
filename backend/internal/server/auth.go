@@ -145,6 +145,35 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
+type updateProfileRequest struct {
+	DisplayName string `json:"displayName"`
+}
+
+// handleUpdateProfile saves the signed-in user's editable profile fields and
+// returns the refreshed user (requireAuth must run first).
+func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req updateProfileRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	user, err := s.auth.UpdateProfile(r.Context(), id, req.DisplayName)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidInput) {
+			httpx.Error(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
+		s.logger.Error("update profile failed", "error", err)
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update profile")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, newUserResponse(user))
+}
+
 // handleLogout is a no-op for stateless tokens; the frontend clears its cookie.
 // It exists so clients have a uniform endpoint to call.
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
