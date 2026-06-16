@@ -37,6 +37,24 @@ export function statusGlyph(status: PipelineRunStatus): string {
   }
 }
 
+// durationText renders an elapsed time between backend timestamps.
+export function durationText(startedAt?: string, finishedAt?: string): string | null {
+  if (!startedAt || !finishedAt) return null;
+  const started = Date.parse(startedAt);
+  const finished = Date.parse(finishedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) {
+    return null;
+  }
+  const total = Math.max(0, Math.round((finished - started) / 1000));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes ? `${hours}h ${remMinutes}m` : `${hours}h`;
+}
+
 // StepLogs renders a step's captured output in a monospace block.
 export function StepLogs({ logs }: { logs: string }) {
   if (!logs.trim()) {
