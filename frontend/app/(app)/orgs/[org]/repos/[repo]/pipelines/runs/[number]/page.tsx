@@ -8,12 +8,18 @@ import {
   RepoHeader,
   fmtDate,
   repoBase,
+  shortSha,
 } from "../../../../../../../../components/repo";
 import {
   RunStatusBadge,
   StepLogs,
+  durationText,
   statusGlyph,
 } from "../../../../../../../../components/pipelines";
+
+function runDuration(startedAt?: string, finishedAt?: string): string {
+  return durationText(startedAt, finishedAt) ?? "—";
+}
 
 // RunDetailPage shows a single run with its job/step tree and step logs.
 export default async function RunDetailPage({
@@ -46,6 +52,8 @@ export default async function RunDetailPage({
   const repo = res.data.repository;
   const run = res.data.run;
   const base = repoBase(params.org, params.repo);
+  const workflowPath = run.workflowPath ?? workflow;
+  const workflowName = workflowPath.split("/").pop() ?? "Workflow";
 
   return (
     <>
@@ -57,26 +65,32 @@ export default async function RunDetailPage({
         active="pipelines"
       />
 
-      <div className="top">
-        <h1>
-          Run <b>#{run.runNumber}</b>
-        </h1>
-        <RunStatusBadge status={run.status} />
-      </div>
-
-      <div className="panel">
-        <div className="run-meta">
-          <span className="sub mono">{run.workflowPath}</span>
-          <span className="sub">Event: {run.event}</span>
-          <span className="sub">Ref: {run.ref || "—"}</span>
-          {run.commitSha && (
-            <span className="sub mono">{run.commitSha.slice(0, 10)}</span>
-          )}
-          <span className="sub">Started {fmtDate(run.createdAt)}</span>
+      <div className="panel run-hero">
+        <div className="run-hero-main">
+          <span className={`run-glyph ${run.status}`}>
+            {statusGlyph(run.status)}
+          </span>
+          <div>
+            <h1>
+              {workflowName}{" "}
+              <span className="muted">#{run.runNumber}</span>
+            </h1>
+            <div className="run-meta">
+              <span className="mono">{workflowPath}</span>
+              <span>{run.event}</span>
+              <span>{run.ref || "—"}</span>
+              {run.commitSha && <span className="mono">{shortSha(run.commitSha)}</span>}
+              <span>Started {fmtDate(run.createdAt)}</span>
+              <span>Duration {runDuration(run.startedAt, run.finishedAt)}</span>
+            </div>
+          </div>
         </div>
-        <Link className="btn" href={`${base}/pipelines`}>
-          ← All pipelines
-        </Link>
+        <div className="run-hero-actions">
+          <RunStatusBadge status={run.status} />
+          <Link className="btn" href={`${base}/pipelines`}>
+            ← All pipelines
+          </Link>
+        </div>
       </div>
 
       {run.jobs.length === 0 ? (
@@ -92,6 +106,9 @@ export default async function RunDetailPage({
               </span>{" "}
               {job.name}
               {job.runsOn && <span className="sub mono"> · {job.runsOn}</span>}
+              <span className="sub">
+                · {runDuration(job.startedAt, job.finishedAt)}
+              </span>
               <span className="spacer" />
               <RunStatusBadge status={job.status} />
             </h2>

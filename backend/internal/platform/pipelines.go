@@ -265,16 +265,17 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		return db.PipelineRun{}, fmt.Errorf("create run: %w", err)
 	}
 
-	cloneURL := s.cloneURLForRun(owner, name)
+	cloneAuth := s.cloneAuthForRun(owner, name)
 
 	result, runErr := s.runner.Run(ctx, pipeline.JobSpec{
-		WorkflowYAML: yaml,
-		WorkflowPath: path,
-		Event:        event,
-		Ref:          ref,
-		CommitSHA:    commitSHA,
-		CloneURL:     cloneURL,
-		RepoFullName: owner + "/" + name,
+		WorkflowYAML:    yaml,
+		WorkflowPath:    path,
+		Event:           event,
+		Ref:             ref,
+		CommitSHA:       commitSHA,
+		CloneURL:        cloneAuth.URL,
+		CloneAuthHeader: cloneAuth.AuthHeader,
+		RepoFullName:    owner + "/" + name,
 	})
 	if runErr != nil {
 		// The workflow could not be interpreted/started: mark the run failed and
@@ -289,19 +290,19 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 	return s.finishRun(ctx, run.ID, result.Status)
 }
 
-// cloneURLForRun returns an authenticated clone URL for the dispatcher. On any
-// failure (Forgejo disabled, URL error) it returns empty so the runner falls back
-// to an empty workspace and records startup/step failures normally.
-func (s *Service) cloneURLForRun(owner, name string) string {
+// cloneAuthForRun returns the clone URL and auth header for the dispatcher. On
+// any failure (Forgejo disabled, URL error) it returns empty so the runner falls
+// back to an empty workspace and records startup/step failures normally.
+func (s *Service) cloneAuthForRun(owner, name string) pipeline.CloneAuth {
 	if !s.forgejoEnabled() {
-		return ""
+		return pipeline.CloneAuth{}
 	}
-	cloneURL, err := s.forgejo.CloneURL(owner, name)
+	cloneAuth, err := s.forgejo.CloneAuth(owner, name)
 	if err != nil {
 		s.logger.Warn("pipeline clone URL unavailable", "repo", owner+"/"+name, "error", err)
-		return ""
+		return pipeline.CloneAuth{}
 	}
-	return cloneURL
+	return pipeline.CloneAuth{URL: cloneAuth.URL, AuthHeader: cloneAuth.AuthHeader}
 }
 
 // persistResult writes the job/step tree produced by the runner.

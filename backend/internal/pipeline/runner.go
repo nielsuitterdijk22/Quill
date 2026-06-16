@@ -48,9 +48,12 @@ type JobSpec struct {
 	// Workdir is an optional checked-out working directory the runner executes
 	// against. When empty the runner provisions a transient temp directory.
 	Workdir string
-	// CloneURL is an optional authenticated git URL the runner can clone when the
-	// caller did not provide Workdir. It must never be written to logs.
+	// CloneURL is an optional git URL the runner can clone when the caller did not
+	// provide Workdir. It must never contain credentials.
 	CloneURL string
+	// CloneAuthHeader is an optional HTTP header used only for git checkout. It
+	// may contain credentials and must never be written to logs or workflow env.
+	CloneAuthHeader string
 	// RepoFullName is "owner/name", used to populate the synthetic event payload
 	// so `github.repository`-style expressions resolve. Optional.
 	RepoFullName string
@@ -95,6 +98,13 @@ type RunResult struct {
 // pass/fail detail) or it could not start (error).
 type Runner interface {
 	Run(ctx context.Context, spec JobSpec) (RunResult, error)
+}
+
+// CloneAuth is the sanitized URL plus secret header needed for runner-side git
+// checkout.
+type CloneAuth struct {
+	URL        string
+	AuthHeader string
 }
 
 // rollupStatus collapses per-job statuses into a single run status: failure if

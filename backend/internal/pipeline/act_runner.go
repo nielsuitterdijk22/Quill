@@ -81,7 +81,7 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		defer os.RemoveAll(tmp)
 		workdir = tmp
 		if strings.TrimSpace(spec.CloneURL) != "" {
-			if err := Checkout(ctx, spec.CloneURL, spec.Ref, spec.CommitSHA, workdir); err != nil {
+			if err := Checkout(ctx, spec.CloneURL, spec.Ref, spec.CommitSHA, workdir, spec.CloneAuthHeader); err != nil {
 				return RunResult{}, err
 			}
 		}

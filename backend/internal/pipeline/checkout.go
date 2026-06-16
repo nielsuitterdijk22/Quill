@@ -12,10 +12,13 @@ import (
 // against (act skips actions/checkout and uses the local workspace instead).
 //
 // It shallow-clones the branch, then best-effort checks out the exact commit.
-// cloneURL may embed credentials; errors never include it so tokens can't leak
-// into logs or the run record.
-func Checkout(ctx context.Context, cloneURL, ref, sha, dest string) error {
+// authHeader may contain credentials; errors never include it so tokens can't
+// leak into logs or the run record.
+func Checkout(ctx context.Context, cloneURL, ref, sha, dest, authHeader string) error {
 	args := []string{"clone", "--quiet", "--depth", "50", "--no-tags"}
+	if strings.TrimSpace(authHeader) != "" {
+		args = append(args, "-c", "http.extraHeader="+authHeader)
+	}
 	if strings.TrimSpace(ref) != "" {
 		args = append(args, "--branch", ref)
 	}
@@ -52,6 +55,9 @@ func sanitizeGitOutput(out, cloneURL string) string {
 	}
 	if cloneURL != "" {
 		out = strings.ReplaceAll(out, cloneURL, "<repo>")
+	}
+	if i := strings.Index(out, "Authorization:"); i >= 0 {
+		out = out[:i] + "Authorization: <redacted>"
 	}
 	return ": " + out
 }

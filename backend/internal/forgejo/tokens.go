@@ -46,20 +46,23 @@ func (c *Client) CreateAccessToken(ctx context.Context, username, password, name
 	return out.SHA1, nil
 }
 
-// CloneURL returns an HTTP clone URL for owner/name with the admin token embedded
-// as the basic-auth username, suitable for `git clone`. It is used by the CI
-// runner to check a repository out into the build workspace. Returns an error
-// when Forgejo is disabled (no token) since the URL would not authenticate.
-func (c *Client) CloneURL(owner, name string) (string, error) {
+// CloneAuth describes how the CI dispatcher should clone a Forgejo repository.
+type CloneAuth struct {
+	URL        string
+	AuthHeader string
+}
+
+// CloneAuth returns an HTTP clone URL plus an auth header for owner/name. Forgejo
+// accepts API tokens for git-over-HTTP via Authorization, while embedding the
+// token in basic-auth credentials can be rejected for private repositories.
+func (c *Client) CloneAuth(owner, name string) (CloneAuth, error) {
 	if c.base == "" || c.token == "" {
-		return "", errors.New("forgejo client disabled")
+		return CloneAuth{}, errors.New("forgejo client disabled")
 	}
 	u, err := url.Parse(c.base)
 	if err != nil {
-		return "", err
+		return CloneAuth{}, err
 	}
-	// Forgejo accepts a token as the basic-auth username for git-over-HTTP.
-	u.User = url.User(c.token)
 	u.Path = "/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + ".git"
-	return u.String(), nil
+	return CloneAuth{URL: u.String(), AuthHeader: "Authorization: token " + c.token}, nil
 }

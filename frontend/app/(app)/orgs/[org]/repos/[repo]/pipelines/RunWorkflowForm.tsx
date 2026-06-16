@@ -37,25 +37,37 @@ export function RunWorkflowForm({
   if (pipelines.length === 0) return null;
 
   return (
-    <div className="repo-toolbar">
-      {state.error && <div className="form-error">{state.error}</div>}
+    <div className="panel run-action-panel">
+      <div className="run-action-copy">
+        <strong>Run workflow</strong>
+        <span className="sub">
+          Start a workflow manually against a branch in this repository.
+        </span>
+      </div>
       <form className="run-workflow-form" action={formAction}>
-        <select name="workflow" defaultValue={pipelines[0].workflowPath}>
-          {pipelines.map((p) => (
-            <option key={p.workflowPath} value={p.workflowPath}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <select name="ref" defaultValue={defaultBranch}>
-          {branches.map((b) => (
-            <option key={b.name} value={b.name}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <label>
+          <span>Workflow</span>
+          <select name="workflow" defaultValue={pipelines[0].workflowPath}>
+            {pipelines.map((p) => (
+              <option key={p.workflowPath} value={p.workflowPath}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Ref</span>
+          <select name="ref" defaultValue={defaultBranch}>
+            {branches.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <SubmitButton />
       </form>
+      {state.error && <div className="form-error">{state.error}</div>}
     </div>
   );
 }
