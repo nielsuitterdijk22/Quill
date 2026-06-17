@@ -13,6 +13,10 @@ type BranchRule struct {
 	RequireUpToDate       bool `json:"requireUpToDate"`
 	BlockForcePush        bool `json:"blockForcePush"`
 	RequirePullRequest    bool `json:"requirePullRequest"`
+	// AllowedSources restricts which head branches may merge into a branch the
+	// policy governs (merge-flow control, e.g. only release/* into main). Each
+	// entry is a glob matched against the PR head ref. Empty means any source.
+	AllowedSources []string `json:"allowedSources,omitempty"`
 }
 
 // MarshalRules encodes a BranchRule for storage in the policies.rules column.

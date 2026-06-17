@@ -1,6 +1,9 @@
 package policy
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func sb(scope ScopeType, selector string, locked bool, approvals int, requirePR bool) ScopedBranch {
 	return ScopedBranch{
@@ -130,7 +133,7 @@ func TestEffectiveBranch_TenantGlobAppliesWhenRepoSilent(t *testing.T) {
 func TestDecodeBranchRule(t *testing.T) {
 	t.Run("empty rules decode to zero value", func(t *testing.T) {
 		r, err := DecodeBranchRule(nil)
-		if err != nil || r != (BranchRule{}) {
+		if err != nil || !reflect.DeepEqual(r, BranchRule{}) {
 			t.Fatalf("got r=%+v err=%v", r, err)
 		}
 	})
@@ -145,7 +148,7 @@ func TestDecodeBranchRule(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if out != in {
+		if !reflect.DeepEqual(out, in) {
 			t.Fatalf("round-trip mismatch: %+v != %+v", out, in)
 		}
 	})
