@@ -1,0 +1,22 @@
+# Air configuration for hot-reloading the Quill pipeline dispatcher during local
+# development. Used by `make up` / scripts/dev-up.sh via `air -c .air.dispatch.toml`.
+# A separate tmp dir keeps its binary and logs from clashing with the api's air.
+root = "."
+tmp_dir = "tmp-dispatch"
+
+[build]
+  cmd = "go build -o ./tmp-dispatch/quill-dispatch ./cmd/dispatch"
+  bin = "./tmp-dispatch/quill-dispatch"
+  delay = 500
+  include_ext = ["go", "sql"]
+  exclude_dir = ["tmp", "tmp-dispatch", "testdata"]
+  exclude_regex = ["_test\\.go$"]
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = "2s"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

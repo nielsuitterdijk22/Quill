@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import { logoutAction, setCurrentProjectAction } from "../lib/actions";
 import type { MyProject, User } from "../lib/api";
@@ -148,6 +149,85 @@ function repoTabActive(
   }
 }
 
+// ProjectSwitcher is the sidebar's current-project dropdown. Picking a project
+// sets the `quill_current_project` cookie (via setCurrentProjectAction) so the
+// cross-cutting views — Repositories, Pull requests, Pipelines — scope to it;
+// it does not navigate. A custom button + menu (rather than a native <select>)
+// keeps the chrome consistent across the family of tools.
+function ProjectSwitcher({
+  projects,
+  currentProject,
+}: {
+  projects: MyProject[];
+  currentProject: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const active = projects.find((p) => p.slug === currentProject);
+  const label = active?.name ?? "Select project";
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="project-switcher" ref={ref}>
+      <button
+        className="project-switcher-btn"
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {label}
+        <span className="project-switcher-caret">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="project-switcher-menu" role="listbox">
+          <form action={setCurrentProjectAction}>
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="submit"
+                name="project"
+                value={p.slug}
+                role="option"
+                aria-selected={p.slug === currentProject}
+                className={`project-switcher-item${p.slug === currentProject ? " active" : ""}`}
+                onClick={() => setOpen(false)}
+              >
+                {p.name}
+              </button>
+            ))}
+          </form>
+          <hr className="project-switcher-divider" />
+          <Link
+            href="/projects/new"
+            className="project-switcher-item"
+            onClick={() => setOpen(false)}
+          >
+            + New project
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({
   user,
   projects,
@@ -171,21 +251,7 @@ export function Sidebar({
         <span className="who">Signed in as</span>
         <b>{user.displayName || user.username}</b>
         {projects.length > 0 && (
-          <form action={setCurrentProjectAction} className="project-switcher">
-            <span className="project-switcher-label">Project</span>
-            <select
-              name="project"
-              defaultValue={currentProject ?? projects[0].slug}
-              aria-label="Current project"
-              onChange={(e) => e.currentTarget.form?.requestSubmit()}
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.slug}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </form>
+          <ProjectSwitcher projects={projects} currentProject={currentProject} />
         )}
       </div>
 

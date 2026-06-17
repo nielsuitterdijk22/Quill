@@ -1,0 +1,25 @@
+# Air configuration for hot-reloading the Quill API during local development.
+# Used by `make up` / scripts/dev-up.sh. See https://github.com/air-verse/air.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Rebuild the API binary on change. GOTOOLCHAIN=auto (exported by the dev
+  # script / Makefile) fetches the pinned Go toolchain if the local one is older.
+  cmd = "go build -o ./tmp/quill-api ./cmd/api"
+  bin = "./tmp/quill-api"
+  delay = 500
+  include_ext = ["go", "sql"]
+  exclude_dir = ["tmp", "testdata"]
+  # Generated sqlc code lives under internal/store/db; it only changes when the
+  # .sql files do, which are already watched via include_ext.
+  exclude_regex = ["_test\\.go$"]
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = "2s"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

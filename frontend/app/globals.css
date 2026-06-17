@@ -112,22 +112,77 @@ a {
   display: block;
   margin-top: 2px;
 }
-/* Current-project switcher under the signed-in user in the sidebar. */
+/* Current-project switcher under the signed-in user in the sidebar. A custom
+   button + popover menu (ported from Tempo) replaces a native <select> so the
+   chrome matches across the tool family; selecting an item sets the current
+   project rather than navigating. */
 .project-switcher {
+  position: relative;
   margin-top: 8px;
 }
-.project-switcher-label {
-  display: block;
-  margin-bottom: 4px;
+.project-switcher-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+}
+.project-switcher-btn:hover {
+  border-color: var(--accent);
+}
+.project-switcher-caret {
+  margin-left: auto;
   font-size: 10px;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
-.project-switcher select {
-  width: 100%;
-  padding: 6px 8px;
+.project-switcher-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  z-index: 100;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.project-switcher-menu form {
+  display: contents;
+}
+.project-switcher-item {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+.project-switcher-item:hover {
+  background: var(--panel2);
+  color: var(--text);
+}
+.project-switcher-item.active {
+  color: var(--text);
+  font-weight: 600;
+}
+.project-switcher-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 4px 0;
 }
 
 .nav {
