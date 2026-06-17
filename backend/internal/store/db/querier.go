@@ -23,11 +23,13 @@ type Querier interface {
 	CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	DeleteBranchPolicy(ctx context.Context, arg DeleteBranchPolicyParams) (int64, error)
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
+	// Remove all policies attached to a scope (used when the scope is deleted, since
+	// scope_id is polymorphic and cannot cascade via a foreign key).
+	DeletePoliciesByScope(ctx context.Context, arg DeletePoliciesByScopeParams) (int64, error)
+	DeletePolicy(ctx context.Context, arg DeletePolicyParams) (int64, error)
 	DeleteRepository(ctx context.Context, id uuid.UUID) error
 	GetAuthIdentity(ctx context.Context, arg GetAuthIdentityParams) (AuthIdentity, error)
-	GetBranchPolicy(ctx context.Context, arg GetBranchPolicyParams) (BranchPolicy, error)
 	GetGitToken(ctx context.Context, arg GetGitTokenParams) (GitToken, error)
 	GetPipeline(ctx context.Context, id uuid.UUID) (Pipeline, error)
 	GetPipelineByPath(ctx context.Context, arg GetPipelineByPathParams) (Pipeline, error)
@@ -45,10 +47,16 @@ type Querier interface {
 	InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) (AuditLog, error)
 	ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error)
 	ListAuthIdentitiesForUser(ctx context.Context, userID uuid.UUID) ([]AuthIdentity, error)
-	ListBranchPoliciesByRepo(ctx context.Context, repoID uuid.UUID) ([]BranchPolicy, error)
+	// Every enabled policy of a kind across the scopes governing a repo: the repo
+	// itself, its project, and that project's tenant. Ordered broad -> narrow so the
+	// resolver can fold tenant onto project onto repo.
+	ListEffectivePolicies(ctx context.Context, arg ListEffectivePoliciesParams) ([]Policy, error)
 	ListGitTokensByUser(ctx context.Context, userID uuid.UUID) ([]GitToken, error)
 	ListJobsByRun(ctx context.Context, runID uuid.UUID) ([]PipelineJob, error)
 	ListPipelinesByRepo(ctx context.Context, repoID uuid.UUID) ([]Pipeline, error)
+	// Policies declared directly at one scope for a kind (e.g. a repo's own branch
+	// policies). Used to render and edit what a scope owns, before inheritance.
+	ListPoliciesByScope(ctx context.Context, arg ListPoliciesByScopeParams) ([]Policy, error)
 	ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ListProjectMembersRow, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	ListProjectsByUser(ctx context.Context, userID uuid.UUID) ([]ListProjectsByUserRow, error)
@@ -67,8 +75,8 @@ type Querier interface {
 	UpdatePipelineRunStatus(ctx context.Context, arg UpdatePipelineRunStatusParams) (PipelineRun, error)
 	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
-	UpsertBranchPolicy(ctx context.Context, arg UpsertBranchPolicyParams) (BranchPolicy, error)
 	UpsertPipeline(ctx context.Context, arg UpsertPipelineParams) (Pipeline, error)
+	UpsertPolicy(ctx context.Context, arg UpsertPolicyParams) (Policy, error)
 }
 
 var _ Querier = (*Queries)(nil)
