@@ -188,6 +188,11 @@ h1 {
 .top h1 {
   margin: 0;
 }
+.top-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
 
 .crumbs {
   font-size: 12px;
@@ -1593,6 +1598,23 @@ h2.section {
 }
 .policy-form-panel .check {
   margin-bottom: 10px;
+}
+/* Inherited (read-only) policies sit above a scope's own editable rules. The
+   left rule and muted intro distinguish "applies here, set elsewhere" from the
+   policies you can edit at this level. */
+.policy-inherited {
+  display: grid;
+  gap: 10px;
+  border-left: 3px solid var(--line);
+  padding-left: 14px;
+}
+.policy-inherited .subtle {
+  margin: 0;
+}
+/* A small lock chip sits next to a pattern or scope to flag a governance floor
+   that narrower scopes may only tighten. */
+.policy-lock {
+  margin-left: 8px;
 }
 
 /* ---- repository settings sections (general + danger zone) ------------------- */

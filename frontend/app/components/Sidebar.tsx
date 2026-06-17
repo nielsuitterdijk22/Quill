@@ -22,6 +22,11 @@ const NAV: NavItem[] = [
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
+// ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
+const ADMIN_NAV: NavItem[] = [
+  { href: "/admin/policies", label: "Admin", icon: "🛡" },
+];
+
 // isRepoScoped is true for any path inside a specific repository, i.e.
 // /projects/{project}/repos/{repo} and everything beneath it (code/commits/
 // branches/blob/tree/pulls/settings). These browse code, not project
@@ -154,6 +159,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname() || "/";
   const repoCtx = parseRepoCtx(pathname);
+  const navItems = user.isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
 
   return (
     <aside className="side">
@@ -184,7 +190,7 @@ export function Sidebar({
       </div>
 
       <nav className="nav">
-        {NAV.map((it) => (
+        {navItems.map((it) => (
           <Link
             key={it.href}
             href={it.href}

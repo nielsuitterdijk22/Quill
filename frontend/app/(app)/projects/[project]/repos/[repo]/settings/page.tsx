@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import { getBranchPolicies, getBranches } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
 import { BrowseError, RepoHeader } from "../../../../../../components/repo";
+import { PolicyManager } from "../../../../../../components/policy/PolicyManager";
 import { DangerZone } from "./DangerZone";
-import { PolicyManager } from "./PolicyManager";
 import { RepoSettingsForm } from "./RepoSettingsForm";
 
 // RepoSettingsPage manages a repository's configuration: general metadata
@@ -31,7 +31,7 @@ export default async function RepoSettingsPage({
     );
   }
 
-  const { repository: repo, policies } = policiesRes.data;
+  const { repository: repo, policies, inherited } = policiesRes.data;
   const branchesRes = await getBranches(token, params.project, params.repo);
   const branchNames = branchesRes.ok
     ? branchesRes.data.branches.map((b) => b.name)
@@ -78,9 +78,9 @@ export default async function RepoSettingsPage({
           </p>
         </div>
         <PolicyManager
-          project={params.project}
-          repo={params.repo}
+          target={{ scope: "repo", project: params.project, repo: params.repo }}
           policies={policies}
+          inherited={inherited}
           branchNames={branchNames}
           defaultBranch={repo.defaultBranch}
         />
