@@ -109,11 +109,25 @@ func (s *Server) setupRoutes() {
 			r.Get("/me/git-tokens", s.handleListGitTokens)
 			r.Delete("/me/git-tokens/{id}", s.handleRevokeGitToken)
 			r.Get("/me/projects", s.handleListMyProjects)
+			r.Route("/tenants", func(r chi.Router) {
+				r.Route("/{tenant}", func(r chi.Router) {
+					r.Route("/policies", func(r chi.Router) {
+						r.Get("/", s.handleListTenantPolicies)
+						r.Put("/", s.handleSetTenantPolicy)
+						r.Delete("/", s.handleDeleteTenantPolicy)
+					})
+				})
+			})
 			r.Route("/projects", func(r chi.Router) {
 				r.Get("/", s.handleListProjects)
 				r.Post("/", s.handleCreateProject)
 				r.Route("/{slug}", func(r chi.Router) {
 					r.Get("/", s.handleGetProject)
+					r.Route("/policies", func(r chi.Router) {
+						r.Get("/", s.handleListProjectPolicies)
+						r.Put("/", s.handleSetProjectPolicy)
+						r.Delete("/", s.handleDeleteProjectPolicy)
+					})
 					r.Route("/repos", func(r chi.Router) {
 						r.Get("/", s.handleListRepos)
 						r.Post("/", s.handleCreateRepo)

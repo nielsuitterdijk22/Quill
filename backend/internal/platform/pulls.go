@@ -507,13 +507,20 @@ func (s *Service) enforceMergeGate(ctx context.Context, repo db.Repository, owne
 }
 
 // effectiveBranchRule resolves the branch rule governing branch on repo through
-// the policy engine. Today only repo-scoped policies are written; the resolver
-// also understands tenant and project scope for the inheritance work to come.
+// the policy engine, folding the policies declared at the repo, its project, and
+// its tenant (broad -> narrow). A narrower scope overrides a broader one unless
+// the broader scope locked its policy, in which case the narrower may only
+// tighten it (see internal/policy.EffectiveBranch).
 func (s *Service) effectiveBranchRule(ctx context.Context, repo db.Repository, branch string) (*policy.BranchRule, string, error) {
-	rows, err := s.store.ListPoliciesByScope(ctx, db.ListPoliciesByScopeParams{
-		ScopeType: string(policy.ScopeRepo),
-		ScopeID:   repo.ID,
+	project, err := s.store.GetProjectByID(ctx, repo.ProjectID)
+	if err != nil {
+		return nil, "", fmt.Errorf("load project: %w", err)
+	}
+	rows, err := s.store.ListEffectivePolicies(ctx, db.ListEffectivePoliciesParams{
 		Kind:      string(policy.KindBranch),
+		ScopeID:   repo.ID,
+		ScopeID_2: project.ID,
+		ScopeID_3: project.TenantID,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("load branch policies: %w", err)
