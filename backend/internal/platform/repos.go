@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -329,6 +330,14 @@ func (s *Service) DeleteRepo(ctx context.Context, actor Actor, projectSlug, repo
 	}
 	if err := s.store.DeleteRepository(ctx, repo.ID); err != nil {
 		return fmt.Errorf("delete repo: %w", err)
+	}
+	// scope_id is polymorphic, so policies can't cascade via a foreign key; clear
+	// the repo's policies explicitly.
+	if _, err := s.store.DeletePoliciesByScope(ctx, db.DeletePoliciesByScopeParams{
+		ScopeType: string(policy.ScopeRepo),
+		ScopeID:   repo.ID,
+	}); err != nil {
+		s.logger.Warn("could not delete repo policies", "repo", repo.ID, "error", err)
 	}
 	return nil
 }

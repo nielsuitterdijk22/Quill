@@ -9,7 +9,6 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
-	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
 // This file holds the branch-policy endpoints added in PR 7: listing, upserting,
@@ -28,14 +27,14 @@ type branchPolicyResponse struct {
 	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
-func newBranchPolicyResponse(p db.BranchPolicy) branchPolicyResponse {
+func newBranchPolicyResponse(p platform.BranchPolicyView) branchPolicyResponse {
 	return branchPolicyResponse{
 		Pattern:               p.Pattern,
-		RequiredApprovals:     int(p.RequiredApprovals),
-		DismissStaleApprovals: p.DismissStaleApprovals,
-		RequireUpToDate:       p.RequireUpToDate,
-		BlockForcePush:        p.BlockForcePush,
-		RequirePullRequest:    p.RequirePullRequest,
+		RequiredApprovals:     p.Rule.RequiredApprovals,
+		DismissStaleApprovals: p.Rule.DismissStaleApprovals,
+		RequireUpToDate:       p.Rule.RequireUpToDate,
+		BlockForcePush:        p.Rule.BlockForcePush,
+		RequirePullRequest:    p.Rule.RequirePullRequest,
 		UpdatedAt:             p.UpdatedAt,
 	}
 }
