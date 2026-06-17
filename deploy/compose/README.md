@@ -5,10 +5,14 @@ Brings up Postgres, Forgejo, the Quill backend (`api`), the pipeline dispatcher
 
 ```bash
 # from the repo root
-make up        # docker compose up -d --build
+make stack     # build + run the whole stack in Docker (docker compose up -d --build)
 make logs      # tail logs
 make down      # stop everything
 ```
+
+For day-to-day development prefer `make up`, which keeps only Postgres + Forgejo
+in Docker and hot-reloads the api, dispatcher, and web on the host (see the root
+`README.md`). `make down` stops the containers either way.
 
 | Service  | URL                     | Notes                                   |
 | -------- | ----------------------- | --------------------------------------- |
@@ -43,7 +47,7 @@ curl -s -u quill-admin:change-me \
 ```
 
 Copy the returned `sha1` token into `QUILL_FORGEJO_ADMIN_TOKEN` and
-`make up` again to apply.
+`make stack` again to apply.
 
 ## Pipeline runner
 

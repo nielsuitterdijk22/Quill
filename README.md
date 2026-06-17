@@ -53,10 +53,24 @@ Quill is the home for two companion tools that surface inside it:
 
 ## Quickstart
 
-### Full stack (Docker)
+### Dev stack (hot reload) — recommended
 
 ```bash
-make up      # Forgejo + Postgres + api + web, http://localhost:3001
+make up       # Postgres + Forgejo in Docker; api, dispatch & web hot-reload on the host
+make down     # stop the containers (Ctrl-C stops the host processes)
+```
+
+`make up` runs `scripts/dev-up.sh`: it starts Postgres + Forgejo in Docker
+(stateful/slow), waits for both, then runs the API and pipeline dispatcher with
+[air](https://github.com/air-verse/air) and the frontend with `next dev` — all
+hot-reloading. Web is on http://localhost:3001, api on `:8080`, Forgejo on
+`:3000`. Set `QUILL_FORGEJO_ADMIN_TOKEN` (see `deploy/compose/README.md`) so
+repo/PR operations work.
+
+### Full stack (Docker, no hot reload)
+
+```bash
+make stack   # build + run Forgejo + Postgres + api + web in Docker, http://localhost:3001
 make logs
 make down
 ```

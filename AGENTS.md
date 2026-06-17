@@ -41,5 +41,6 @@ file orients automated contributors. Keep changes small, typed, and tested.
 
 - Foundation-first roadmap in `README.md`. One focused PR per item, each with a
   task-list checklist; keep `main` green.
-- Local stack: `make up` (Forgejo + Postgres + api + web). See
+- Local stack: `make up` (Postgres + Forgejo in Docker; api, dispatch & web
+  hot-reload on the host) or `make stack` (full containerised stack). See
   `deploy/compose/README.md`.

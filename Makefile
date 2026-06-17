@@ -3,6 +3,10 @@
 
 COMPOSE := docker compose -f deploy/compose/docker-compose.yml
 
+# go.mod targets a newer Go than some hosts ship; let the toolchain auto-download
+# if the local default is older so `go build`/`test`/air work without a manual SDK.
+export GOTOOLCHAIN := auto
+
 .DEFAULT_GOAL := help
 
 .PHONY: help
@@ -13,7 +17,11 @@ help: ## Show this help
 ## ---- local stack ----------------------------------------------------------
 
 .PHONY: up
-up: ## Start the full local stack (Forgejo + Postgres + api + web)
+up: ## Dev stack: Postgres + Forgejo in Docker + hot-reload api, dispatch & web
+	./scripts/dev-up.sh
+
+.PHONY: stack
+stack: ## Start the full containerised stack (Forgejo + Postgres + api + web, no hot reload)
 	$(COMPOSE) up -d --build
 
 .PHONY: down
