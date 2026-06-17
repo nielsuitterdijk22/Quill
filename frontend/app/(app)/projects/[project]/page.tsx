@@ -45,9 +45,17 @@ export default async function ProjectDetailPage({
 
       <div className="top">
         <h1>{project.name}</h1>
-        <Link className="btn primary" href={`/projects/${project.slug}/repos/new`}>
-          ＋ New repository
-        </Link>
+        <div className="top-actions">
+          <Link className="btn ghost" href={`/projects/${project.slug}/settings`}>
+            ⚙ Settings
+          </Link>
+          <Link
+            className="btn primary"
+            href={`/projects/${project.slug}/repos/new`}
+          >
+            ＋ New repository
+          </Link>
+        </div>
       </div>
 
       {project.description && <p className="subtle">{project.description}</p>}

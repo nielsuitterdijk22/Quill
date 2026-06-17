@@ -99,6 +99,16 @@ func (s *Service) authorizeProjectAdmin(ctx context.Context, actor Actor, projec
 	return ErrForbidden
 }
 
+// authorizePlatformAdmin returns nil when the actor is a platform admin and
+// ErrForbidden otherwise. It gates tenant-scoped configuration (such as tenant
+// branch policies), which is governance reserved for platform operators.
+func (s *Service) authorizePlatformAdmin(actor Actor) error {
+	if actor.IsAdmin {
+		return nil
+	}
+	return ErrForbidden
+}
+
 // isUniqueViolation reports whether err is a Postgres unique-constraint violation,
 // used to translate races into ErrConflict.
 func isUniqueViolation(err error) bool {

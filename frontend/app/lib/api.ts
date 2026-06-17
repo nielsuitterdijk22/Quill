@@ -139,14 +139,21 @@ export type PolicyGate = {
   reason?: string;
 };
 
-// BranchPolicy is a repository branch-protection rule owned by Quill.
+// PolicyScope is the level a branch policy is declared at. A repo inherits the
+// policies of its project and tenant.
+export type PolicyScope = "repo" | "project" | "tenant";
+
+// BranchPolicy is a Quill-owned branch-protection rule. scope says which level
+// declared it; locked marks a floor that narrower scopes may only tighten.
 export type BranchPolicy = {
+  scope?: PolicyScope;
   pattern: string;
   requiredApprovals: number;
   dismissStaleApprovals: boolean;
   requireUpToDate: boolean;
   blockForcePush: boolean;
   requirePullRequest: boolean;
+  locked?: boolean;
   updatedAt: string;
 };
 
@@ -669,7 +676,11 @@ export function getPullReviews(
 }
 
 // policiesResult is the branch-policy listing payload.
-export type PoliciesResult = { repository: Repo; policies: BranchPolicy[] };
+export type PoliciesResult = {
+  repository: Repo;
+  policies: BranchPolicy[];
+  inherited: BranchPolicy[];
+};
 
 export function getBranchPolicies(
   token: string,
@@ -864,9 +875,10 @@ export type BranchPolicyInput = {
   requireUpToDate: boolean;
   blockForcePush: boolean;
   requirePullRequest: boolean;
+  locked?: boolean;
 };
 
-// setBranchPolicy creates or updates a branch policy (project owners / admins only).
+// setBranchPolicy creates or updates a repo branch policy (project owners / admins only).
 export function setBranchPolicy(
   token: string,
   project: string,
@@ -876,7 +888,7 @@ export function setBranchPolicy(
   return sendData(token, "PUT", `/api/v1/projects/${project}/repos/${repo}/policies`, input);
 }
 
-// deleteBranchPolicy removes the policy for a branch pattern.
+// deleteBranchPolicy removes the repo policy for a branch pattern.
 export function deleteBranchPolicy(
   token: string,
   project: string,
@@ -886,6 +898,82 @@ export function deleteBranchPolicy(
   return deleteResource(
     token,
     `/api/v1/projects/${project}/repos/${repo}/policies?pattern=${encodeURIComponent(pattern)}`,
+  );
+}
+
+// ---- project-scoped policies ----------------------------------------------
+
+export type ProjectPoliciesResult = {
+  project: Project;
+  policies: BranchPolicy[];
+  inherited: BranchPolicy[];
+};
+
+// getProjectPolicies returns a project's own branch policies plus the ones it
+// inherits from its tenant. Open to project members.
+export function getProjectPolicies(
+  token: string,
+  project: string,
+): Promise<Result<ProjectPoliciesResult>> {
+  return authGet<ProjectPoliciesResult>(token, `/api/v1/projects/${project}/policies`);
+}
+
+// setProjectPolicy creates or updates a project-scoped branch policy that applies
+// to every repository in the project (project owners / admins only).
+export function setProjectPolicy(
+  token: string,
+  project: string,
+  input: BranchPolicyInput,
+): Promise<DataResult<{ policy: BranchPolicy }>> {
+  return sendData(token, "PUT", `/api/v1/projects/${project}/policies`, input);
+}
+
+// deleteProjectPolicy removes a project-scoped branch policy.
+export function deleteProjectPolicy(
+  token: string,
+  project: string,
+  pattern: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/projects/${project}/policies?pattern=${encodeURIComponent(pattern)}`,
+  );
+}
+
+// ---- tenant-scoped policies (platform admins only) ------------------------
+
+export type TenantPoliciesResult = {
+  tenant: { slug: string; name: string };
+  policies: BranchPolicy[];
+};
+
+// getTenantPolicies returns a tenant's own branch policies (platform admins only).
+export function getTenantPolicies(
+  token: string,
+  tenant: string,
+): Promise<Result<TenantPoliciesResult>> {
+  return authGet<TenantPoliciesResult>(token, `/api/v1/tenants/${tenant}/policies`);
+}
+
+// setTenantPolicy creates or updates a tenant-scoped branch policy that applies
+// to every project and repository in the tenant (platform admins only).
+export function setTenantPolicy(
+  token: string,
+  tenant: string,
+  input: BranchPolicyInput,
+): Promise<DataResult<{ policy: BranchPolicy }>> {
+  return sendData(token, "PUT", `/api/v1/tenants/${tenant}/policies`, input);
+}
+
+// deleteTenantPolicy removes a tenant-scoped branch policy.
+export function deleteTenantPolicy(
+  token: string,
+  tenant: string,
+  pattern: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/tenants/${tenant}/policies?pattern=${encodeURIComponent(pattern)}`,
   );
 }
 
