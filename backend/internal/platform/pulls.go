@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -450,7 +451,10 @@ func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoS
 // ReviewState is the merge-readiness of a pull request against the policy that
 // governs its base branch.
 type ReviewState struct {
-	Policy           *db.BranchPolicy
+	// Rule is the effective branch rule for the PR's base branch, or nil when no
+	// policy applies. Pattern is the selector that produced it.
+	Rule             *policy.BranchRule
+	Pattern          string
 	Approvals        int
 	ChangesRequested int
 	Blocked          bool
@@ -473,51 +477,70 @@ func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, projectSlug,
 	if err != nil {
 		return nil, ReviewState{}, translateForgejoRead(err)
 	}
-	policies, err := s.store.ListBranchPoliciesByRepo(ctx, repo.ID)
+	rule, pattern, err := s.effectiveBranchRule(ctx, repo, pr.Base.Ref)
 	if err != nil {
-		return nil, ReviewState{}, fmt.Errorf("load branch policies: %w", err)
+		return nil, ReviewState{}, err
 	}
-	state := gateFromReviews(matchBranchPolicy(policies, pr.Base.Ref), pr.User, reviews)
+	state := gateFromReviews(rule, pattern, pr.User, reviews)
 	return reviews, state, nil
 }
 
 // enforceMergeGate returns ErrPolicyViolation when a branch policy blocks merging
 // pr, and nil when the merge is allowed (including when no policy applies).
 func (s *Service) enforceMergeGate(ctx context.Context, repo db.Repository, owner, name string, pr forgejo.PullRequest) error {
-	policies, err := s.store.ListBranchPoliciesByRepo(ctx, repo.ID)
+	rule, pattern, err := s.effectiveBranchRule(ctx, repo, pr.Base.Ref)
 	if err != nil {
-		return fmt.Errorf("load branch policies: %w", err)
+		return err
 	}
-	policy := matchBranchPolicy(policies, pr.Base.Ref)
-	if policy == nil {
+	if rule == nil {
 		return nil
 	}
 	reviews, err := s.forgejo.ListReviews(ctx, owner, name, pr.Number)
 	if err != nil {
 		return translateForgejoRead(err)
 	}
-	state := gateFromReviews(policy, pr.User, reviews)
+	state := gateFromReviews(rule, pattern, pr.User, reviews)
 	if state.Blocked {
 		return fmt.Errorf("%w: %s", ErrPolicyViolation, state.Reason)
 	}
 	return nil
 }
 
-// gateFromReviews computes the merge-readiness verdict for a policy against a
-// pull request's reviews. A nil policy means no gate applies (never blocked).
-func gateFromReviews(policy *db.BranchPolicy, author *forgejo.User, reviews []forgejo.Review) ReviewState {
-	if policy == nil {
+// effectiveBranchRule resolves the branch rule governing branch on repo through
+// the policy engine. Today only repo-scoped policies are written; the resolver
+// also understands tenant and project scope for the inheritance work to come.
+func (s *Service) effectiveBranchRule(ctx context.Context, repo db.Repository, branch string) (*policy.BranchRule, string, error) {
+	rows, err := s.store.ListPoliciesByScope(ctx, db.ListPoliciesByScopeParams{
+		ScopeType: string(policy.ScopeRepo),
+		ScopeID:   repo.ID,
+		Kind:      string(policy.KindBranch),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("load branch policies: %w", err)
+	}
+	scoped, err := scopedBranchPolicies(rows)
+	if err != nil {
+		return nil, "", err
+	}
+	rule, pattern := policy.EffectiveBranch(scoped, branch)
+	return rule, pattern, nil
+}
+
+// gateFromReviews computes the merge-readiness verdict for a branch rule against
+// a pull request's reviews. A nil rule means no gate applies (never blocked).
+func gateFromReviews(rule *policy.BranchRule, pattern string, author *forgejo.User, reviews []forgejo.Review) ReviewState {
+	if rule == nil {
 		return ReviewState{}
 	}
-	approvals, changesRequested := summarizeReviews(reviews, author, policy.DismissStaleApprovals)
-	state := ReviewState{Policy: policy, Approvals: approvals, ChangesRequested: changesRequested}
+	approvals, changesRequested := summarizeReviews(reviews, author, rule.DismissStaleApprovals)
+	state := ReviewState{Rule: rule, Pattern: pattern, Approvals: approvals, ChangesRequested: changesRequested}
 	switch {
 	case changesRequested > 0:
 		state.Blocked = true
 		state.Reason = "changes have been requested and must be resolved"
-	case approvals < int(policy.RequiredApprovals):
+	case approvals < rule.RequiredApprovals:
 		state.Blocked = true
-		state.Reason = fmt.Sprintf("%d of %d required approvals", approvals, policy.RequiredApprovals)
+		state.Reason = fmt.Sprintf("%d of %d required approvals", approvals, rule.RequiredApprovals)
 	}
 	return state
 }

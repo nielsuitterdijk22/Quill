@@ -620,10 +620,10 @@ func newPolicyGate(state platform.ReviewState) policyGateResponse {
 		Blocked:          state.Blocked,
 		Reason:           state.Reason,
 	}
-	if state.Policy != nil {
+	if state.Rule != nil {
 		gate.Applies = true
-		gate.Pattern = state.Policy.Pattern
-		gate.RequiredApprovals = int(state.Policy.RequiredApprovals)
+		gate.Pattern = state.Pattern
+		gate.RequiredApprovals = state.Rule.RequiredApprovals
 	}
 	return gate
 }

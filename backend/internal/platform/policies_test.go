@@ -4,19 +4,16 @@ import (
 	"testing"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
-	"github.com/nielsuitterdijk22/quill/internal/store/db"
+	"github.com/nielsuitterdijk22/quill/internal/policy"
 )
 
-// These tests cover the pure decision functions behind branch policies: pattern
-// matching and the review tally / merge gate. They run in CI with no external
-// services.
+// These tests cover the pure decision functions behind branch policies that live
+// in the platform layer: the review tally and the merge gate. Branch-pattern
+// resolution and inheritance are tested in internal/policy. They run in CI with
+// no external services.
 
-func policy(pattern string, approvals int32, dismissStale bool) db.BranchPolicy {
-	return db.BranchPolicy{
-		Pattern:               pattern,
-		RequiredApprovals:     approvals,
-		DismissStaleApprovals: dismissStale,
-	}
+func branchRule(approvals int, dismissStale bool) policy.BranchRule {
+	return policy.BranchRule{RequiredApprovals: approvals, DismissStaleApprovals: dismissStale}
 }
 
 func review(login, state string, stale, dismissed bool) forgejo.Review {
@@ -26,42 +23,6 @@ func review(login, state string, stale, dismissed bool) forgejo.Review {
 		Stale:     stale,
 		Dismissed: dismissed,
 	}
-}
-
-func TestMatchBranchPolicy(t *testing.T) {
-	policies := []db.BranchPolicy{
-		policy("release/*", 2, false),
-		policy("main", 1, false),
-	}
-
-	t.Run("exact match wins over glob", func(t *testing.T) {
-		got := matchBranchPolicy(policies, "main")
-		if got == nil || got.Pattern != "main" {
-			t.Fatalf("expected exact main policy, got %+v", got)
-		}
-	})
-
-	t.Run("glob matches", func(t *testing.T) {
-		got := matchBranchPolicy(policies, "release/1.2")
-		if got == nil || got.Pattern != "release/*" {
-			t.Fatalf("expected release/* policy, got %+v", got)
-		}
-	})
-
-	t.Run("no match returns nil", func(t *testing.T) {
-		if got := matchBranchPolicy(policies, "feature/x"); got != nil {
-			t.Fatalf("expected nil, got %+v", got)
-		}
-	})
-
-	t.Run("exact beats glob regardless of order", func(t *testing.T) {
-		// "develop" matches the glob "*", but an exact "develop" must win.
-		ps := []db.BranchPolicy{policy("*", 3, false), policy("develop", 1, false)}
-		got := matchBranchPolicy(ps, "develop")
-		if got == nil || got.Pattern != "develop" {
-			t.Fatalf("expected exact develop policy, got %+v", got)
-		}
-	})
 }
 
 func TestSummarizeReviews(t *testing.T) {
@@ -128,40 +89,43 @@ func TestSummarizeReviews(t *testing.T) {
 func TestGateFromReviews(t *testing.T) {
 	author := &forgejo.User{Login: "author"}
 
-	t.Run("nil policy never blocks", func(t *testing.T) {
-		st := gateFromReviews(nil, author, nil)
-		if st.Blocked || st.Policy != nil {
+	t.Run("nil rule never blocks", func(t *testing.T) {
+		st := gateFromReviews(nil, "", author, nil)
+		if st.Blocked || st.Rule != nil {
 			t.Fatalf("expected open gate, got %+v", st)
 		}
 	})
 
 	t.Run("insufficient approvals blocks with count", func(t *testing.T) {
-		p := policy("main", 1, false)
-		st := gateFromReviews(&p, author, nil)
+		r := branchRule(1, false)
+		st := gateFromReviews(&r, "main", author, nil)
 		if !st.Blocked {
 			t.Fatalf("expected blocked")
 		}
 		if st.Reason != "0 of 1 required approvals" {
 			t.Fatalf("reason=%q", st.Reason)
 		}
+		if st.Pattern != "main" {
+			t.Fatalf("pattern=%q, want main", st.Pattern)
+		}
 	})
 
 	t.Run("requested changes block even with enough approvals", func(t *testing.T) {
-		p := policy("main", 1, false)
+		r := branchRule(1, false)
 		reviews := []forgejo.Review{
 			review("amir", forgejo.ReviewApproved, false, false),
 			review("bea", forgejo.ReviewRequestChanges, false, false),
 		}
-		st := gateFromReviews(&p, author, reviews)
+		st := gateFromReviews(&r, "main", author, reviews)
 		if !st.Blocked || st.Reason != "changes have been requested and must be resolved" {
 			t.Fatalf("expected change-request block, got %+v", st)
 		}
 	})
 
 	t.Run("satisfied policy is not blocked", func(t *testing.T) {
-		p := policy("main", 1, false)
+		r := branchRule(1, false)
 		reviews := []forgejo.Review{review("amir", forgejo.ReviewApproved, false, false)}
-		st := gateFromReviews(&p, author, reviews)
+		st := gateFromReviews(&r, "main", author, reviews)
 		if st.Blocked {
 			t.Fatalf("expected open gate, got %+v", st)
 		}

@@ -31,19 +31,6 @@ type AuthIdentity struct {
 	UpdatedAt  time.Time   `json:"updatedAt"`
 }
 
-type BranchPolicy struct {
-	ID                    uuid.UUID `json:"id"`
-	RepoID                uuid.UUID `json:"repoId"`
-	Pattern               string    `json:"pattern"`
-	RequiredApprovals     int32     `json:"requiredApprovals"`
-	DismissStaleApprovals bool      `json:"dismissStaleApprovals"`
-	RequireUpToDate       bool      `json:"requireUpToDate"`
-	BlockForcePush        bool      `json:"blockForcePush"`
-	RequirePullRequest    bool      `json:"requirePullRequest"`
-	CreatedAt             time.Time `json:"createdAt"`
-	UpdatedAt             time.Time `json:"updatedAt"`
-}
-
 type GitToken struct {
 	ID               uuid.UUID `json:"id"`
 	UserID           uuid.UUID `json:"userId"`
@@ -102,6 +89,19 @@ type PipelineStep struct {
 	FinishedAt pgtype.Timestamptz `json:"finishedAt"`
 	CreatedAt  time.Time          `json:"createdAt"`
 	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
+type Policy struct {
+	ID        uuid.UUID `json:"id"`
+	ScopeType string    `json:"scopeType"`
+	ScopeID   uuid.UUID `json:"scopeId"`
+	Kind      string    `json:"kind"`
+	Selector  string    `json:"selector"`
+	Rules     []byte    `json:"rules"`
+	Locked    bool      `json:"locked"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type Project struct {
