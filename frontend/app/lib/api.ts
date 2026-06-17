@@ -137,6 +137,15 @@ export type PolicyGate = {
   changesRequested: number;
   blocked: boolean;
   reason?: string;
+  denials?: PolicyDenial[];
+};
+
+// PolicyDenial is one scope-tagged reason the composed gate blocks merging, used
+// to explain which scope (tenant/project/repo) set the rule that failed.
+export type PolicyDenial = {
+  scope: string;
+  selector: string;
+  message: string;
 };
 
 // PolicyScope is the level a branch policy is declared at. A repo inherits the

@@ -45,6 +45,51 @@ type ScopedBranch struct {
 	Rule     BranchRule
 }
 
+// BranchGateInfo is the display-side summary of the branch policies that apply
+// to a base ref under unanimous-allow composition. It does not decide the
+// verdict (the Evaluator does) — it reports the effective numbers a UI shows:
+// the strictest approval threshold, whether stale approvals are dismissed, and
+// the closest selector to label the gate with.
+type BranchGateInfo struct {
+	// Applies is true when at least one policy matches the branch.
+	Applies bool
+	// RequiredApprovals is the strictest approval threshold across all applicable
+	// policies — under unanimous-allow the highest requirement governs.
+	RequiredApprovals int
+	// DismissStale is the OR of dismissStaleApprovals across applicable policies:
+	// if any scope dismisses stale approvals, the tally must too (monotonic).
+	DismissStale bool
+	// Pattern is the selector of the closest applicable policy (narrowest scope,
+	// most specific selector), used to label the gate in the UI.
+	Pattern string
+}
+
+// ApplicableBranchInfo summarizes the branch policies that govern branch for
+// display, computed over the same applicable set the Evaluator composes (every
+// policy whose selector matches, across all scopes). RequiredApprovals is the
+// max and DismissStale the OR across that set, so the displayed numbers match
+// the strictest-wins verdict the gate enforces.
+func ApplicableBranchInfo(policies []ScopedBranch, branch string) BranchGateInfo {
+	info := BranchGateInfo{}
+	bestRank := -1
+	for _, p := range policies {
+		if !branchMatches(p.Selector, branch) {
+			continue
+		}
+		info.Applies = true
+		if p.Rule.RequiredApprovals > info.RequiredApprovals {
+			info.RequiredApprovals = p.Rule.RequiredApprovals
+		}
+		info.DismissStale = info.DismissStale || p.Rule.DismissStaleApprovals
+		if rank := scopeRank(p.Scope); rank > bestRank ||
+			(rank == bestRank && moreSpecific(p.Selector, info.Pattern, branch)) {
+			bestRank = rank
+			info.Pattern = p.Selector
+		}
+	}
+	return info
+}
+
 // EffectiveBranch resolves the rule governing branch by folding the matching
 // policies from the broadest scope (tenant) to the narrowest (repo).
 //

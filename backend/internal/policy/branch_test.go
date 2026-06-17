@@ -153,3 +153,44 @@ func TestDecodeBranchRule(t *testing.T) {
 		}
 	})
 }
+
+func TestApplicableBranchInfo(t *testing.T) {
+	t.Run("no match does not apply", func(t *testing.T) {
+		info := ApplicableBranchInfo([]ScopedBranch{sb(ScopeRepo, "main", false, 1, true)}, "feature/x")
+		if info.Applies {
+			t.Fatalf("expected no applicable policy, got %+v", info)
+		}
+	})
+
+	t.Run("strictest threshold and OR'd dismissStale across scopes", func(t *testing.T) {
+		policies := []ScopedBranch{
+			{Scope: ScopeTenant, Selector: "*", Rule: BranchRule{RequiredApprovals: 1, DismissStaleApprovals: true}},
+			{Scope: ScopeRepo, Selector: "main", Rule: BranchRule{RequiredApprovals: 2}},
+		}
+		info := ApplicableBranchInfo(policies, "main")
+		if !info.Applies {
+			t.Fatal("expected applicable")
+		}
+		if info.RequiredApprovals != 2 {
+			t.Fatalf("RequiredApprovals=%d, want 2 (max across scopes)", info.RequiredApprovals)
+		}
+		if !info.DismissStale {
+			t.Fatal("expected DismissStale OR'd to true")
+		}
+		// The closest applicable selector (narrowest scope, exact match) labels it.
+		if info.Pattern != "main" {
+			t.Fatalf("Pattern=%q, want main", info.Pattern)
+		}
+	})
+
+	t.Run("pattern prefers the narrowest scope", func(t *testing.T) {
+		policies := []ScopedBranch{
+			{Scope: ScopeRepo, Selector: "*", Rule: BranchRule{RequiredApprovals: 1}},
+			{Scope: ScopeTenant, Selector: "main", Rule: BranchRule{RequiredApprovals: 1}},
+		}
+		info := ApplicableBranchInfo(policies, "main")
+		if info.Pattern != "*" {
+			t.Fatalf("Pattern=%q, want * (repo scope wins over tenant)", info.Pattern)
+		}
+	})
+}
