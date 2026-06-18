@@ -205,3 +205,174 @@ func TestEvaluators_DenyTaggedWithScope(t *testing.T) {
 		})
 	}
 }
+
+func environmentPolicy(scope ScopeType, selector string, rule EnvironmentRule) ScopedPolicy {
+	raw, err := rule.MarshalRules()
+	if err != nil {
+		panic(err)
+	}
+	return ScopedPolicy{Scope: scope, Selector: selector, Rules: raw}
+}
+
+func deployFacts(env, ref string, approvals int, runSucceeded bool, previous []string, ageMinutes int) Context {
+	return Context{Environment: &EnvironmentFacts{
+		Environment:          env,
+		Ref:                  ref,
+		Approvals:            approvals,
+		RunSucceeded:         runSucceeded,
+		PreviousEnvironments: previous,
+		AgeMinutes:           ageMinutes,
+	}}
+}
+
+func TestEvaluators_EnvironmentParity(t *testing.T) {
+	cases := []struct {
+		name        string
+		policies    []ScopedPolicy
+		facts       Context
+		wantAllow   bool
+		wantDenials int
+	}{
+		{
+			name:      "no policies allows",
+			policies:  nil,
+			facts:     deployFacts("production", "main", 0, true, nil, 0),
+			wantAllow: true,
+		},
+		{
+			name:        "insufficient approvals blocks",
+			policies:    []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{RequiredApprovals: 2})},
+			facts:       deployFacts("production", "main", 1, true, nil, 0),
+			wantAllow:   false,
+			wantDenials: 1,
+		},
+		{
+			name:        "disallowed source ref blocks",
+			policies:    []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{AllowedSourceBranches: []string{"main", "release/*"}})},
+			facts:       deployFacts("production", "feature/x", 0, true, nil, 0),
+			wantAllow:   false,
+			wantDenials: 1,
+		},
+		{
+			name:      "allowed source ref passes",
+			policies:  []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{AllowedSourceBranches: []string{"main", "release/*"}})},
+			facts:     deployFacts("production", "release/1.2", 0, true, nil, 0),
+			wantAllow: true,
+		},
+		{
+			name:        "missing prior environment blocks",
+			policies:    []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{RequirePreviousEnvironment: "staging"})},
+			facts:       deployFacts("production", "main", 0, true, nil, 0),
+			wantAllow:   false,
+			wantDenials: 1,
+		},
+		{
+			name:      "prior environment satisfied passes",
+			policies:  []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{RequirePreviousEnvironment: "staging"})},
+			facts:     deployFacts("production", "main", 0, true, []string{"staging"}, 0),
+			wantAllow: true,
+		},
+		{
+			name:        "missing successful run blocks",
+			policies:    []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{RequireSuccessfulRun: true})},
+			facts:       deployFacts("production", "main", 0, false, nil, 0),
+			wantAllow:   false,
+			wantDenials: 1,
+		},
+		{
+			name:        "soak window not elapsed blocks",
+			policies:    []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{MinWaitMinutes: 60})},
+			facts:       deployFacts("production", "main", 0, true, nil, 30),
+			wantAllow:   false,
+			wantDenials: 1,
+		},
+		{
+			name:      "soak window elapsed passes",
+			policies:  []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{MinWaitMinutes: 60})},
+			facts:     deployFacts("production", "main", 0, true, nil, 90),
+			wantAllow: true,
+		},
+		{
+			name:      "policy for other environment does not apply",
+			policies:  []ScopedPolicy{environmentPolicy(ScopeProject, "staging", EnvironmentRule{RequiredApprovals: 5})},
+			facts:     deployFacts("production", "main", 0, true, nil, 0),
+			wantAllow: true,
+		},
+		{
+			name: "multiple denials accumulate",
+			policies: []ScopedPolicy{environmentPolicy(ScopeProject, "production", EnvironmentRule{
+				RequiredApprovals:    2,
+				RequireSuccessfulRun: true,
+				MinWaitMinutes:       60,
+			})},
+			facts:       deployFacts("production", "main", 0, false, nil, 0),
+			wantAllow:   false,
+			wantDenials: 3,
+		},
+	}
+
+	for name, ev := range evaluators(t) {
+		for _, tc := range cases {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				got, err := ev.Evaluate(context.Background(), KindEnvironment, tc.policies, tc.facts)
+				if err != nil {
+					t.Fatalf("evaluate: %v", err)
+				}
+				if got.Allow != tc.wantAllow {
+					t.Fatalf("allow=%v want %v (denials=%+v)", got.Allow, tc.wantAllow, got.Denials)
+				}
+				if len(got.Denials) != tc.wantDenials {
+					t.Fatalf("denials=%d want %d (%+v)", len(got.Denials), tc.wantDenials, got.Denials)
+				}
+			})
+		}
+	}
+}
+
+func TestEvaluators_EnvironmentUnanimousAllow(t *testing.T) {
+	// Tenant requires 1 deploy approval on every env (glob), project requires 2 on
+	// production. Under unanimous-allow the strictest wins: 1 approval trips the
+	// project rule on production, 2 allows.
+	policies := []ScopedPolicy{
+		environmentPolicy(ScopeTenant, "*", EnvironmentRule{RequiredApprovals: 1}),
+		environmentPolicy(ScopeProject, "production", EnvironmentRule{RequiredApprovals: 2}),
+	}
+	for name, ev := range evaluators(t) {
+		t.Run(name+"/one approval blocked by project", func(t *testing.T) {
+			got, err := ev.Evaluate(context.Background(), KindEnvironment, policies, deployFacts("production", "main", 1, true, nil, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Allow {
+				t.Fatalf("expected block, got allow (denials=%+v)", got.Denials)
+			}
+			if len(got.Denials) != 1 || got.Denials[0].Scope != ScopeProject {
+				t.Fatalf("expected single project denial, got %+v", got.Denials)
+			}
+		})
+		t.Run(name+"/two approvals allowed", func(t *testing.T) {
+			got, err := ev.Evaluate(context.Background(), KindEnvironment, policies, deployFacts("production", "main", 2, true, nil, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.Allow {
+				t.Fatalf("expected allow, got denials %+v", got.Denials)
+			}
+		})
+	}
+}
+
+func TestEvaluators_RejectMissingKindFacts(t *testing.T) {
+	for name, ev := range evaluators(t) {
+		t.Run(name+"/environment kind needs environment facts", func(t *testing.T) {
+			if _, err := ev.Evaluate(context.Background(), KindEnvironment, nil, mergeFacts("main", "x", 0, 0, true)); err == nil {
+				t.Fatal("expected error when environment facts are missing")
+			}
+		})
+		t.Run(name+"/branch kind needs branch facts", func(t *testing.T) {
+			if _, err := ev.Evaluate(context.Background(), KindBranch, nil, deployFacts("production", "main", 0, true, nil, 0)); err == nil {
+				t.Fatal("expected error when branch facts are missing")
+			}
+		})
+	}
+}

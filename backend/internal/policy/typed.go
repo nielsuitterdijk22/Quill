@@ -13,15 +13,23 @@ type TypedEvaluator struct{}
 // NewTypedEvaluator returns a TypedEvaluator.
 func NewTypedEvaluator() TypedEvaluator { return TypedEvaluator{} }
 
-// Evaluate composes the branch policies governing a pull request into a verdict.
+// Evaluate composes the policies governing an action into a verdict, dispatching
+// to the per-kind judge. Branch and environment kinds are supported.
 func (TypedEvaluator) Evaluate(ctx context.Context, kind Kind, policies []ScopedPolicy, facts Context) (Decision, error) {
-	if kind != KindBranch {
+	switch kind {
+	case KindBranch:
+		if facts.Branch == nil {
+			return Decision{}, fmt.Errorf("typed evaluator: branch facts are required")
+		}
+		return Compose(ctx, policies, facts, branchApplies, judgeBranchTyped)
+	case KindEnvironment:
+		if facts.Environment == nil {
+			return Decision{}, fmt.Errorf("typed evaluator: environment facts are required")
+		}
+		return Compose(ctx, policies, facts, environmentApplies, judgeEnvironmentTyped)
+	default:
 		return Decision{}, fmt.Errorf("typed evaluator: unsupported kind %q", kind)
 	}
-	if facts.Branch == nil {
-		return Decision{}, fmt.Errorf("typed evaluator: branch facts are required")
-	}
-	return Compose(ctx, policies, facts, branchApplies, judgeBranchTyped)
 }
 
 // branchApplies reports whether a branch policy governs the PR: its selector
@@ -41,6 +49,16 @@ func judgeBranchTyped(_ context.Context, p ScopedPolicy, facts Context) ([]strin
 		return nil, err
 	}
 	return branchDenials(rule, *facts.Branch), nil
+}
+
+// judgeEnvironmentTyped raises the deny messages a single environment policy
+// produces against a deploy's facts.
+func judgeEnvironmentTyped(_ context.Context, p ScopedPolicy, facts Context) ([]string, error) {
+	rule, err := DecodeEnvironmentRule(p.Rules)
+	if err != nil {
+		return nil, err
+	}
+	return environmentDenials(rule, *facts.Environment), nil
 }
 
 // branchDenials is the shared verdict logic for one branch rule, kept here so the

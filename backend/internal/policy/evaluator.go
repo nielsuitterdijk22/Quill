@@ -34,13 +34,27 @@ type BranchFacts struct {
 	ChangedPaths     []string `json:"changedPaths"`
 }
 
+// EnvironmentFacts are the facts a deploy gate evaluates: the target environment,
+// the ref being deployed, the deploy approval tally, whether the commit has a
+// green pipeline run, which environments have already received this commit, and
+// how long the candidate has been eligible (for soak/freeze windows).
+type EnvironmentFacts struct {
+	Environment          string   `json:"environment"`
+	Ref                  string   `json:"ref"`
+	Approvals            int      `json:"approvals"`
+	RunSucceeded         bool     `json:"runSucceeded"`
+	PreviousEnvironments []string `json:"previousEnvironments"`
+	AgeMinutes           int      `json:"ageMinutes"`
+}
+
 // Context is the typed fact set passed to the evaluator. It is engine-agnostic:
 // the same facts feed the typed evaluator and the embedded-OPA evaluator. New
 // kinds (environment, artefact promotion) add their own facts here.
 type Context struct {
-	Actor  ActorFacts   `json:"actor"`
-	Now    time.Time    `json:"now"`
-	Branch *BranchFacts `json:"branch,omitempty"`
+	Actor       ActorFacts        `json:"actor"`
+	Now         time.Time         `json:"now"`
+	Branch      *BranchFacts      `json:"branch,omitempty"`
+	Environment *EnvironmentFacts `json:"environment,omitempty"`
 }
 
 // Denial is a single reason a scope blocked the action, tagged with the scope
