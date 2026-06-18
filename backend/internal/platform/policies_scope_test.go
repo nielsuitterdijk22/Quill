@@ -163,21 +163,23 @@ func TestEffectiveGateHonoursLockedInheritance(t *testing.T) {
 		t.Fatalf("repo policy: %v", err)
 	}
 
-	rule, pattern, err := svc.effectiveBranchRule(ctx, repo, "main")
+	// Unanimous-allow composition: the strictest applicable scope governs, so the
+	// tenant's 2-approval floor holds even though the repo declared 1.
+	state, err := svc.branchGate(ctx, repo, pullOnto("main", "feature", "author"), nil)
 	if err != nil {
-		t.Fatalf("effective rule: %v", err)
+		t.Fatalf("branch gate: %v", err)
 	}
-	if rule == nil {
-		t.Fatalf("expected an effective rule for main")
+	if !state.Applies {
+		t.Fatalf("expected an applicable gate for main")
 	}
-	if rule.RequiredApprovals != 2 {
-		t.Fatalf("locked tenant floor not honoured: approvals=%d want 2", rule.RequiredApprovals)
+	if state.RequiredApprovals != 2 {
+		t.Fatalf("tenant floor not honoured: approvals=%d want 2", state.RequiredApprovals)
 	}
-	if !rule.RequirePullRequest {
-		t.Fatalf("locked tenant PR requirement not honoured: %+v", rule)
+	if !state.Blocked {
+		t.Fatalf("expected block with 0 of 2 approvals, got %+v", state)
 	}
-	if pattern != "main" {
-		t.Fatalf("pattern=%q want main", pattern)
+	if state.Pattern != "main" {
+		t.Fatalf("pattern=%q want main", state.Pattern)
 	}
 }
 
@@ -187,7 +189,7 @@ func TestEffectiveGateAllowsTighteningUnlocked(t *testing.T) {
 	owner, repo := seedScopeRepo(t, svc, st, "acme", "widget")
 	admin := Actor{UserID: owner.UserID, IsAdmin: true}
 
-	// Unlocked tenant baseline of 1; repo tightens to 3. Narrower scope wins.
+	// Unlocked tenant baseline of 1; repo tightens to 3. Strictest scope wins.
 	if _, err := svc.SetTenantBranchPolicy(ctx, admin, "default", BranchPolicyInput{Pattern: "main", RequiredApprovals: 1}); err != nil {
 		t.Fatalf("tenant policy: %v", err)
 	}
@@ -195,11 +197,11 @@ func TestEffectiveGateAllowsTighteningUnlocked(t *testing.T) {
 		t.Fatalf("repo policy: %v", err)
 	}
 
-	rule, _, err := svc.effectiveBranchRule(ctx, repo, "main")
+	state, err := svc.branchGate(ctx, repo, pullOnto("main", "feature", "author"), nil)
 	if err != nil {
-		t.Fatalf("effective rule: %v", err)
+		t.Fatalf("branch gate: %v", err)
 	}
-	if rule == nil || rule.RequiredApprovals != 3 {
-		t.Fatalf("repo tightening not applied: %+v", rule)
+	if state.RequiredApprovals != 3 {
+		t.Fatalf("repo tightening not applied: required=%d want 3", state.RequiredApprovals)
 	}
 }

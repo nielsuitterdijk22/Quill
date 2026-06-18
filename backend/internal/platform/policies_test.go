@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"testing"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
@@ -86,51 +87,174 @@ func TestSummarizeReviews(t *testing.T) {
 	})
 }
 
-func TestGateFromReviews(t *testing.T) {
-	author := &forgejo.User{Login: "author"}
+func scopedBranch(scope policy.ScopeType, selector string, rule policy.BranchRule) policy.ScopedBranch {
+	return policy.ScopedBranch{Scope: scope, Selector: selector, Rule: rule}
+}
 
-	t.Run("nil rule never blocks", func(t *testing.T) {
-		st := gateFromReviews(nil, "", author, nil)
-		if st.Blocked || st.Rule != nil {
+func scopedInput(t *testing.T, scope policy.ScopeType, selector string, rule policy.BranchRule) policy.ScopedPolicy {
+	t.Helper()
+	raw, err := rule.MarshalRules()
+	if err != nil {
+		t.Fatalf("marshal rule: %v", err)
+	}
+	return policy.ScopedPolicy{Scope: scope, Selector: selector, Rules: raw}
+}
+
+func pullOnto(base, head, author string) forgejo.PullRequest {
+	return forgejo.PullRequest{
+		Base: forgejo.PRRef{Ref: base},
+		Head: forgejo.PRRef{Ref: head},
+		User: &forgejo.User{Login: author},
+	}
+}
+
+// TestBranchState exercises the evaluator-backed merge gate core: facts assembly,
+// unanimous-allow composition across scopes, and the display summary. It uses the
+// production typed evaluator, no DB or Forgejo.
+func TestBranchState(t *testing.T) {
+	svc := &Service{evaluator: policy.NewTypedEvaluator()}
+	ctx := context.Background()
+	pr := pullOnto("main", "feature", "author")
+
+	t.Run("no applicable policy leaves the gate open", func(t *testing.T) {
+		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "release/*", branchRule(1, false))}
+		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "release/*", branchRule(1, false))}
+		st, err := svc.branchState(ctx, scoped, inputs, pr, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Applies || st.Blocked {
 			t.Fatalf("expected open gate, got %+v", st)
 		}
 	})
 
-	t.Run("insufficient approvals blocks with count", func(t *testing.T) {
-		r := branchRule(1, false)
-		st := gateFromReviews(&r, "main", author, nil)
-		if !st.Blocked {
-			t.Fatalf("expected blocked")
+	t.Run("insufficient approvals blocks with a scope-tagged denial", func(t *testing.T) {
+		rule := branchRule(1, false)
+		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "main", rule)}
+		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "main", rule)}
+		st, err := svc.branchState(ctx, scoped, inputs, pr, nil)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if st.Reason != "0 of 1 required approvals" {
-			t.Fatalf("reason=%q", st.Reason)
+		if !st.Blocked || st.Reason != "0 of 1 required approvals" {
+			t.Fatalf("expected approval block, got %+v", st)
 		}
-		if st.Pattern != "main" {
-			t.Fatalf("pattern=%q, want main", st.Pattern)
+		if st.Pattern != "main" || st.RequiredApprovals != 1 {
+			t.Fatalf("display summary wrong: %+v", st)
+		}
+		if len(st.Denials) != 1 || st.Denials[0].Scope != policy.ScopeRepo {
+			t.Fatalf("denials=%+v", st.Denials)
 		}
 	})
 
 	t.Run("requested changes block even with enough approvals", func(t *testing.T) {
-		r := branchRule(1, false)
+		rule := branchRule(1, false)
+		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "main", rule)}
+		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "main", rule)}
 		reviews := []forgejo.Review{
 			review("amir", forgejo.ReviewApproved, false, false),
 			review("bea", forgejo.ReviewRequestChanges, false, false),
 		}
-		st := gateFromReviews(&r, "main", author, reviews)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !st.Blocked || st.Reason != "changes have been requested and must be resolved" {
 			t.Fatalf("expected change-request block, got %+v", st)
 		}
 	})
 
-	t.Run("satisfied policy is not blocked", func(t *testing.T) {
-		r := branchRule(1, false)
+	t.Run("strictest scope wins under unanimous-allow", func(t *testing.T) {
+		// Repo asks for 1 approval, tenant for 2. The composed gate requires 2 even
+		// though the repo rule is the closest — a narrower scope cannot weaken.
+		scoped := []policy.ScopedBranch{
+			scopedBranch(policy.ScopeTenant, "main", branchRule(2, false)),
+			scopedBranch(policy.ScopeRepo, "main", branchRule(1, false)),
+		}
+		inputs := []policy.ScopedPolicy{
+			scopedInput(t, policy.ScopeTenant, "main", branchRule(2, false)),
+			scopedInput(t, policy.ScopeRepo, "main", branchRule(1, false)),
+		}
 		reviews := []forgejo.Review{review("amir", forgejo.ReviewApproved, false, false)}
-		st := gateFromReviews(&r, "main", author, reviews)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !st.Blocked {
+			t.Fatalf("expected block from tenant rule, got %+v", st)
+		}
+		if st.RequiredApprovals != 2 {
+			t.Fatalf("RequiredApprovals=%d, want 2 (max across scopes)", st.RequiredApprovals)
+		}
+		if st.Denials[0].Scope != policy.ScopeTenant {
+			t.Fatalf("expected tenant denial, got %+v", st.Denials)
+		}
+	})
+
+	t.Run("satisfied across all scopes opens the gate", func(t *testing.T) {
+		scoped := []policy.ScopedBranch{
+			scopedBranch(policy.ScopeTenant, "main", branchRule(2, false)),
+			scopedBranch(policy.ScopeRepo, "main", branchRule(1, false)),
+		}
+		inputs := []policy.ScopedPolicy{
+			scopedInput(t, policy.ScopeTenant, "main", branchRule(2, false)),
+			scopedInput(t, policy.ScopeRepo, "main", branchRule(1, false)),
+		}
+		reviews := []forgejo.Review{
+			review("amir", forgejo.ReviewApproved, false, false),
+			review("bea", forgejo.ReviewApproved, false, false),
+		}
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if st.Blocked {
 			t.Fatalf("expected open gate, got %+v", st)
 		}
-		if st.Approvals != 1 {
-			t.Fatalf("approvals=%d, want 1", st.Approvals)
+		if st.Approvals != 2 {
+			t.Fatalf("approvals=%d, want 2", st.Approvals)
+		}
+	})
+
+	t.Run("allowedSources blocks a disallowed merge flow", func(t *testing.T) {
+		rule := policy.BranchRule{AllowedSources: []string{"release/*"}}
+		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "main", rule)}
+		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "main", rule)}
+		st, err := svc.branchState(ctx, scoped, inputs, pullOnto("main", "feature", "author"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !st.Blocked {
+			t.Fatalf("expected merge-flow block, got %+v", st)
+		}
+		// A permitted source merges freely.
+		ok, err := svc.branchState(ctx, scoped, inputs, pullOnto("main", "release/1.0", "author"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok.Blocked {
+			t.Fatalf("expected open gate for allowed source, got %+v", ok)
+		}
+	})
+
+	t.Run("OR'd dismissStale drops a stale approval", func(t *testing.T) {
+		// Repo keeps stale approvals; tenant dismisses them. The OR means the stale
+		// approval is dropped, so the single approval no longer counts.
+		scoped := []policy.ScopedBranch{
+			scopedBranch(policy.ScopeTenant, "main", branchRule(1, true)),
+			scopedBranch(policy.ScopeRepo, "main", branchRule(1, false)),
+		}
+		inputs := []policy.ScopedPolicy{
+			scopedInput(t, policy.ScopeTenant, "main", branchRule(1, true)),
+			scopedInput(t, policy.ScopeRepo, "main", branchRule(1, false)),
+		}
+		reviews := []forgejo.Review{review("amir", forgejo.ReviewApproved, true, false)}
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Approvals != 0 || !st.Blocked {
+			t.Fatalf("expected stale approval dropped and blocked, got %+v", st)
 		}
 	})
 }

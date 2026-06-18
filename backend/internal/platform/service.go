@@ -12,6 +12,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
+	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
@@ -34,22 +35,41 @@ type Service struct {
 	// runner dispatches CI workflows. In compose this is an HTTP client to the
 	// standalone dispatcher; tests can still inject an in-process runner.
 	runner pipeline.Runner
+	// evaluator turns the policies governing a gate plus typed facts into a
+	// verdict (unanimous-allow across scopes). The typed evaluator is the hot
+	// path: no per-request Rego compile. The embedded-OPA evaluator stays as the
+	// parity oracle and can be swapped in via WithEvaluator.
+	evaluator policy.Evaluator
 }
 
 // NewService wires a platform Service. logger may be nil. The CI runner defaults
 // to the nektos/act-backed runner; production wiring can override it with the
-// HTTP dispatcher via WithRunner.
+// HTTP dispatcher via WithRunner. The policy evaluator defaults to the typed
+// evaluator (override with WithEvaluator).
 func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{store: st, forgejo: fj, logger: logger, runner: pipeline.NewActRunner()}
+	return &Service{
+		store:     st,
+		forgejo:   fj,
+		logger:    logger,
+		runner:    pipeline.NewActRunner(),
+		evaluator: policy.NewTypedEvaluator(),
+	}
 }
 
 // WithRunner overrides the CI runner (used by tests and the HTTP dispatcher
 // client) and returns the service for chaining.
 func (s *Service) WithRunner(r pipeline.Runner) *Service {
 	s.runner = r
+	return s
+}
+
+// WithEvaluator overrides the policy evaluator (used by tests and to swap in the
+// embedded-OPA evaluator) and returns the service for chaining.
+func (s *Service) WithEvaluator(e policy.Evaluator) *Service {
+	s.evaluator = e
 	return s
 }
 

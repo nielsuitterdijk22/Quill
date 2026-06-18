@@ -1517,7 +1517,7 @@ h2.section {
 /* Policy gate banner inside the merge box. */
 .gate-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   font-size: 13px;
   padding: 10px 12px;
@@ -1531,6 +1531,20 @@ h2.section {
 .gate-row.ok {
   background: #112417;
   border: 1px solid #1d3a26;
+}
+.gate-row .merge-dot {
+  margin-top: 3px;
+}
+.gate-row .gate-denials {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gate-row .gate-denials li {
+  line-height: 1.4;
 }
 
 /* Review entries in the conversation. */

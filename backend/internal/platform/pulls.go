@@ -448,17 +448,24 @@ func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoS
 	return repo, merged, nil
 }
 
-// ReviewState is the merge-readiness of a pull request against the policy that
-// governs its base branch.
+// ReviewState is the merge-readiness of a pull request against the policies that
+// govern its base branch, composed across tenant/project/repo scope.
 type ReviewState struct {
-	// Rule is the effective branch rule for the PR's base branch, or nil when no
-	// policy applies. Pattern is the selector that produced it.
-	Rule             *policy.BranchRule
-	Pattern          string
-	Approvals        int
-	ChangesRequested int
-	Blocked          bool
-	Reason           string
+	// Applies is true when at least one branch policy governs the base branch.
+	// When false no gate is shown (the PR may merge freely).
+	Applies bool
+	// Pattern is the selector of the closest applicable policy, for display.
+	Pattern string
+	// RequiredApprovals is the strictest approval threshold across applicable
+	// scopes (the number the UI shows as required).
+	RequiredApprovals int
+	Approvals         int
+	ChangesRequested  int
+	Blocked           bool
+	// Reason is the first denial message, kept for back-compat with single-reason
+	// callers. Denials carries the full, scope-tagged list for the explain UX.
+	Reason  string
+	Denials []policy.Denial
 }
 
 // ReviewsAndState returns a pull request's reviews together with the policy gate
@@ -477,44 +484,40 @@ func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, projectSlug,
 	if err != nil {
 		return nil, ReviewState{}, translateForgejoRead(err)
 	}
-	rule, pattern, err := s.effectiveBranchRule(ctx, repo, pr.Base.Ref)
+	state, err := s.branchGate(ctx, repo, pr, reviews)
 	if err != nil {
 		return nil, ReviewState{}, err
 	}
-	state := gateFromReviews(rule, pattern, pr.User, reviews)
 	return reviews, state, nil
 }
 
 // enforceMergeGate returns ErrPolicyViolation when a branch policy blocks merging
 // pr, and nil when the merge is allowed (including when no policy applies).
 func (s *Service) enforceMergeGate(ctx context.Context, repo db.Repository, owner, name string, pr forgejo.PullRequest) error {
-	rule, pattern, err := s.effectiveBranchRule(ctx, repo, pr.Base.Ref)
-	if err != nil {
-		return err
-	}
-	if rule == nil {
-		return nil
-	}
 	reviews, err := s.forgejo.ListReviews(ctx, owner, name, pr.Number)
 	if err != nil {
 		return translateForgejoRead(err)
 	}
-	state := gateFromReviews(rule, pattern, pr.User, reviews)
+	state, err := s.branchGate(ctx, repo, pr, reviews)
+	if err != nil {
+		return err
+	}
 	if state.Blocked {
-		return fmt.Errorf("%w: %s", ErrPolicyViolation, state.Reason)
+		return fmt.Errorf("%w: %s", ErrPolicyViolation, joinDenials(state.Denials))
 	}
 	return nil
 }
 
-// effectiveBranchRule resolves the branch rule governing branch on repo through
-// the policy engine, folding the policies declared at the repo, its project, and
-// its tenant (broad -> narrow). A narrower scope overrides a broader one unless
-// the broader scope locked its policy, in which case the narrower may only
-// tighten it (see internal/policy.EffectiveBranch).
-func (s *Service) effectiveBranchRule(ctx context.Context, repo db.Repository, branch string) (*policy.BranchRule, string, error) {
+// branchGate composes the branch policies governing pr's base branch into a
+// merge verdict via the policy Evaluator. Unanimous-allow composition is the
+// live semantics here: every applicable policy (tenant, project, repo) must
+// allow, so a narrower scope can only add restrictions. Ref-freshness
+// (requireUpToDate) is owned by Forgejo's BlockOnOutdatedBranch, so the gate
+// reports the branch as up to date and abstains on that check.
+func (s *Service) branchGate(ctx context.Context, repo db.Repository, pr forgejo.PullRequest, reviews []forgejo.Review) (ReviewState, error) {
 	project, err := s.store.GetProjectByID(ctx, repo.ProjectID)
 	if err != nil {
-		return nil, "", fmt.Errorf("load project: %w", err)
+		return ReviewState{}, fmt.Errorf("load project: %w", err)
 	}
 	rows, err := s.store.ListEffectivePolicies(ctx, db.ListEffectivePoliciesParams{
 		Kind:      string(policy.KindBranch),
@@ -523,33 +526,61 @@ func (s *Service) effectiveBranchRule(ctx context.Context, repo db.Repository, b
 		ScopeID_3: project.TenantID,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("load branch policies: %w", err)
+		return ReviewState{}, fmt.Errorf("load branch policies: %w", err)
 	}
 	scoped, err := scopedBranchPolicies(rows)
 	if err != nil {
-		return nil, "", err
+		return ReviewState{}, err
 	}
-	rule, pattern := policy.EffectiveBranch(scoped, branch)
-	return rule, pattern, nil
+	return s.branchState(ctx, scoped, scopedPolicyInputs(rows), pr, reviews)
 }
 
-// gateFromReviews computes the merge-readiness verdict for a branch rule against
-// a pull request's reviews. A nil rule means no gate applies (never blocked).
-func gateFromReviews(rule *policy.BranchRule, pattern string, author *forgejo.User, reviews []forgejo.Review) ReviewState {
-	if rule == nil {
-		return ReviewState{}
+// branchState composes an already-loaded policy set into a merge verdict. It is
+// the DB-free core of branchGate: callers supply the decoded policies (for the
+// display summary) and the raw inputs (for the Evaluator) plus the PR facts.
+func (s *Service) branchState(ctx context.Context, scoped []policy.ScopedBranch, inputs []policy.ScopedPolicy, pr forgejo.PullRequest, reviews []forgejo.Review) (ReviewState, error) {
+	info := policy.ApplicableBranchInfo(scoped, pr.Base.Ref)
+	if !info.Applies {
+		return ReviewState{}, nil
 	}
-	approvals, changesRequested := summarizeReviews(reviews, author, rule.DismissStaleApprovals)
-	state := ReviewState{Rule: rule, Pattern: pattern, Approvals: approvals, ChangesRequested: changesRequested}
-	switch {
-	case changesRequested > 0:
-		state.Blocked = true
-		state.Reason = "changes have been requested and must be resolved"
-	case approvals < rule.RequiredApprovals:
-		state.Blocked = true
-		state.Reason = fmt.Sprintf("%d of %d required approvals", approvals, rule.RequiredApprovals)
+	approvals, changesRequested := summarizeReviews(reviews, pr.User, info.DismissStale)
+	facts := policy.Context{
+		Now: time.Now(),
+		Branch: &policy.BranchFacts{
+			BaseRef:          pr.Base.Ref,
+			HeadRef:          pr.Head.Ref,
+			Approvals:        approvals,
+			ChangesRequested: changesRequested,
+			UpToDate:         true,
+		},
 	}
-	return state
+	decision, err := s.evaluator.Evaluate(ctx, policy.KindBranch, inputs, facts)
+	if err != nil {
+		return ReviewState{}, fmt.Errorf("evaluate branch policy: %w", err)
+	}
+	state := ReviewState{
+		Applies:           true,
+		Pattern:           info.Pattern,
+		RequiredApprovals: info.RequiredApprovals,
+		Approvals:         approvals,
+		ChangesRequested:  changesRequested,
+		Blocked:           !decision.Allow,
+		Denials:           decision.Denials,
+	}
+	if len(decision.Denials) > 0 {
+		state.Reason = decision.Denials[0].Message
+	}
+	return state, nil
+}
+
+// joinDenials renders a composed decision's denial messages into a single line
+// for the merge error.
+func joinDenials(denials []policy.Denial) string {
+	msgs := make([]string, 0, len(denials))
+	for _, d := range denials {
+		msgs = append(msgs, d.Message)
+	}
+	return strings.Join(msgs, "; ")
 }
 
 // summarizeReviews tallies the latest non-dismissed review per user (excluding

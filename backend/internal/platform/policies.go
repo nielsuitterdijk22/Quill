@@ -448,6 +448,21 @@ func scopedBranchPolicies(rows []db.Policy) ([]policy.ScopedBranch, error) {
 	return out, nil
 }
 
+// scopedPolicyInputs projects stored policy rows into the raw form the Evaluator
+// consumes: the scope, selector, and the untouched rules JSON. The evaluator
+// decodes the rules itself, so this carries row.Rules verbatim.
+func scopedPolicyInputs(rows []db.Policy) []policy.ScopedPolicy {
+	out := make([]policy.ScopedPolicy, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, policy.ScopedPolicy{
+			Scope:    policy.ScopeType(row.ScopeType),
+			Selector: row.Selector,
+			Rules:    row.Rules,
+		})
+	}
+	return out
+}
+
 // hasSelector reports whether rows already contains a policy with selector.
 func hasSelector(rows []db.Policy, selector string) bool {
 	for i := range rows {

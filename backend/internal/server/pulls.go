@@ -604,26 +604,40 @@ func newReviewResponse(rv forgejo.Review) reviewResponse {
 
 // policyGateResponse describes whether a branch policy permits merging a PR.
 type policyGateResponse struct {
-	Applies           bool   `json:"applies"`
-	Pattern           string `json:"pattern,omitempty"`
-	RequiredApprovals int    `json:"requiredApprovals"`
-	Approvals         int    `json:"approvals"`
-	ChangesRequested  int    `json:"changesRequested"`
-	Blocked           bool   `json:"blocked"`
-	Reason            string `json:"reason,omitempty"`
+	Applies           bool                 `json:"applies"`
+	Pattern           string               `json:"pattern,omitempty"`
+	RequiredApprovals int                  `json:"requiredApprovals"`
+	Approvals         int                  `json:"approvals"`
+	ChangesRequested  int                  `json:"changesRequested"`
+	Blocked           bool                 `json:"blocked"`
+	Reason            string               `json:"reason,omitempty"`
+	Denials           []policyDenialDetail `json:"denials,omitempty"`
+}
+
+// policyDenialDetail is one scope-tagged reason the composed gate blocks merging,
+// surfaced so the UI can explain which scope set which rule.
+type policyDenialDetail struct {
+	Scope    string `json:"scope"`
+	Selector string `json:"selector"`
+	Message  string `json:"message"`
 }
 
 func newPolicyGate(state platform.ReviewState) policyGateResponse {
 	gate := policyGateResponse{
-		Approvals:        state.Approvals,
-		ChangesRequested: state.ChangesRequested,
-		Blocked:          state.Blocked,
-		Reason:           state.Reason,
+		Applies:           state.Applies,
+		Pattern:           state.Pattern,
+		RequiredApprovals: state.RequiredApprovals,
+		Approvals:         state.Approvals,
+		ChangesRequested:  state.ChangesRequested,
+		Blocked:           state.Blocked,
+		Reason:            state.Reason,
 	}
-	if state.Rule != nil {
-		gate.Applies = true
-		gate.Pattern = state.Pattern
-		gate.RequiredApprovals = state.Rule.RequiredApprovals
+	for _, d := range state.Denials {
+		gate.Denials = append(gate.Denials, policyDenialDetail{
+			Scope:    string(d.Scope),
+			Selector: d.Selector,
+			Message:  d.Message,
+		})
 	}
 	return gate
 }

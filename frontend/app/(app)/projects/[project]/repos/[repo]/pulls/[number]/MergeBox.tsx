@@ -52,13 +52,12 @@ function MergeOption({
   );
 }
 
-// GateRow summarizes the branch policy verdict above the merge controls.
+// GateRow summarizes the branch policy verdict above the merge controls. When the
+// composed gate blocks, it lists each scope-tagged denial so the reason is clear.
 function GateRow({ gate }: { gate: PolicyGate }) {
   if (!gate.applies) return null;
   const cls = gate.blocked ? "warn" : "ok";
-  const detail = gate.blocked
-    ? gate.reason
-    : `${gate.approvals} of ${gate.requiredApprovals} required approvals`;
+  const denials = gate.denials ?? [];
   return (
     <div className={`gate-row ${cls}`}>
       <span className={`merge-dot ${cls}`} />
@@ -66,10 +65,30 @@ function GateRow({ gate }: { gate: PolicyGate }) {
         <strong>
           {gate.blocked ? "Merging is blocked" : "Branch policy satisfied"}
         </strong>
-        <span className="subtle">
-          {" "}
-          · {detail} on <span className="mono">{gate.pattern}</span>
-        </span>
+        {gate.blocked ? (
+          denials.length > 0 ? (
+            <ul className="gate-denials">
+              {denials.map((d, i) => (
+                <li key={i}>
+                  {d.message}
+                  <span className="subtle">
+                    {" "}
+                    · <span className="mono">{d.scope}</span> policy on{" "}
+                    <span className="mono">{d.selector}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="subtle"> · {gate.reason}</span>
+          )
+        ) : (
+          <span className="subtle">
+            {" "}
+            · {gate.approvals} of {gate.requiredApprovals} required approvals on{" "}
+            <span className="mono">{gate.pattern}</span>
+          </span>
+        )}
       </span>
     </div>
   );
