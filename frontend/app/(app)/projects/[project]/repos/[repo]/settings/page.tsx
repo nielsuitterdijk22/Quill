@@ -1,8 +1,13 @@
 import { notFound } from "next/navigation";
 
-import { getBranchPolicies, getBranches } from "../../../../../../lib/api";
+import {
+  getBranchPolicies,
+  getBranches,
+  getEnvironmentPolicies,
+} from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
 import { BrowseError, RepoHeader } from "../../../../../../components/repo";
+import { EnvironmentPolicyManager } from "../../../../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../../../../components/policy/PolicyManager";
 import { DangerZone } from "./DangerZone";
 import { RepoSettingsForm } from "./RepoSettingsForm";
@@ -36,6 +41,10 @@ export default async function RepoSettingsPage({
   const branchNames = branchesRes.ok
     ? branchesRes.data.branches.map((b) => b.name)
     : [];
+
+  const envRes = await getEnvironmentPolicies(token, params.project, params.repo);
+  const envPolicies = envRes.ok ? envRes.data.policies : [];
+  const envInherited = envRes.ok ? envRes.data.inherited : [];
 
   return (
     <>
@@ -83,6 +92,23 @@ export default async function RepoSettingsPage({
           inherited={inherited}
           branchNames={branchNames}
           defaultBranch={repo.defaultBranch}
+        />
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-head">
+          <h2 className="settings-title">Environment policies</h2>
+          <p className="subtle">
+            Gate deploys to an environment with approvals, allowed source
+            branches, an ordered promotion path, a required run, or a wait
+            window. Inherited gates from the project and tenant can only be
+            tightened here.
+          </p>
+        </div>
+        <EnvironmentPolicyManager
+          target={{ scope: "repo", project: params.project, repo: params.repo }}
+          policies={envPolicies}
+          inherited={envInherited}
         />
       </section>
 

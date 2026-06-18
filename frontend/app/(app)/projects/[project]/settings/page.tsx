@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getProjectPolicies } from "../../../../lib/api";
+import { getProjectEnvironmentPolicies, getProjectPolicies } from "../../../../lib/api";
 import { getToken } from "../../../../lib/session";
+import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
 
 // ProjectSettingsPage manages project-scoped governance. Branch policies set here
@@ -38,6 +39,10 @@ export default async function ProjectSettingsPage({
 
   const { project, policies, inherited } = res.data;
 
+  const envRes = await getProjectEnvironmentPolicies(token, params.project);
+  const envPolicies = envRes.ok ? envRes.data.policies : [];
+  const envInherited = envRes.ok ? envRes.data.inherited : [];
+
   return (
     <>
       <div className="crumbs">
@@ -63,6 +68,23 @@ export default async function ProjectSettingsPage({
           target={{ scope: "project", project: project.slug }}
           policies={policies}
           inherited={inherited}
+          canLock
+        />
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-head">
+          <h2 className="settings-title">Environment policies</h2>
+          <p className="subtle">
+            Gate deploys for every repository in this project. A repository may
+            add stricter gates but cannot weaken these. Lock a gate to forbid
+            repositories loosening it.
+          </p>
+        </div>
+        <EnvironmentPolicyManager
+          target={{ scope: "project", project: project.slug }}
+          policies={envPolicies}
+          inherited={envInherited}
           canLock
         />
       </section>
