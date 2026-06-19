@@ -29,6 +29,7 @@ type branchPolicyResponse struct {
 	RequireUpToDate       bool      `json:"requireUpToDate"`
 	BlockForcePush        bool      `json:"blockForcePush"`
 	RequirePullRequest    bool      `json:"requirePullRequest"`
+	RequireStatusChecks   bool      `json:"requireStatusChecks"`
 	Locked                bool      `json:"locked"`
 	UpdatedAt             time.Time `json:"updatedAt"`
 }
@@ -42,6 +43,7 @@ func newBranchPolicyResponse(p platform.BranchPolicyView) branchPolicyResponse {
 		RequireUpToDate:       p.Rule.RequireUpToDate,
 		BlockForcePush:        p.Rule.BlockForcePush,
 		RequirePullRequest:    p.Rule.RequirePullRequest,
+		RequireStatusChecks:   p.Rule.RequireStatusChecks,
 		Locked:                p.Locked,
 		UpdatedAt:             p.UpdatedAt,
 	}
@@ -63,6 +65,7 @@ type setBranchPolicyRequest struct {
 	RequireUpToDate       bool   `json:"requireUpToDate"`
 	BlockForcePush        bool   `json:"blockForcePush"`
 	RequirePullRequest    bool   `json:"requirePullRequest"`
+	RequireStatusChecks   bool   `json:"requireStatusChecks"`
 	Locked                bool   `json:"locked"`
 }
 
@@ -74,6 +77,7 @@ func (req setBranchPolicyRequest) toInput() platform.BranchPolicyInput {
 		RequireUpToDate:       req.RequireUpToDate,
 		BlockForcePush:        req.BlockForcePush,
 		RequirePullRequest:    req.RequirePullRequest,
+		RequireStatusChecks:   req.RequireStatusChecks,
 		Locked:                req.Locked,
 	}
 }

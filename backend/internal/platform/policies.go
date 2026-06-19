@@ -42,6 +42,7 @@ type BranchPolicyInput struct {
 	RequireUpToDate       bool
 	BlockForcePush        bool
 	RequirePullRequest    bool
+	RequireStatusChecks   bool
 	// Locked marks the policy as a floor that narrower scopes may only tighten.
 	// It is meaningful at tenant and project scope; repo scope ignores it (a
 	// repo is the narrowest scope, so it has nothing to lock against).
@@ -318,6 +319,7 @@ func (s *Service) setBranchPolicyAt(ctx context.Context, scope policyScope, in B
 		RequireUpToDate:       in.RequireUpToDate,
 		BlockForcePush:        in.BlockForcePush,
 		RequirePullRequest:    in.RequirePullRequest,
+		RequireStatusChecks:   in.RequireStatusChecks,
 	}
 	rules, err := rule.MarshalRules()
 	if err != nil {

@@ -59,6 +59,7 @@ function flags(p: BranchPolicy): string[] {
   if (p.blockForcePush) out.push("No force-push");
   if (p.dismissStaleApprovals) out.push("Dismiss stale");
   if (p.requireUpToDate) out.push("Up-to-date");
+  if (p.requireStatusChecks) out.push("CI required");
   return out;
 }
 
@@ -136,6 +137,7 @@ export function PolicyManager({
     blockForcePush: true,
     dismissStaleApprovals: false,
     requireUpToDate: false,
+    requireStatusChecks: false,
     locked: false,
     updatedAt: "",
   };
@@ -257,6 +259,14 @@ export function PolicyManager({
               defaultChecked={current.requireUpToDate}
             />
             <span>Require the branch to be up to date before merging</span>
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              name="requireStatusChecks"
+              defaultChecked={current.requireStatusChecks}
+            />
+            <span>Require CI pipeline checks to pass before merging</span>
           </label>
           {canLock && (
             <label className="check">

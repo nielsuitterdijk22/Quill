@@ -37,3 +37,9 @@ source_allowed if {
 	some pattern in input.rule.allowedSources
 	glob.match(pattern, ["/"], input.facts.headRef)
 }
+
+# Pipeline checks on the head commit must all have succeeded.
+deny contains "pipeline checks must pass before merging" if {
+	input.rule.requireStatusChecks == true
+	input.facts.allChecksPass == false
+}

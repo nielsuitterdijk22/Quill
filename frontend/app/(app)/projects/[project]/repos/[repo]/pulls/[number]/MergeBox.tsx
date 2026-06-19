@@ -94,6 +94,35 @@ function GateRow({ gate }: { gate: PolicyGate }) {
   );
 }
 
+// ChecksRow shows the CI pipeline status for the PR's head commit when the branch
+// policy requires status checks. Absent runs are neutral (CI isn't mandatory until
+// at least one run exists); failed runs block; all-pass is green.
+function ChecksRow({ gate }: { gate: PolicyGate }) {
+  if (!gate.requireStatusChecks) return null;
+  const count = gate.checkCount ?? 0;
+  const pass = gate.allChecksPass ?? true;
+  let cls: string;
+  let label: string;
+  if (count === 0) {
+    cls = "neutral";
+    label = "No CI runs recorded for this commit yet";
+  } else if (pass) {
+    cls = "ok";
+    label = `${count} CI check${count === 1 ? "" : "s"} passed`;
+  } else {
+    cls = "warn";
+    label = `CI checks did not all pass (${count} run${count === 1 ? "" : "s"})`;
+  }
+  return (
+    <div className={`gate-row ${cls}`}>
+      <span className={`merge-dot ${cls}`} />
+      <span>
+        <strong>{label}</strong>
+      </span>
+    </div>
+  );
+}
+
 // MergeBox lets a member merge an open PR. The merge control sits top-right; the
 // button opens a popup to pick the merge strategy. When a branch policy blocks
 // the merge, the button is disabled and the reason is shown (the backend enforces
@@ -121,6 +150,7 @@ export function MergeBox({
       <div className="merge-bar">
         <div className="merge-status">
           <GateRow gate={gate} />
+          <ChecksRow gate={gate} />
           <div className="merge-head">
             <span className={`merge-dot ${mergeable ? "ok" : "warn"}`} />
             <strong>

@@ -13,6 +13,9 @@ type BranchRule struct {
 	RequireUpToDate       bool `json:"requireUpToDate"`
 	BlockForcePush        bool `json:"blockForcePush"`
 	RequirePullRequest    bool `json:"requirePullRequest"`
+	// RequireStatusChecks blocks merge until every pipeline run on the head
+	// commit has completed with a success status.
+	RequireStatusChecks bool `json:"requireStatusChecks"`
 	// AllowedSources restricts which head branches may merge into a branch the
 	// policy governs (merge-flow control, e.g. only release/* into main). Each
 	// entry is a glob matched against the PR head ref. Empty means any source.
@@ -59,6 +62,9 @@ type BranchGateInfo struct {
 	// DismissStale is the OR of dismissStaleApprovals across applicable policies:
 	// if any scope dismisses stale approvals, the tally must too (monotonic).
 	DismissStale bool
+	// RequireStatusChecks is the OR of requireStatusChecks across applicable
+	// policies: if any scope requires checks, all must pass (monotonic).
+	RequireStatusChecks bool
 	// Pattern is the selector of the closest applicable policy (narrowest scope,
 	// most specific selector), used to label the gate in the UI.
 	Pattern string
@@ -81,6 +87,7 @@ func ApplicableBranchInfo(policies []ScopedBranch, branch string) BranchGateInfo
 			info.RequiredApprovals = p.Rule.RequiredApprovals
 		}
 		info.DismissStale = info.DismissStale || p.Rule.DismissStaleApprovals
+		info.RequireStatusChecks = info.RequireStatusChecks || p.Rule.RequireStatusChecks
 		if rank := scopeRank(p.Scope); rank > bestRank ||
 			(rank == bestRank && moreSpecific(p.Selector, info.Pattern, branch)) {
 			bestRank = rank
@@ -180,5 +187,6 @@ func tightenBranch(base, override BranchRule) BranchRule {
 	out.RequireUpToDate = out.RequireUpToDate || override.RequireUpToDate
 	out.BlockForcePush = out.BlockForcePush || override.BlockForcePush
 	out.RequirePullRequest = out.RequirePullRequest || override.RequirePullRequest
+	out.RequireStatusChecks = out.RequireStatusChecks || override.RequireStatusChecks
 	return out
 }

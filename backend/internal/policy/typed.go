@@ -72,6 +72,9 @@ func branchDenials(rule BranchRule, f BranchFacts) []string {
 	if f.Approvals < rule.RequiredApprovals {
 		denials = append(denials, fmt.Sprintf("%d of %d required approvals", f.Approvals, rule.RequiredApprovals))
 	}
+	if rule.RequireStatusChecks && !f.AllChecksPass {
+		denials = append(denials, "pipeline checks must pass before merging")
+	}
 	if rule.RequireUpToDate && !f.UpToDate {
 		denials = append(denials, "branch is not up to date with the base")
 	}

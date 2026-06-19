@@ -119,7 +119,7 @@ func TestBranchState(t *testing.T) {
 	t.Run("no applicable policy leaves the gate open", func(t *testing.T) {
 		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "release/*", branchRule(1, false))}
 		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "release/*", branchRule(1, false))}
-		st, err := svc.branchState(ctx, scoped, inputs, pr, nil)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, nil, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func TestBranchState(t *testing.T) {
 		rule := branchRule(1, false)
 		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "main", rule)}
 		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "main", rule)}
-		st, err := svc.branchState(ctx, scoped, inputs, pr, nil)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, nil, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +155,7 @@ func TestBranchState(t *testing.T) {
 			review("amir", forgejo.ReviewApproved, false, false),
 			review("bea", forgejo.ReviewRequestChanges, false, false),
 		}
-		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +176,7 @@ func TestBranchState(t *testing.T) {
 			scopedInput(t, policy.ScopeRepo, "main", branchRule(1, false)),
 		}
 		reviews := []forgejo.Review{review("amir", forgejo.ReviewApproved, false, false)}
-		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func TestBranchState(t *testing.T) {
 			review("amir", forgejo.ReviewApproved, false, false),
 			review("bea", forgejo.ReviewApproved, false, false),
 		}
-		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -220,7 +220,7 @@ func TestBranchState(t *testing.T) {
 		rule := policy.BranchRule{AllowedSources: []string{"release/*"}}
 		scoped := []policy.ScopedBranch{scopedBranch(policy.ScopeRepo, "main", rule)}
 		inputs := []policy.ScopedPolicy{scopedInput(t, policy.ScopeRepo, "main", rule)}
-		st, err := svc.branchState(ctx, scoped, inputs, pullOnto("main", "feature", "author"), nil)
+		st, err := svc.branchState(ctx, scoped, inputs, pullOnto("main", "feature", "author"), nil, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -228,7 +228,7 @@ func TestBranchState(t *testing.T) {
 			t.Fatalf("expected merge-flow block, got %+v", st)
 		}
 		// A permitted source merges freely.
-		ok, err := svc.branchState(ctx, scoped, inputs, pullOnto("main", "release/1.0", "author"), nil)
+		ok, err := svc.branchState(ctx, scoped, inputs, pullOnto("main", "release/1.0", "author"), nil, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +249,7 @@ func TestBranchState(t *testing.T) {
 			scopedInput(t, policy.ScopeRepo, "main", branchRule(1, false)),
 		}
 		reviews := []forgejo.Review{review("amir", forgejo.ReviewApproved, true, false)}
-		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews)
+		st, err := svc.branchState(ctx, scoped, inputs, pr, reviews, true, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

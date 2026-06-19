@@ -12,7 +12,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/google/uuid"
+
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -466,6 +469,10 @@ type ReviewState struct {
 	// callers. Denials carries the full, scope-tagged list for the explain UX.
 	Reason  string
 	Denials []policy.Denial
+	// Pipeline status check fields.
+	RequireStatusChecks bool
+	AllChecksPass       bool
+	CheckCount          int
 }
 
 // ReviewsAndState returns a pull request's reviews together with the policy gate
@@ -532,13 +539,34 @@ func (s *Service) branchGate(ctx context.Context, repo db.Repository, pr forgejo
 	if err != nil {
 		return ReviewState{}, err
 	}
-	return s.branchState(ctx, scoped, scopedPolicyInputs(rows), pr, reviews)
+	allChecksPass, checkCount := s.headChecksPass(ctx, repo.ID, pr.Head.SHA)
+	return s.branchState(ctx, scoped, scopedPolicyInputs(rows), pr, reviews, allChecksPass, checkCount)
+}
+
+// headChecksPass reports whether all pipeline runs recorded for the given
+// commit SHA in the given repo have a "success" status. When no runs exist
+// it returns (true, 0): the absence of CI is not treated as a check failure so
+// repos without pipelines are not blocked by a status-check policy.
+func (s *Service) headChecksPass(ctx context.Context, repoID uuid.UUID, sha string) (bool, int) {
+	if sha == "" {
+		return true, 0
+	}
+	runs, err := s.store.ListRunsByCommitSHA(ctx, repoID, sha)
+	if err != nil || len(runs) == 0 {
+		return true, 0
+	}
+	for _, r := range runs {
+		if r.Status != pipeline.StatusSuccess {
+			return false, len(runs)
+		}
+	}
+	return true, len(runs)
 }
 
 // branchState composes an already-loaded policy set into a merge verdict. It is
 // the DB-free core of branchGate: callers supply the decoded policies (for the
 // display summary) and the raw inputs (for the Evaluator) plus the PR facts.
-func (s *Service) branchState(ctx context.Context, scoped []policy.ScopedBranch, inputs []policy.ScopedPolicy, pr forgejo.PullRequest, reviews []forgejo.Review) (ReviewState, error) {
+func (s *Service) branchState(ctx context.Context, scoped []policy.ScopedBranch, inputs []policy.ScopedPolicy, pr forgejo.PullRequest, reviews []forgejo.Review, allChecksPass bool, checkCount int) (ReviewState, error) {
 	info := policy.ApplicableBranchInfo(scoped, pr.Base.Ref)
 	if !info.Applies {
 		return ReviewState{}, nil
@@ -552,6 +580,7 @@ func (s *Service) branchState(ctx context.Context, scoped []policy.ScopedBranch,
 			Approvals:        approvals,
 			ChangesRequested: changesRequested,
 			UpToDate:         true,
+			AllChecksPass:    allChecksPass,
 		},
 	}
 	decision, err := s.evaluator.Evaluate(ctx, policy.KindBranch, inputs, facts)
@@ -559,13 +588,16 @@ func (s *Service) branchState(ctx context.Context, scoped []policy.ScopedBranch,
 		return ReviewState{}, fmt.Errorf("evaluate branch policy: %w", err)
 	}
 	state := ReviewState{
-		Applies:           true,
-		Pattern:           info.Pattern,
-		RequiredApprovals: info.RequiredApprovals,
-		Approvals:         approvals,
-		ChangesRequested:  changesRequested,
-		Blocked:           !decision.Allow,
-		Denials:           decision.Denials,
+		Applies:             true,
+		Pattern:             info.Pattern,
+		RequiredApprovals:   info.RequiredApprovals,
+		Approvals:           approvals,
+		ChangesRequested:    changesRequested,
+		Blocked:             !decision.Allow,
+		Denials:             decision.Denials,
+		RequireStatusChecks: info.RequireStatusChecks,
+		AllChecksPass:       allChecksPass,
+		CheckCount:          checkCount,
 	}
 	if len(decision.Denials) > 0 {
 		state.Reason = decision.Denials[0].Message

@@ -604,14 +604,17 @@ func newReviewResponse(rv forgejo.Review) reviewResponse {
 
 // policyGateResponse describes whether a branch policy permits merging a PR.
 type policyGateResponse struct {
-	Applies           bool                 `json:"applies"`
-	Pattern           string               `json:"pattern,omitempty"`
-	RequiredApprovals int                  `json:"requiredApprovals"`
-	Approvals         int                  `json:"approvals"`
-	ChangesRequested  int                  `json:"changesRequested"`
-	Blocked           bool                 `json:"blocked"`
-	Reason            string               `json:"reason,omitempty"`
-	Denials           []policyDenialDetail `json:"denials,omitempty"`
+	Applies             bool                 `json:"applies"`
+	Pattern             string               `json:"pattern,omitempty"`
+	RequiredApprovals   int                  `json:"requiredApprovals"`
+	Approvals           int                  `json:"approvals"`
+	ChangesRequested    int                  `json:"changesRequested"`
+	Blocked             bool                 `json:"blocked"`
+	Reason              string               `json:"reason,omitempty"`
+	Denials             []policyDenialDetail `json:"denials,omitempty"`
+	RequireStatusChecks bool                 `json:"requireStatusChecks"`
+	AllChecksPass       bool                 `json:"allChecksPass"`
+	CheckCount          int                  `json:"checkCount"`
 }
 
 // policyDenialDetail is one scope-tagged reason the composed gate blocks merging,
@@ -624,13 +627,16 @@ type policyDenialDetail struct {
 
 func newPolicyGate(state platform.ReviewState) policyGateResponse {
 	gate := policyGateResponse{
-		Applies:           state.Applies,
-		Pattern:           state.Pattern,
-		RequiredApprovals: state.RequiredApprovals,
-		Approvals:         state.Approvals,
-		ChangesRequested:  state.ChangesRequested,
-		Blocked:           state.Blocked,
-		Reason:            state.Reason,
+		Applies:             state.Applies,
+		Pattern:             state.Pattern,
+		RequiredApprovals:   state.RequiredApprovals,
+		Approvals:           state.Approvals,
+		ChangesRequested:    state.ChangesRequested,
+		Blocked:             state.Blocked,
+		Reason:              state.Reason,
+		RequireStatusChecks: state.RequireStatusChecks,
+		AllChecksPass:       state.AllChecksPass,
+		CheckCount:          state.CheckCount,
 	}
 	for _, d := range state.Denials {
 		gate.Denials = append(gate.Denials, policyDenialDetail{

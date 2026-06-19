@@ -31,7 +31,11 @@ type BranchFacts struct {
 	Approvals        int      `json:"approvals"`
 	ChangesRequested int      `json:"changesRequested"`
 	UpToDate         bool     `json:"upToDate"`
-	ChangedPaths     []string `json:"changedPaths"`
+	// AllChecksPass is true when every pipeline run recorded for the PR's head
+	// commit has a "success" status, or when no runs exist yet. The platform
+	// service computes this before evaluation; the evaluator only reads it.
+	AllChecksPass bool     `json:"allChecksPass"`
+	ChangedPaths  []string `json:"changedPaths"`
 }
 
 // EnvironmentFacts are the facts a deploy gate evaluates: the target environment,

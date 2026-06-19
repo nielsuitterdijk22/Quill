@@ -138,6 +138,9 @@ export type PolicyGate = {
   blocked: boolean;
   reason?: string;
   denials?: PolicyDenial[];
+  requireStatusChecks?: boolean;
+  allChecksPass?: boolean;
+  checkCount?: number;
 };
 
 // PolicyDenial is one scope-tagged reason the composed gate blocks merging, used
@@ -162,6 +165,7 @@ export type BranchPolicy = {
   requireUpToDate: boolean;
   blockForcePush: boolean;
   requirePullRequest: boolean;
+  requireStatusChecks: boolean;
   locked?: boolean;
   updatedAt: string;
 };
@@ -884,6 +888,7 @@ export type BranchPolicyInput = {
   requireUpToDate: boolean;
   blockForcePush: boolean;
   requirePullRequest: boolean;
+  requireStatusChecks: boolean;
   locked?: boolean;
 };
 

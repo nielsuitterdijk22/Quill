@@ -65,6 +65,7 @@ export async function savePolicyAction(
     blockForcePush: formData.get("blockForcePush") === "on",
     dismissStaleApprovals: formData.get("dismissStaleApprovals") === "on",
     requireUpToDate: formData.get("requireUpToDate") === "on",
+    requireStatusChecks: formData.get("requireStatusChecks") === "on",
     // Locking is only offered at project and tenant scope.
     locked: target.scope !== "repo" && formData.get("locked") === "on",
   };
