@@ -28,5 +28,5 @@ export async function registerAction(
   }
 
   setSessionCookie(result.token);
-  redirect("/");
+  redirect("/projects/new");
 }

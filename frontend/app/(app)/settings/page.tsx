@@ -1,5 +1,6 @@
 import { listGitTokens } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
+import { ChangePasswordForm } from "./ChangePasswordForm";
 import { GitTokenPanel } from "./GitTokenPanel";
 import { ProfileForm } from "./ProfileForm";
 
@@ -27,6 +28,8 @@ export default async function SettingsPage() {
       </div>
 
       <ProfileForm displayName={user.displayName} />
+
+      <ChangePasswordForm />
 
       <GitTokenPanel tokens={tokens} />
     </>

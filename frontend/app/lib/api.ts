@@ -1253,6 +1253,37 @@ export function updateProfile(
   return sendData<User>(token, "PATCH", "/api/v1/auth/me", input);
 }
 
+// changePassword verifies the user's current password then replaces it.
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/me/password`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ currentPassword, newPassword }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return {
+        ok: false,
+        error: data?.message || `Request failed (${res.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
 // postNoContent issues an authenticated POST for endpoints that return no body
 // (204), mapping transport and HTTP errors into a simple ok/error result.
 async function postNoContent(

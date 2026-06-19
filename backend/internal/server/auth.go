@@ -174,6 +174,38 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+// handleChangePassword lets the signed-in user update their local password after
+// verifying the current one. Returns 204 on success.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req changePasswordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.auth.ChangePassword(r.Context(), id, req.CurrentPassword, req.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, auth.ErrInvalidInput):
+			httpx.Error(w, http.StatusBadRequest, "invalid_input", err.Error())
+		case errors.Is(err, auth.ErrInvalidCredentials):
+			httpx.Error(w, http.StatusBadRequest, "wrong_password", "current password is incorrect")
+		default:
+			s.logger.Error("change password failed", "error", err)
+			httpx.Error(w, http.StatusInternalServerError, "internal", "could not update password")
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleLogout is a no-op for stateless tokens; the frontend clears its cookie.
 // It exists so clients have a uniform endpoint to call.
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {

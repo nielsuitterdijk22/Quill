@@ -21,11 +21,25 @@ export function LoginForm() {
 
   return (
     <div className="center-wrap">
-      <div className="auth-card">
-        <div className="auth-brand">
+      <div className="landing-pitch">
+        <div className="auth-brand landing-brand">
           <span className="dot" /> Quill
         </div>
-        <p className="auth-tagline">Version control for platform teams.</p>
+        <p className="landing-desc">
+          A self-hosted code platform built for teams who own their data. Git
+          hosting, pull requests, branch policies, and CI pipelines — no cloud
+          lock-in, no telemetry, no vendor fees.
+        </p>
+        <p className="landing-desc">
+          Deploy on any server. Your code stays yours.
+        </p>
+        <Link className="btn primary landing-cta" href="/register">
+          Get started — it&apos;s free
+        </Link>
+      </div>
+
+      <div className="auth-card">
+        <p className="auth-tagline">Sign in to your instance</p>
 
         {state.error && <div className="auth-error">{state.error}</div>}
 
@@ -52,8 +66,8 @@ export function LoginForm() {
         </form>
 
         <p className="auth-hint">
-          No account yet? <Link href="/register">Create one</Link>. The first
-          account becomes the admin.
+          No account? <Link href="/register">Register</Link>. The first account
+          becomes the admin.
         </p>
       </div>
     </div>

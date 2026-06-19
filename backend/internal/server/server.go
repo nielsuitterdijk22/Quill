@@ -99,6 +99,7 @@ func (s *Server) setupRoutes() {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
 				r.Patch("/me", s.handleUpdateProfile)
+				r.Patch("/me/password", s.handleChangePassword)
 				r.Post("/logout", s.handleLogout)
 			})
 		})
