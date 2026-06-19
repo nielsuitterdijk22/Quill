@@ -15,6 +15,7 @@ type Querier interface {
 	CountProjects(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAuthIdentity(ctx context.Context, arg CreateAuthIdentityParams) (AuthIdentity, error)
+	CreateEnvironment(ctx context.Context, arg CreateEnvironmentParams) (Environment, error)
 	CreateGitToken(ctx context.Context, arg CreateGitTokenParams) (GitToken, error)
 	CreatePipelineJob(ctx context.Context, arg CreatePipelineJobParams) (PipelineJob, error)
 	CreatePipelineRun(ctx context.Context, arg CreatePipelineRunParams) (PipelineRun, error)
@@ -23,6 +24,7 @@ type Querier interface {
 	CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteEnvironment(ctx context.Context, id uuid.UUID) error
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	// Remove all policies attached to a scope (used when the scope is deleted, since
 	// scope_id is polymorphic and cannot cascade via a foreign key).
@@ -30,6 +32,8 @@ type Querier interface {
 	DeletePolicy(ctx context.Context, arg DeletePolicyParams) (int64, error)
 	DeleteRepository(ctx context.Context, id uuid.UUID) error
 	GetAuthIdentity(ctx context.Context, arg GetAuthIdentityParams) (AuthIdentity, error)
+	GetEnvironmentByID(ctx context.Context, id uuid.UUID) (Environment, error)
+	GetEnvironmentBySlug(ctx context.Context, arg GetEnvironmentBySlugParams) (Environment, error)
 	GetGitToken(ctx context.Context, arg GetGitTokenParams) (GitToken, error)
 	GetPipeline(ctx context.Context, id uuid.UUID) (Pipeline, error)
 	GetPipelineByPath(ctx context.Context, arg GetPipelineByPathParams) (Pipeline, error)
@@ -51,6 +55,7 @@ type Querier interface {
 	// itself, its project, and that project's tenant. Ordered broad -> narrow so the
 	// resolver can fold tenant onto project onto repo.
 	ListEffectivePolicies(ctx context.Context, arg ListEffectivePoliciesParams) ([]Policy, error)
+	ListEnvironmentsByProject(ctx context.Context, projectID uuid.UUID) ([]Environment, error)
 	ListGitTokensByUser(ctx context.Context, userID uuid.UUID) ([]GitToken, error)
 	ListJobsByRun(ctx context.Context, runID uuid.UUID) ([]PipelineJob, error)
 	ListPipelinesByRepo(ctx context.Context, repoID uuid.UUID) ([]Pipeline, error)
@@ -72,6 +77,7 @@ type Querier interface {
 	SetRepositoryForgejoLink(ctx context.Context, arg SetRepositoryForgejoLinkParams) (Repository, error)
 	SetUserForgejoLink(ctx context.Context, arg SetUserForgejoLinkParams) (User, error)
 	UpdateAuthIdentitySecret(ctx context.Context, arg UpdateAuthIdentitySecretParams) error
+	UpdateEnvironment(ctx context.Context, arg UpdateEnvironmentParams) (Environment, error)
 	UpdatePipelineRunStatus(ctx context.Context, arg UpdatePipelineRunStatusParams) (PipelineRun, error)
 	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)

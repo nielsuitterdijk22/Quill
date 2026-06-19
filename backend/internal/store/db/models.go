@@ -31,6 +31,17 @@ type AuthIdentity struct {
 	UpdatedAt  time.Time   `json:"updatedAt"`
 }
 
+type Environment struct {
+	ID          uuid.UUID `json:"id"`
+	ProjectID   uuid.UUID `json:"projectId"`
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Rank        int32     `json:"rank"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type GitToken struct {
 	ID               uuid.UUID `json:"id"`
 	UserID           uuid.UUID `json:"userId"`
