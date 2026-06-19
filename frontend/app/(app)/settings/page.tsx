@@ -1,4 +1,4 @@
-import { listGitTokens } from "../../lib/api";
+import { listGitTokens, listSSHKeys } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
 import { AccountDangerZone } from "./AccountDangerZone";
 import { ChangePasswordForm } from "./ChangePasswordForm";
@@ -6,13 +6,17 @@ import { EmailForm } from "./EmailForm";
 import { ExportDataButton } from "./ExportDataButton";
 import { GitTokenPanel } from "./GitTokenPanel";
 import { ProfileForm } from "./ProfileForm";
+import { SSHKeyPanel } from "./SSHKeyPanel";
 
 // SettingsPage lets the signed-in user edit their profile (display name) and mint
 // or revoke personal git access tokens for cloning and pushing over HTTPS.
 export default async function SettingsPage() {
   const user = await requireSession();
   const token = getToken();
-  const tokens = token ? await listGitTokens(token) : [];
+  const [tokens, sshKeys] = await Promise.all([
+    token ? listGitTokens(token) : Promise.resolve([]),
+    token ? listSSHKeys(token) : Promise.resolve([]),
+  ]);
 
   return (
     <>
@@ -37,6 +41,8 @@ export default async function SettingsPage() {
       <ChangePasswordForm />
 
       <GitTokenPanel tokens={tokens} />
+
+      <SSHKeyPanel keys={sshKeys} />
 
       <ExportDataButton />
 

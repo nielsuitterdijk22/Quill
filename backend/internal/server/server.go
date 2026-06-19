@@ -23,13 +23,14 @@ const Version = "0.1.0"
 
 // Server is the root HTTP handler for the Quill backend.
 type Server struct {
-	cfg      *config.Config
-	logger   *slog.Logger
-	store    *store.Store
-	auth     *auth.Service
-	forgejo  *forgejo.Client
-	platform *platform.Service
-	router   chi.Router
+	cfg          *config.Config
+	logger       *slog.Logger
+	store        *store.Store
+	auth         *auth.Service
+	forgejo      *forgejo.Client
+	platform     *platform.Service
+	router       chi.Router
+	markupCache  *markupCache
 }
 
 // New constructs a Server with middleware and routes configured. store may be
@@ -41,13 +42,14 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
 	}
 	s := &Server{
-		cfg:      cfg,
-		logger:   logger,
-		store:    st,
-		auth:     auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
-		forgejo:  fj,
-		platform: platformSvc,
-		router:   chi.NewRouter(),
+		cfg:         cfg,
+		logger:      logger,
+		store:       st,
+		auth:        auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
+		forgejo:     fj,
+		platform:    platformSvc,
+		router:      chi.NewRouter(),
+		markupCache: newMarkupCache(),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -121,6 +123,9 @@ func (s *Server) setupRoutes() {
 			r.Post("/me/git-token", s.handleCreateGitToken)
 			r.Get("/me/git-tokens", s.handleListGitTokens)
 			r.Delete("/me/git-tokens/{id}", s.handleRevokeGitToken)
+			r.Get("/me/ssh-keys", s.handleListSSHKeys)
+			r.Post("/me/ssh-keys", s.handleAddSSHKey)
+			r.Delete("/me/ssh-keys/{id}", s.handleDeleteSSHKey)
 			r.Get("/me/projects", s.handleListMyProjects)
 			r.Route("/tenants", func(r chi.Router) {
 				r.Route("/{tenant}", func(r chi.Router) {

@@ -122,6 +122,18 @@ Foundation-first; each item is one focused PR.
 - [x] **PR 7 — Branch policies** (protected branches, required reviews, merge gate)
 - [ ] **PR 8 — Pipelines** (runner integration, runs, logs, status checks)
 
+## Why Quill?
+
+Quill is built for developers and teams who want to own their infrastructure.
+There is no vendor behind a paywall, no account required on a third-party
+service, and no code leaving your server. Deploy it on a €5/month VPS or an
+air-gapped machine — the choice is yours.
+
+Quill makes no call-home requests and collects no usage telemetry by default.
+There are no analytics, no tracking pixels, and no external fonts or scripts
+served from third-party CDNs. Your users' IP addresses and code stay on your
+hardware.
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).

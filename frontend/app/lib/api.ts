@@ -329,6 +329,37 @@ export function revokeGitToken(
   return deleteResource(token, `/api/v1/me/git-tokens/${id}`);
 }
 
+// SSHKey is a public SSH key registered for the user.
+export type SSHKey = {
+  id: number;
+  title: string;
+  key: string;
+  fingerprint: string;
+};
+
+// listSSHKeys returns the user's SSH public keys from the git backend.
+export async function listSSHKeys(token: string): Promise<SSHKey[]> {
+  const res = await authGet<{ keys: SSHKey[] }>(token, "/api/v1/me/ssh-keys");
+  return res.ok ? res.data.keys : [];
+}
+
+// addSSHKey registers a new SSH public key for the user.
+export function addSSHKey(
+  token: string,
+  title: string,
+  key: string,
+): Promise<DataResult<SSHKey>> {
+  return postData<SSHKey>(token, "/api/v1/me/ssh-keys", { title, key });
+}
+
+// deleteSSHKey removes an SSH key by its Forgejo key ID.
+export function deleteSSHKey(
+  token: string,
+  id: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(token, `/api/v1/me/ssh-keys/${id}`);
+}
+
 async function postAuth(path: string, body: unknown): Promise<AuthResult> {
   try {
     const res = await fetch(`${API_BASE}${path}`, {

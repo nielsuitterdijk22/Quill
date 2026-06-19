@@ -793,6 +793,29 @@ select:focus {
   word-break: break-word;
 }
 
+/* ---- SSH key form ---------------------------------------------------------- */
+.ssh-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.ssh-key-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: #10131a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.ssh-key-textarea::placeholder {
+  color: var(--muted);
+}
+
 /* ---- sidebar repo context -------------------------------------------------- */
 .repo-ctx {
   margin: 10px 2px 4px;

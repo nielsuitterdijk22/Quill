@@ -292,11 +292,19 @@ func (s *Server) handleRenderMarkup(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "invalid_input", "markdown input is too large to render")
 		return
 	}
-	html, err := s.platform.RenderMarkdown(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), req.Text)
+	projectSlug := chi.URLParam(r, "slug")
+	repoSlug := chi.URLParam(r, "repo")
+	cacheKey := markupCacheKey(projectSlug, repoSlug, req.Text)
+	if cached, ok := s.markupCache.get(cacheKey); ok {
+		httpx.JSON(w, http.StatusOK, map[string]any{"html": cached})
+		return
+	}
+	html, err := s.platform.RenderMarkdown(r.Context(), actor, projectSlug, repoSlug, req.Text)
 	if err != nil {
 		s.writePlatformError(w, err, "could not render markdown")
 		return
 	}
+	s.markupCache.set(cacheKey, html)
 	httpx.JSON(w, http.StatusOK, map[string]any{"html": html})
 }
 

@@ -133,6 +133,108 @@ server {
 }
 ```
 
+## GDPR operator notes
+
+### Cookie consent
+
+Quill sets **one cookie**: `quill_token`, a session JWT. This cookie is
+strictly necessary for the service to function (without it you cannot stay
+logged in). Under GDPR, strictly necessary cookies are exempt from the
+requirement to obtain consent, so **no cookie consent banner is needed**.
+
+Quill loads no analytics, no third-party scripts, and no external fonts.
+All assets are served from your own domain.
+
+If you add any third-party integrations (e.g. monitoring, analytics), you
+must update your privacy policy and add a consent mechanism accordingly.
+
+### Privacy policy
+
+A template privacy policy for instance operators is provided in
+`docs/operator-privacy-policy.md`. Fill in your contact details and
+adapt it to your deployment before making your instance public.
+
+## Resource requirements
+
+A minimal hobby instance (single server) needs at least:
+
+| Component        | Minimum     | Comfortable |
+| ---------------- | ----------- | ----------- |
+| RAM              | 512 MB      | 1 GB        |
+| CPU              | 1 vCPU      | 2 vCPUs     |
+| Disk             | 5 GB        | 20 GB+      |
+
+A €5–6/month VPS (1 vCPU, 1 GB RAM) is sufficient for a small team with
+a few repositories and occasional pipeline runs. Forgejo is the heaviest
+component; the Quill API and frontend add minimal overhead.
+
+## Backup and restore
+
+### Backing up
+
+```bash
+# Postgres — dump both databases
+docker compose -f deploy/compose/docker-compose.yml exec postgres \
+  pg_dump -U quill quill > quill-$(date +%Y%m%d).sql
+
+docker compose -f deploy/compose/docker-compose.yml exec postgres \
+  pg_dump -U quill forgejo > forgejo-$(date +%Y%m%d).sql
+
+# Forgejo data volume (git repos, avatars, attachments)
+docker run --rm \
+  -v quill-forgejo-data:/data \
+  -v "$(pwd)":/backup \
+  alpine tar czf /backup/forgejo-data-$(date +%Y%m%d).tar.gz /data
+```
+
+Store all three files off-server (S3, Backblaze, encrypted external drive).
+
+### Restoring
+
+```bash
+# Stop everything first
+docker compose -f deploy/compose/docker-compose.yml down
+
+# Restore Forgejo volume
+docker run --rm \
+  -v quill-forgejo-data:/data \
+  -v "$(pwd)":/backup \
+  alpine sh -c "cd / && tar xzf /backup/forgejo-data-YYYYMMDD.tar.gz"
+
+# Start Postgres only, then restore databases
+docker compose -f deploy/compose/docker-compose.yml up -d postgres
+# Wait for postgres to be ready, then:
+docker compose -f deploy/compose/docker-compose.yml exec -T postgres \
+  psql -U quill quill < quill-YYYYMMDD.sql
+docker compose -f deploy/compose/docker-compose.yml exec -T postgres \
+  psql -U quill forgejo < forgejo-YYYYMMDD.sql
+
+# Start everything else
+docker compose -f deploy/compose/docker-compose.yml up -d
+```
+
+## Upgrade procedure
+
+When a new Quill release ships, apply it as follows:
+
+1. **Pull the new image** (or rebuild from source):
+   ```bash
+   git pull
+   make stack   # rebuilds and restarts all containers
+   ```
+
+2. **Schema migrations** run automatically on API startup. The Quill API
+   applies any pending Postgres migrations before it begins serving traffic,
+   so no manual `make migrate` step is needed unless the release notes say
+   otherwise.
+
+3. **Check the release notes** for breaking changes, new required environment
+   variables, or manual steps (e.g. Forgejo version bumps may require a
+   Forgejo migration step inside its container).
+
+> **Data safety:** take a backup before upgrading, especially for major
+> releases.
+
 ## Pipeline runner
 
 Pipeline execution is split across two services:
