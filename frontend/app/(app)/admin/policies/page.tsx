@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 
-import { getTenantPolicies } from "../../../lib/api";
+import { getTenantEnvironmentPolicies, getTenantPolicies } from "../../../lib/api";
 import { getToken, requireSession } from "../../../lib/session";
+import { EnvironmentPolicyManager } from "../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../components/policy/PolicyManager";
 
 // The MVP runs a single tenant; tenant-wide governance is managed under its slug.
@@ -30,6 +31,9 @@ export default async function AdminPoliciesPage() {
       </>
     );
   }
+
+  const envRes = await getTenantEnvironmentPolicies(token, DEFAULT_TENANT);
+  const envPolicies = envRes.ok ? envRes.data.policies : [];
 
   const { tenant, policies } = res.data;
 
@@ -60,6 +64,21 @@ export default async function AdminPoliciesPage() {
         <PolicyManager
           target={{ scope: "tenant", tenant: tenant.slug }}
           policies={policies}
+          canLock
+        />
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-head">
+          <h2 className="settings-title">Environment policies</h2>
+          <p className="subtle">
+            Gate deploys tenant-wide, e.g. require approvals and a green run
+            before anything reaches <code>production</code>.
+          </p>
+        </div>
+        <EnvironmentPolicyManager
+          target={{ scope: "tenant", tenant: tenant.slug }}
+          policies={envPolicies}
           canLock
         />
       </section>

@@ -986,6 +986,170 @@ export function deleteTenantPolicy(
   );
 }
 
+// ---- environment policies --------------------------------------------------
+
+// EnvironmentPolicy is a Quill-owned deploy gate for an environment (name or
+// glob). scope says which level declared it; locked marks a floor that narrower
+// scopes may only tighten. The rule fields answer the deploy-control asks:
+// required approvers, which source branches may deploy, an ordered promotion
+// path, a required green run, and a soak/freeze window.
+export type EnvironmentPolicy = {
+  scope?: PolicyScope;
+  pattern: string;
+  requiredApprovals: number;
+  allowedSourceBranches: string[];
+  requirePreviousEnvironment: string;
+  requireSuccessfulRun: boolean;
+  minWaitMinutes: number;
+  locked?: boolean;
+  updatedAt: string;
+};
+
+export type EnvironmentPolicyInput = {
+  pattern: string;
+  requiredApprovals: number;
+  allowedSourceBranches: string[];
+  requirePreviousEnvironment: string;
+  requireSuccessfulRun: boolean;
+  minWaitMinutes: number;
+  locked?: boolean;
+};
+
+// ---- repo-scoped environment policies -------------------------------------
+
+export type EnvironmentPoliciesResult = {
+  repository: Repo;
+  policies: EnvironmentPolicy[];
+  inherited: EnvironmentPolicy[];
+};
+
+// getEnvironmentPolicies returns a repo's own environment policies plus the ones
+// it inherits from its project and tenant.
+export function getEnvironmentPolicies(
+  token: string,
+  project: string,
+  repo: string,
+): Promise<Result<EnvironmentPoliciesResult>> {
+  return authGet<EnvironmentPoliciesResult>(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/environment-policies`,
+  );
+}
+
+// setEnvironmentPolicy creates or updates a repo environment policy (project
+// owners / admins only).
+export function setEnvironmentPolicy(
+  token: string,
+  project: string,
+  repo: string,
+  input: EnvironmentPolicyInput,
+): Promise<DataResult<{ policy: EnvironmentPolicy }>> {
+  return sendData(
+    token,
+    "PUT",
+    `/api/v1/projects/${project}/repos/${repo}/environment-policies`,
+    input,
+  );
+}
+
+// deleteEnvironmentPolicy removes the repo policy for an environment selector.
+export function deleteEnvironmentPolicy(
+  token: string,
+  project: string,
+  repo: string,
+  pattern: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/environment-policies?pattern=${encodeURIComponent(pattern)}`,
+  );
+}
+
+// ---- project-scoped environment policies ----------------------------------
+
+export type ProjectEnvironmentPoliciesResult = {
+  project: Project;
+  policies: EnvironmentPolicy[];
+  inherited: EnvironmentPolicy[];
+};
+
+// getProjectEnvironmentPolicies returns a project's own environment policies plus
+// the ones it inherits from its tenant. Open to project members.
+export function getProjectEnvironmentPolicies(
+  token: string,
+  project: string,
+): Promise<Result<ProjectEnvironmentPoliciesResult>> {
+  return authGet<ProjectEnvironmentPoliciesResult>(
+    token,
+    `/api/v1/projects/${project}/environment-policies`,
+  );
+}
+
+// setProjectEnvironmentPolicy creates or updates a project-scoped environment
+// policy that applies to every repository in the project (project owners /
+// admins only).
+export function setProjectEnvironmentPolicy(
+  token: string,
+  project: string,
+  input: EnvironmentPolicyInput,
+): Promise<DataResult<{ policy: EnvironmentPolicy }>> {
+  return sendData(token, "PUT", `/api/v1/projects/${project}/environment-policies`, input);
+}
+
+// deleteProjectEnvironmentPolicy removes a project-scoped environment policy.
+export function deleteProjectEnvironmentPolicy(
+  token: string,
+  project: string,
+  pattern: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/projects/${project}/environment-policies?pattern=${encodeURIComponent(pattern)}`,
+  );
+}
+
+// ---- tenant-scoped environment policies (platform admins only) ------------
+
+export type TenantEnvironmentPoliciesResult = {
+  tenant: { slug: string; name: string };
+  policies: EnvironmentPolicy[];
+};
+
+// getTenantEnvironmentPolicies returns a tenant's own environment policies
+// (platform admins only).
+export function getTenantEnvironmentPolicies(
+  token: string,
+  tenant: string,
+): Promise<Result<TenantEnvironmentPoliciesResult>> {
+  return authGet<TenantEnvironmentPoliciesResult>(
+    token,
+    `/api/v1/tenants/${tenant}/environment-policies`,
+  );
+}
+
+// setTenantEnvironmentPolicy creates or updates a tenant-scoped environment
+// policy that applies to every project and repository in the tenant (platform
+// admins only).
+export function setTenantEnvironmentPolicy(
+  token: string,
+  tenant: string,
+  input: EnvironmentPolicyInput,
+): Promise<DataResult<{ policy: EnvironmentPolicy }>> {
+  return sendData(token, "PUT", `/api/v1/tenants/${tenant}/environment-policies`, input);
+}
+
+// deleteTenantEnvironmentPolicy removes a tenant-scoped environment policy.
+export function deleteTenantEnvironmentPolicy(
+  token: string,
+  tenant: string,
+  pattern: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(
+    token,
+    `/api/v1/tenants/${tenant}/environment-policies?pattern=${encodeURIComponent(pattern)}`,
+  );
+}
+
 // ---- my projects ----------------------------------------------------------
 
 // MyProject is a project the signed-in user belongs to, annotated with their

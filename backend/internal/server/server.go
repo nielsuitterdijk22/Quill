@@ -116,6 +116,11 @@ func (s *Server) setupRoutes() {
 						r.Put("/", s.handleSetTenantPolicy)
 						r.Delete("/", s.handleDeleteTenantPolicy)
 					})
+					r.Route("/environment-policies", func(r chi.Router) {
+						r.Get("/", s.handleListTenantEnvironmentPolicies)
+						r.Put("/", s.handleSetTenantEnvironmentPolicy)
+						r.Delete("/", s.handleDeleteTenantEnvironmentPolicy)
+					})
 				})
 			})
 			r.Route("/projects", func(r chi.Router) {
@@ -127,6 +132,11 @@ func (s *Server) setupRoutes() {
 						r.Get("/", s.handleListProjectPolicies)
 						r.Put("/", s.handleSetProjectPolicy)
 						r.Delete("/", s.handleDeleteProjectPolicy)
+					})
+					r.Route("/environment-policies", func(r chi.Router) {
+						r.Get("/", s.handleListProjectEnvironmentPolicies)
+						r.Put("/", s.handleSetProjectEnvironmentPolicy)
+						r.Delete("/", s.handleDeleteProjectEnvironmentPolicy)
 					})
 					r.Route("/repos", func(r chi.Router) {
 						r.Get("/", s.handleListRepos)
@@ -144,6 +154,11 @@ func (s *Server) setupRoutes() {
 								r.Get("/", s.handleListBranchPolicies)
 								r.Put("/", s.handleSetBranchPolicy)
 								r.Delete("/", s.handleDeleteBranchPolicy)
+							})
+							r.Route("/environment-policies", func(r chi.Router) {
+								r.Get("/", s.handleListEnvironmentPolicies)
+								r.Put("/", s.handleSetEnvironmentPolicy)
+								r.Delete("/", s.handleDeleteEnvironmentPolicy)
 							})
 							r.Route("/pipelines", func(r chi.Router) {
 								r.Get("/", s.handleListPipelines)
