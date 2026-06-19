@@ -666,6 +666,14 @@ select:focus {
   color: var(--muted);
   opacity: 0.6;
 }
+.copy-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.copy-link:hover {
+  opacity: 0.9;
+}
 
 /* ---- misc layout helpers --------------------------------------------------- */
 .grid-2 {

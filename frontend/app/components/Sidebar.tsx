@@ -305,7 +305,17 @@ export function Sidebar({
             Sign out
           </button>
         </form>
-        <div className="copy">© 2026 Quill</div>
+        <div className="copy">
+          © 2026 Quill ·{" "}
+          <a
+            href="https://github.com/nielsuitterdijk22/quill"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="copy-link"
+          >
+            Apache 2.0
+          </a>
+        </div>
       </div>
     </aside>
   );

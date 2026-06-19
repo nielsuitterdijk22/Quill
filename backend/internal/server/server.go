@@ -99,9 +99,16 @@ func (s *Server) setupRoutes() {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
 				r.Patch("/me", s.handleUpdateProfile)
+				r.Patch("/me/email", s.handleUpdateEmail)
 				r.Patch("/me/password", s.handleChangePassword)
 				r.Post("/logout", s.handleLogout)
 			})
+		})
+
+		// Admin-only operations (platform admin required, enforced per handler).
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireAuth)
+			r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 		})
 
 		// Projects and repositories require authentication.

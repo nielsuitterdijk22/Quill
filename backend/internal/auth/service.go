@@ -211,6 +211,33 @@ func (s *Service) CurrentUser(ctx context.Context, id Identity) (db.User, error)
 // maxDisplayNameLen bounds a display name so profiles stay sane in the UI.
 const maxDisplayNameLen = 100
 
+// AdminResetPassword replaces a user's local password without verifying the
+// current one. The caller must be a platform admin; enforcement is in the HTTP
+// layer.
+func (s *Service) AdminResetPassword(ctx context.Context, username, newPassword string) error {
+	if len(newPassword) < minPasswordLen {
+		return fmt.Errorf("%w: password must be at least %d characters", ErrInvalidInput, minPasswordLen)
+	}
+	if len(newPassword) > maxPasswordLen {
+		return fmt.Errorf("%w: password must be at most %d characters", ErrInvalidInput, maxPasswordLen)
+	}
+	ident, err := s.store.GetAuthIdentity(ctx, db.GetAuthIdentityParams{
+		Provider: ProviderLocal,
+		Subject:  strings.ToLower(strings.TrimSpace(username)),
+	})
+	if err != nil {
+		return ErrInvalidCredentials
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	return s.store.UpdateAuthIdentitySecret(ctx, db.UpdateAuthIdentitySecretParams{
+		ID:         ident.ID,
+		SecretHash: pgtype.Text{String: string(hash), Valid: true},
+	})
+}
+
 // ChangePassword verifies currentPassword against the stored bcrypt hash and, on
 // success, replaces it with newPassword. It only works for local-provider accounts.
 func (s *Service) ChangePassword(ctx context.Context, id Identity, currentPassword, newPassword string) error {
@@ -238,6 +265,23 @@ func (s *Service) ChangePassword(ctx context.Context, id Identity, currentPasswo
 		ID:         ident.ID,
 		SecretHash: pgtype.Text{String: string(hash), Valid: true},
 	})
+}
+
+// UpdateEmail changes the signed-in user's email address and returns the
+// refreshed record. Duplicate-email conflicts are surfaced as ErrUserExists.
+func (s *Service) UpdateEmail(ctx context.Context, id Identity, email string) (db.User, error) {
+	email = strings.TrimSpace(email)
+	if _, err := mail.ParseAddress(email); err != nil {
+		return db.User{}, fmt.Errorf("%w: email is not valid", ErrInvalidInput)
+	}
+	user, err := s.store.UpdateUserEmail(ctx, id.UserID, strings.ToLower(email))
+	if err != nil {
+		if isUniqueViolation(err) {
+			return db.User{}, ErrUserExists
+		}
+		return db.User{}, err
+	}
+	return user, nil
 }
 
 // UpdateProfile updates the signed-in user's editable profile fields (currently

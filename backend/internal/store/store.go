@@ -78,6 +78,24 @@ func (s *Store) ListRunsByCommitSHA(ctx context.Context, repoID uuid.UUID, sha s
 	return runs, rows.Err()
 }
 
+// UpdateUserEmail updates the email address for the given user and returns the
+// refreshed record. Written by hand to avoid re-running the sqlc generator.
+func (s *Store) UpdateUserEmail(ctx context.Context, id uuid.UUID, email string) (db.User, error) {
+	const q = `
+		UPDATE users SET email = $2
+		WHERE id = $1
+		RETURNING id, username, email, display_name, is_admin, is_active,
+		          forgejo_user_id, forgejo_username, created_at, updated_at`
+	row := s.pool.QueryRow(ctx, q, id, email)
+	var u db.User
+	err := row.Scan(
+		&u.ID, &u.Username, &u.Email, &u.DisplayName,
+		&u.IsAdmin, &u.IsActive, &u.ForgejoUserID, &u.ForgejoUsername,
+		&u.CreatedAt, &u.UpdatedAt,
+	)
+	return u, err
+}
+
 // InTx runs fn inside a transaction, committing on success and rolling back on
 // error. Use it for operations that must write several tables atomically (e.g.
 // creating a project together with its first membership).

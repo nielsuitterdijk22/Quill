@@ -1253,6 +1253,14 @@ export function updateProfile(
   return sendData<User>(token, "PATCH", "/api/v1/auth/me", input);
 }
 
+// updateEmail changes the signed-in user's email address.
+export function updateEmail(
+  token: string,
+  email: string,
+): Promise<DataResult<User>> {
+  return sendData<User>(token, "PATCH", "/api/v1/auth/me/email", { email });
+}
+
 // changePassword verifies the user's current password then replaces it.
 export async function changePassword(
   token: string,

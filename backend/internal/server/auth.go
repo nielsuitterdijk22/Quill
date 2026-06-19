@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
@@ -169,6 +171,73 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		s.logger.Error("update profile failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update profile")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, newUserResponse(user))
+}
+
+type adminResetPasswordRequest struct {
+	NewPassword string `json:"newPassword"`
+}
+
+// handleAdminResetPassword lets a platform admin set any user's password without
+// knowing the current one. Returns 204 on success.
+func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if !id.IsAdmin {
+		httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
+		return
+	}
+	username := chi.URLParam(r, "username")
+	var req adminResetPasswordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.auth.AdminResetPassword(r.Context(), username, req.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, auth.ErrInvalidInput):
+			httpx.Error(w, http.StatusBadRequest, "invalid_input", err.Error())
+		case errors.Is(err, auth.ErrInvalidCredentials):
+			httpx.Error(w, http.StatusNotFound, "not_found", "user not found")
+		default:
+			s.logger.Error("admin reset password failed", "error", err)
+			httpx.Error(w, http.StatusInternalServerError, "internal", "could not reset password")
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type updateEmailRequest struct {
+	Email string `json:"email"`
+}
+
+// handleUpdateEmail replaces the signed-in user's email address.
+func (s *Server) handleUpdateEmail(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req updateEmailRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	user, err := s.auth.UpdateEmail(r.Context(), id, req.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrInvalidInput):
+			httpx.Error(w, http.StatusBadRequest, "invalid_input", err.Error())
+		case errors.Is(err, auth.ErrUserExists):
+			httpx.Error(w, http.StatusConflict, "email_taken", "that email address is already in use")
+		default:
+			s.logger.Error("update email failed", "error", err)
+			httpx.Error(w, http.StatusInternalServerError, "internal", "could not update email")
+		}
 		return
 	}
 	httpx.JSON(w, http.StatusOK, newUserResponse(user))

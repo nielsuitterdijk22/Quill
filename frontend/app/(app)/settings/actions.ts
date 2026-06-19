@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
-import { changePassword, updateProfile } from "../../lib/api";
+import { changePassword, updateEmail, updateProfile } from "../../lib/api";
 import { getToken } from "../../lib/session";
 
 export type ProfileFormState = { error?: string; ok?: boolean };
+export type EmailFormState = { error?: string; ok?: boolean };
 export type PasswordFormState = { error?: string; ok?: boolean };
 
 // updateProfileAction saves the signed-in user's display name, then refreshes the
@@ -20,6 +21,24 @@ export async function updateProfileAction(
   const displayName = String(formData.get("displayName") ?? "").trim();
 
   const res = await updateProfile(token, { displayName });
+  if (!res.ok) return { error: res.error };
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+// updateEmailAction changes the signed-in user's email address.
+export async function updateEmailAction(
+  _prev: EmailFormState,
+  formData: FormData,
+): Promise<EmailFormState> {
+  const token = getToken();
+  if (!token) return { error: "Your session has expired. Sign in again." };
+
+  const email = String(formData.get("email") ?? "").trim();
+  if (!email) return { error: "Email address is required." };
+
+  const res = await updateEmail(token, email);
   if (!res.ok) return { error: res.error };
 
   revalidatePath("/", "layout");
