@@ -1253,6 +1253,31 @@ export function updateProfile(
   return sendData<User>(token, "PATCH", "/api/v1/auth/me", input);
 }
 
+// deleteMyAccount permanently purges the signed-in user's account (GDPR erasure).
+export async function deleteMyAccount(
+  token: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return {
+        ok: false,
+        error: data?.message || `Request failed (${res.status}).`,
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
 // updateEmail changes the signed-in user's email address.
 export function updateEmail(
   token: string,

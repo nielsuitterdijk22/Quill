@@ -275,6 +275,75 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleExportMyData returns a JSON export of the signed-in user's personal data
+// (GDPR Article 20 portability). The response is suitable for download.
+func (s *Server) handleExportMyData(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	user, err := s.auth.CurrentUser(r.Context(), id)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load user")
+		return
+	}
+
+	tokens, _ := s.store.ListGitTokensByUser(r.Context(), id.UserID)
+	type tokenExport struct {
+		Name      string    `json:"name"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	tokenExports := make([]tokenExport, len(tokens))
+	for i, t := range tokens {
+		tokenExports[i] = tokenExport{Name: t.Name, CreatedAt: t.CreatedAt}
+	}
+
+	projects, _ := s.store.ListProjectsByUser(r.Context(), id.UserID)
+	type projectExport struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+		Role string `json:"role"`
+	}
+	projectExports := make([]projectExport, len(projects))
+	for i, p := range projects {
+		projectExports[i] = projectExport{Name: p.Name, Slug: p.Slug, Role: p.MemberRole}
+	}
+
+	export := map[string]any{
+		"exportedAt": time.Now().UTC(),
+		"profile": map[string]any{
+			"username":    user.Username,
+			"email":       user.Email,
+			"displayName": user.DisplayName,
+			"createdAt":   user.CreatedAt,
+		},
+		"gitTokens":   tokenExports,
+		"projectMemberships": projectExports,
+	}
+
+	w.Header().Set("Content-Disposition", `attachment; filename="quill-export.json"`)
+	httpx.JSON(w, http.StatusOK, export)
+}
+
+// handleDeleteAccount purges the signed-in user's account (GDPR erasure). The
+// response clears the session cookie so the client returns to the login page.
+func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.auth.DeleteAccount(r.Context(), id); err != nil {
+		s.logger.Error("delete account failed", "error", err)
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete account")
+		return
+	}
+	s.logger.Info("account deleted", "username", id.Username)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleLogout is a no-op for stateless tokens; the frontend clears its cookie.
 // It exists so clients have a uniform endpoint to call.
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {

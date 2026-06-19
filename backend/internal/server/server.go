@@ -101,6 +101,7 @@ func (s *Server) setupRoutes() {
 				r.Patch("/me", s.handleUpdateProfile)
 				r.Patch("/me/email", s.handleUpdateEmail)
 				r.Patch("/me/password", s.handleChangePassword)
+				r.Delete("/me", s.handleDeleteAccount)
 				r.Post("/logout", s.handleLogout)
 			})
 		})
@@ -114,6 +115,7 @@ func (s *Server) setupRoutes() {
 		// Projects and repositories require authentication.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			r.Get("/me/export", s.handleExportMyData)
 			r.Get("/me/pulls", s.handleListMyPulls)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
 			r.Post("/me/git-token", s.handleCreateGitToken)

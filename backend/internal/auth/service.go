@@ -211,6 +211,39 @@ func (s *Service) CurrentUser(ctx context.Context, id Identity) (db.User, error)
 // maxDisplayNameLen bounds a display name so profiles stay sane in the UI.
 const maxDisplayNameLen = 100
 
+// DeleteAccount removes the signed-in user's Quill account and best-effort
+// deletes the mirrored Forgejo account (which in turn removes all their git
+// tokens). The DB delete is the authoritative step; all dependent rows cascade.
+func (s *Service) DeleteAccount(ctx context.Context, id Identity) error {
+	// Capture Forgejo username before the DB row is gone.
+	user, err := s.store.GetUserByID(ctx, id.UserID)
+	if err != nil {
+		return fmt.Errorf("load user: %w", err)
+	}
+	forgejoUsername := ""
+	if user.ForgejoUsername.Valid {
+		forgejoUsername = user.ForgejoUsername.String
+	}
+
+	// A single DELETE on users is enough — all foreign keys use ON DELETE CASCADE.
+	if err := s.store.DeleteUser(ctx, id.UserID); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+
+	// Best-effort: deleting the Forgejo account removes all linked tokens too.
+	if forgejoUsername != "" && s.forgejo != nil && s.forgejo.Enabled() {
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := s.forgejo.DeleteUser(bgCtx, forgejoUsername, true); err != nil {
+				s.logger.Warn("could not delete Forgejo account on account deletion",
+					"username", forgejoUsername, "error", err)
+			}
+		}()
+	}
+	return nil
+}
+
 // AdminResetPassword replaces a user's local password without verifying the
 // current one. The caller must be a platform admin; enforcement is in the HTTP
 // layer.

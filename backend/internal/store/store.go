@@ -78,6 +78,13 @@ func (s *Store) ListRunsByCommitSHA(ctx context.Context, repoID uuid.UUID, sha s
 	return runs, rows.Err()
 }
 
+// DeleteUser permanently removes a user record. All dependent rows (auth_identities,
+// project_members, git_tokens) are removed via ON DELETE CASCADE.
+func (s *Store) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	return err
+}
+
 // UpdateUserEmail updates the email address for the given user and returns the
 // refreshed record. Written by hand to avoid re-running the sqlc generator.
 func (s *Store) UpdateUserEmail(ctx context.Context, id uuid.UUID, email string) (db.User, error) {

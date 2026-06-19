@@ -1,7 +1,9 @@
 import { listGitTokens } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
+import { AccountDangerZone } from "./AccountDangerZone";
 import { ChangePasswordForm } from "./ChangePasswordForm";
 import { EmailForm } from "./EmailForm";
+import { ExportDataButton } from "./ExportDataButton";
 import { GitTokenPanel } from "./GitTokenPanel";
 import { ProfileForm } from "./ProfileForm";
 
@@ -35,6 +37,10 @@ export default async function SettingsPage() {
       <ChangePasswordForm />
 
       <GitTokenPanel tokens={tokens} />
+
+      <ExportDataButton />
+
+      <AccountDangerZone />
     </>
   );
 }

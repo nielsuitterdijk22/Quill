@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
-import { changePassword, updateEmail, updateProfile } from "../../lib/api";
-import { getToken } from "../../lib/session";
+import {
+  changePassword,
+  deleteMyAccount,
+  updateEmail,
+  updateProfile,
+} from "../../lib/api";
+import { clearSessionCookie, getToken } from "../../lib/session";
 
 export type ProfileFormState = { error?: string; ok?: boolean };
 export type EmailFormState = { error?: string; ok?: boolean };
@@ -67,4 +73,27 @@ export async function changePasswordAction(
   const res = await changePassword(token, currentPassword, newPassword);
   if (!res.ok) return { error: res.error };
   return { ok: true };
+}
+
+export type DeleteAccountState = { error?: string };
+
+// deleteAccountAction permanently purges the signed-in user's account and clears
+// the session cookie so the browser returns to the login page.
+export async function deleteAccountAction(
+  _prev: DeleteAccountState,
+  formData: FormData,
+): Promise<DeleteAccountState> {
+  const token = getToken();
+  if (!token) return { error: "Your session has expired. Sign in again." };
+
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  if (confirm !== "delete my account") {
+    return { error: 'Type "delete my account" to confirm.' };
+  }
+
+  const res = await deleteMyAccount(token);
+  if (!res.ok) return { error: res.error };
+
+  clearSessionCookie();
+  redirect("/login");
 }
