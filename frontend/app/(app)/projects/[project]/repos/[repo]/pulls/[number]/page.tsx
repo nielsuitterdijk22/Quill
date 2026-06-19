@@ -94,9 +94,9 @@ export default async function PullDetailPage({
   const lineComments = lineCommentsRes.ok ? lineCommentsRes.data.comments : [];
   const isOpen = pull.state === "open" && !pull.merged;
   // Forgejo rejects reviews on your own pull request, so we hide the review form
-  // for the author and show an explanation instead.
-  const isAuthor =
-    !!currentUser && currentUser.username === pull.author?.login;
+  // for the author and show an explanation instead. Use the backend flag which
+  // compares Forgejo logins directly, avoiding username mismatches.
+  const isAuthor = pull.viewerIsAuthor;
 
   // Line comments are carried as empty-bodied COMMENT reviews; hide those from
   // the conversation so they don't show up as blank "reviewed" entries.

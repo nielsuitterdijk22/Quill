@@ -695,7 +695,8 @@ func (s *Service) actingForgejoUser(ctx context.Context, owner, name string, act
 }
 
 // translateForgejoWrite maps a Forgejo write error to a platform sentinel by
-// HTTP status: 404→NotFound, 409→Conflict, 422→InvalidInput, 403→Forbidden.
+// HTTP status: 404→NotFound, 409→Conflict, 422→InvalidInput, 403→Forbidden,
+// network errors (connection refused, timeout) → ErrUnavailable.
 func translateForgejoWrite(err error) error {
 	switch forgejo.StatusCode(err) {
 	case http.StatusNotFound:
@@ -707,6 +708,9 @@ func translateForgejoWrite(err error) error {
 	case http.StatusForbidden:
 		return ErrForbidden
 	default:
+		if forgejo.IsNetworkError(err) {
+			return fmt.Errorf("%w: %s", ErrUnavailable, err)
+		}
 		return err
 	}
 }

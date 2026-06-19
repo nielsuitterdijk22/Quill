@@ -158,13 +158,17 @@ func forgejoTarget(repo db.Repository, project db.Project) (owner, name string, 
 }
 
 // translateForgejoRead maps a Forgejo read error to a platform sentinel: 404s
-// become ErrNotFound; 409s signal an empty repository.
+// become ErrNotFound; 409s signal an empty repository; network-level failures
+// (connection refused, DNS, timeout) become ErrUnavailable so callers return 502.
 func translateForgejoRead(err error) error {
 	if forgejo.NotFound(err) {
 		return ErrNotFound
 	}
 	if forgejo.StatusCode(err) == 409 {
 		return ErrEmptyRepo
+	}
+	if forgejo.IsNetworkError(err) {
+		return fmt.Errorf("%w: %s", ErrUnavailable, err)
 	}
 	return err
 }

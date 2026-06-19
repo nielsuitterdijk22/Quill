@@ -68,6 +68,17 @@ func StatusCode(err error) int {
 	return 0
 }
 
+// IsNetworkError reports whether err is a connectivity-level failure rather than
+// an HTTP-level response from Forgejo (connection refused, DNS failure, timeout).
+// Distinguishes "Forgejo is down" from "Forgejo responded with 4xx/5xx". Context
+// cancellations (user navigated away) are excluded and not treated as downtime.
+func IsNetworkError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	return StatusCode(err) == 0
+}
+
 // ---- request plumbing ------------------------------------------------------
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {

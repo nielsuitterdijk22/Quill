@@ -107,6 +107,7 @@ export type PullRequest = {
   mergedAt?: string;
   mergedBy?: UserRef;
   mergeCommitSha?: string;
+  viewerIsAuthor: boolean;
 };
 
 export type PullComment = {

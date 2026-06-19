@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -39,26 +40,27 @@ type prRef struct {
 
 // pullResponse is the public JSON shape for a pull request.
 type pullResponse struct {
-	Number       int        `json:"number"`
-	Title        string     `json:"title"`
-	Body         string     `json:"body"`
-	State        string     `json:"state"`
-	Draft        bool       `json:"draft"`
-	Merged       bool       `json:"merged"`
-	Mergeable    bool       `json:"mergeable"`
-	Comments     int        `json:"comments"`
-	Additions    int        `json:"additions"`
-	Deletions    int        `json:"deletions"`
-	ChangedFiles int        `json:"changedFiles"`
-	Author       *userRef   `json:"author"`
-	Head         prRef      `json:"head"`
-	Base         prRef      `json:"base"`
-	HTMLURL      string     `json:"htmlUrl"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
-	MergedAt     *time.Time `json:"mergedAt,omitempty"`
-	MergedBy     *userRef   `json:"mergedBy,omitempty"`
-	MergeCommit  string     `json:"mergeCommitSha,omitempty"`
+	Number         int        `json:"number"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	State          string     `json:"state"`
+	Draft          bool       `json:"draft"`
+	Merged         bool       `json:"merged"`
+	Mergeable      bool       `json:"mergeable"`
+	Comments       int        `json:"comments"`
+	Additions      int        `json:"additions"`
+	Deletions      int        `json:"deletions"`
+	ChangedFiles   int        `json:"changedFiles"`
+	Author         *userRef   `json:"author"`
+	Head           prRef      `json:"head"`
+	Base           prRef      `json:"base"`
+	HTMLURL        string     `json:"htmlUrl"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	MergedAt       *time.Time `json:"mergedAt,omitempty"`
+	MergedBy       *userRef   `json:"mergedBy,omitempty"`
+	MergeCommit    string     `json:"mergeCommitSha,omitempty"`
+	ViewerIsAuthor bool       `json:"viewerIsAuthor"`
 }
 
 func newPullResponse(p forgejo.PullRequest) pullResponse {
@@ -84,6 +86,19 @@ func newPullResponse(p forgejo.PullRequest) pullResponse {
 		MergedBy:     newUserRef(p.MergedBy),
 		MergeCommit:  p.MergeCommit,
 	}
+}
+
+// viewerIsAuthor reports whether actor is the PR author by comparing the actor's
+// Forgejo login with the PR author's login. Returns false on any lookup error.
+func (s *Server) viewerIsAuthor(ctx context.Context, actor platform.Actor, pr forgejo.PullRequest) bool {
+	if pr.User == nil {
+		return false
+	}
+	user, err := s.store.GetUserByID(ctx, actor.UserID)
+	if err != nil || !user.ForgejoUsername.Valid {
+		return false
+	}
+	return user.ForgejoUsername.String == pr.User.Login
 }
 
 // pullCommentResponse is the public JSON shape for a PR conversation comment.
@@ -347,9 +362,11 @@ func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not load pull request")
 		return
 	}
+	resp := newPullResponse(pr)
+	resp.ViewerIsAuthor = s.viewerIsAuthor(r.Context(), actor, pr)
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"repository": newRepoResponse(repo),
-		"pull":       newPullResponse(pr),
+		"pull":       resp,
 	})
 }
 
