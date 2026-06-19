@@ -65,6 +65,7 @@ func (s *Server) setupMiddleware() {
 	s.router.Use(requestLogger(s.logger))
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(60 * time.Second))
+	s.router.Use(securityHeaders)
 	s.router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
@@ -88,10 +89,12 @@ func (s *Server) setupRoutes() {
 		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
 		r.Post("/webhooks/forgejo", s.handleWebhook)
 
-		// Authentication: register and login are public; me and logout require a token.
+		// Authentication: register and login are public but rate-limited per IP;
+		// me and logout require a valid token.
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", s.handleRegister)
-			r.Post("/login", s.handleLogin)
+			authLimiter := newIPRateLimiter(10, time.Minute)
+			r.With(authLimiter.middleware()).Post("/register", s.handleRegister)
+			r.With(authLimiter.middleware()).Post("/login", s.handleLogin)
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
