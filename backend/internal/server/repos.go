@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -236,6 +237,10 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	path := q.Get("path")
+	if !isValidRepoPath(path) {
+		httpx.Error(w, http.StatusBadRequest, "invalid_path", "path contains invalid segments")
+		return
+	}
 	repo, contents, err := s.platform.GetContents(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), path, q.Get("ref"))
 	if err != nil {
 		s.writePlatformError(w, err, "could not load contents")
@@ -345,6 +350,22 @@ func newContentFile(e *forgejo.ContentEntry) *contentFileResponse {
 	}
 	f.Content = string(raw)
 	return f
+}
+
+// isValidRepoPath reports whether a repo-relative path is safe to forward to
+// Forgejo. It rejects dot-dot and lone-dot segments that could traverse above
+// the repository root when a Go HTTP router normalises the URL before routing.
+// An empty path is allowed and maps to the repository root.
+func isValidRepoPath(p string) bool {
+	if p == "" {
+		return true
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." || seg == "." || seg == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func lowerName(s string) string {

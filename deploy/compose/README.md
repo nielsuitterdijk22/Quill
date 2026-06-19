@@ -49,6 +49,90 @@ curl -s -u quill-admin:change-me \
 Copy the returned `sha1` token into `QUILL_FORGEJO_ADMIN_TOKEN` and
 `make stack` again to apply.
 
+## Production deployment (HTTPS required)
+
+Running Quill over plain HTTP in production is **unsafe**: the session cookie
+travels unencrypted and can be intercepted by anyone on the network. Always
+terminate TLS before traffic reaches the Quill frontend.
+
+The simplest option is [Caddy](https://caddyserver.com), which handles
+certificate provisioning from Let's Encrypt automatically.
+
+### Caddy
+
+1. Point your domain's DNS A/AAAA record at the server's public IP.
+
+2. Create `deploy/compose/Caddyfile` next to your compose file:
+
+   ```
+   your-domain.example.com {
+       reverse_proxy web:3001
+   }
+   ```
+
+3. Add a `caddy` service to your compose file and the required volumes:
+
+   ```yaml
+   services:
+     caddy:
+       image: caddy:2-alpine
+       restart: unless-stopped
+       ports:
+         - "80:80"
+         - "443:443"
+         - "443:443/udp"   # HTTP/3
+       volumes:
+         - ./Caddyfile:/etc/caddy/Caddyfile:ro
+         - caddy_data:/data
+         - caddy_config:/config
+       depends_on:
+         - web
+
+   volumes:
+     caddy_data:
+     caddy_config:
+   ```
+
+4. Remove the `ports` mapping from the `web` service (it should only be
+   reachable through Caddy, not directly on port 3001):
+
+   ```yaml
+   web:
+     # ports: - "3001:3001"   ← remove this line
+   ```
+
+5. Set `QUILL_ENV=production` in the `api` service so the JWT cookie's
+   `Secure` flag is enforced and the server rejects a missing `QUILL_JWT_SECRET`.
+
+### nginx with Certbot
+
+If you prefer nginx, obtain a certificate with
+`certbot certonly --nginx -d your-domain.example.com` and add a server block:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/your-domain.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80;
+    server_name your-domain.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
 ## Pipeline runner
 
 Pipeline execution is split across two services:
