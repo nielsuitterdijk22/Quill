@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getProjectEnvironmentPolicies, getProjectPolicies } from "../../../../lib/api";
+import {
+  getEnvironments,
+  getProjectEnvironmentPolicies,
+  getProjectPolicies,
+} from "../../../../lib/api";
 import { getToken } from "../../../../lib/session";
+import { EnvironmentManager } from "../../../../components/environment/EnvironmentManager";
 import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
 
@@ -43,6 +48,9 @@ export default async function ProjectSettingsPage({
   const envPolicies = envRes.ok ? envRes.data.policies : [];
   const envInherited = envRes.ok ? envRes.data.inherited : [];
 
+  const environmentsRes = await getEnvironments(token, params.project);
+  const environments = environmentsRes.ok ? environmentsRes.data.environments : [];
+
   return (
     <>
       <div className="crumbs">
@@ -70,6 +78,18 @@ export default async function ProjectSettingsPage({
           inherited={inherited}
           canLock
         />
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-head">
+          <h2 className="settings-title">Environments</h2>
+          <p className="subtle">
+            Deployment targets shared by every repository in this project. Rank
+            them to express a promotion ladder (lower deploys first, e.g. staging
+            then production); environment policies reference them by slug.
+          </p>
+        </div>
+        <EnvironmentManager project={project.slug} environments={environments} />
       </section>
 
       <section className="settings-section">

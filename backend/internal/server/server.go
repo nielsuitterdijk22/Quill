@@ -138,6 +138,15 @@ func (s *Server) setupRoutes() {
 						r.Put("/", s.handleSetProjectEnvironmentPolicy)
 						r.Delete("/", s.handleDeleteProjectEnvironmentPolicy)
 					})
+					r.Route("/environments", func(r chi.Router) {
+						r.Get("/", s.handleListEnvironments)
+						r.Post("/", s.handleCreateEnvironment)
+						r.Route("/{env}", func(r chi.Router) {
+							r.Get("/", s.handleGetEnvironment)
+							r.Patch("/", s.handleUpdateEnvironment)
+							r.Delete("/", s.handleDeleteEnvironment)
+						})
+					})
 					r.Route("/repos", func(r chi.Router) {
 						r.Get("/", s.handleListRepos)
 						r.Post("/", s.handleCreateRepo)

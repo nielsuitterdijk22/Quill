@@ -1150,6 +1150,78 @@ export function deleteTenantEnvironmentPolicy(
   );
 }
 
+// ---- environments ----------------------------------------------------------
+
+// Environment is a project-owned, ranked deployment target (staging, production,
+// …). rank orders the promotion ladder (lower deploys first). The slug is the
+// stable identifier matched by environment-policy selectors.
+export type Environment = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  rank: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EnvironmentsResult = {
+  project: Project;
+  environments: Environment[];
+};
+
+// getEnvironments returns a project's environments ordered by promotion rank.
+// Open to project members.
+export function getEnvironments(
+  token: string,
+  project: string,
+): Promise<Result<EnvironmentsResult>> {
+  return authGet<EnvironmentsResult>(token, `/api/v1/projects/${project}/environments`);
+}
+
+export type CreateEnvironmentInput = {
+  slug: string;
+  name: string;
+  description: string;
+  rank: number;
+};
+
+// createEnvironment defines a new environment under a project (project admins
+// only).
+export function createEnvironment(
+  token: string,
+  project: string,
+  input: CreateEnvironmentInput,
+): Promise<DataResult<Environment>> {
+  return postData(token, `/api/v1/projects/${project}/environments`, input);
+}
+
+export type UpdateEnvironmentInput = {
+  name: string;
+  description: string;
+  rank: number;
+};
+
+// updateEnvironment changes an environment's display fields and rank (project
+// admins only). The slug is immutable.
+export function updateEnvironment(
+  token: string,
+  project: string,
+  env: string,
+  input: UpdateEnvironmentInput,
+): Promise<DataResult<Environment>> {
+  return sendData(token, "PATCH", `/api/v1/projects/${project}/environments/${env}`, input);
+}
+
+// deleteEnvironment removes an environment (project admins only).
+export function deleteEnvironment(
+  token: string,
+  project: string,
+  env: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(token, `/api/v1/projects/${project}/environments/${env}`);
+}
+
 // ---- my projects ----------------------------------------------------------
 
 // MyProject is a project the signed-in user belongs to, annotated with their
