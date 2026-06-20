@@ -816,6 +816,32 @@ select:focus {
   color: var(--muted);
 }
 
+/* ---- PR checks section ----------------------------------------------------- */
+.checks-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.checks-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.checks-name {
+  font-weight: 500;
+}
+.checks-name a {
+  color: var(--text);
+  text-decoration: none;
+}
+.checks-name a:hover {
+  text-decoration: underline;
+}
+
 /* ---- sidebar repo context -------------------------------------------------- */
 .repo-ctx {
   margin: 10px 2px 4px;

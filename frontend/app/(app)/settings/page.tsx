@@ -13,9 +13,13 @@ import { SSHKeyPanel } from "./SSHKeyPanel";
 export default async function SettingsPage() {
   const user = await requireSession();
   const token = getToken();
-  const [tokens, sshKeys] = await Promise.all([
-    token ? listGitTokens(token) : Promise.resolve([]),
-    token ? listSSHKeys(token) : Promise.resolve([]),
+  const [tokensRes, sshRes] = await Promise.all([
+    token
+      ? listGitTokens(token)
+      : Promise.resolve({ ok: false as const, status: 401, message: "Not signed in." }),
+    token
+      ? listSSHKeys(token)
+      : Promise.resolve({ ok: false as const, status: 401, message: "Not signed in." }),
   ]);
 
   return (
@@ -40,9 +44,15 @@ export default async function SettingsPage() {
 
       <ChangePasswordForm />
 
-      <GitTokenPanel tokens={tokens} />
+      <GitTokenPanel
+        tokens={tokensRes.ok ? tokensRes.data : []}
+        loadError={tokensRes.ok ? undefined : tokensRes.message}
+      />
 
-      <SSHKeyPanel keys={sshKeys} />
+      <SSHKeyPanel
+        keys={sshRes.ok ? sshRes.data : []}
+        loadError={sshRes.ok ? undefined : sshRes.message}
+      />
 
       <ExportDataButton />
 

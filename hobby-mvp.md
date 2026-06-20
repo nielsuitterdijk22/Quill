@@ -31,7 +31,7 @@ OIDC — that comes later.
 
 ### Correctness
 
-- [ ] **Pipeline status in PR merge gate.** Branch policies (PR 7) block merge;
+- [x] **Pipeline status in PR merge gate.** Branch policies (PR 7) block merge;
   pipeline checks do not yet participate. Wire the pipeline run result for the
   head commit into the merge-gate evaluation so a failing CI job can block
   merge — with a per-repo toggle to make it required vs informational.
@@ -100,17 +100,17 @@ OIDC — that comes later.
 - [x] **SSH key management.** Let users add their public SSH keys (stored in
   Forgejo via the admin client). This removes the need to create a git token
   just to `git clone`.
-- [ ] **Public / private visibility toggle.** Confirm the repo visibility setting
+- [x] **Public / private visibility toggle.** Confirm the repo visibility setting
   surfaces in the UI and actually makes the repo readable without
   authentication via Forgejo. Hobby users will want to share public repos.
-- [ ] **Repo description and website field.** Forgejo stores these; display them
+- [x] **Repo description and website field.** Forgejo stores these; display them
   on the repo overview page and let users edit them from repo settings.
 
 ### Error handling
 
-- [ ] **404 pages for missing resources.** Navigating to a non-existent project,
+- [x] **404 pages for missing resources.** Navigating to a non-existent project,
   repo, or PR should show a clear 404, not a crash or infinite spinner.
-- [ ] **API error propagation.** When backend calls fail, the frontend should
+- [x] **API error propagation.** When backend calls fail, the frontend should
   display the error message (or a friendly fallback) rather than silently
   failing or showing a blank component.
 
@@ -163,7 +163,7 @@ OIDC — that comes later.
   must have a one-line comment explaining what it does and what the default
   is. Add any that are currently undocumented (e.g. `QUILL_JWT_TTL`,
   `QUILL_JWT_SECRET`, `FORGEJO_ADMIN_PASSWORD`, SMTP vars).
-- [ ] **Automatic first-boot provisioning.** The Forgejo admin account and the
+- [x] **Automatic first-boot provisioning.** The Forgejo admin account and the
   Quill admin user must be created reliably on first boot without manual
   intervention. Add a startup probe or init container that retries until
   Forgejo is ready before the API starts.
@@ -194,23 +194,23 @@ OIDC — that comes later.
   run completion) with a streaming approach: Server-Sent Events from the
   dispatcher so users see live output. The `pipeline.Runner` interface
   already abstracts this; the act runner just needs to emit chunks.
-- [ ] **Pipeline status badges on PR page.** Show a ✓ / ✗ / ⏳ check summary
+- [x] **Pipeline status badges on PR page.** Show a ✓ / ✗ / ⏳ check summary
   on the PR conversation view for all runs associated with the head commit,
   mirroring GitHub's Checks section.
 - [ ] **Pipeline required-checks toggle.** Add a per-repo setting (in branch
   policies or a separate "required checks" config) listing which workflow
   names must pass before merge is allowed.
-- [ ] **Re-run button.** On the pipeline run detail page, add a "Re-run" button
+- [x] **Re-run button.** On the pipeline run detail page, add a "Re-run" button
   that triggers a fresh run of the same workflow at the same ref.
 - [ ] **Run cancellation.** If a run is in progress, let the user cancel it (kill
   the act process, mark the run as cancelled in the DB).
-- [ ] **Run timeout.** Enforce a per-run wall-clock timeout (configurable via env
+- [x] **Run timeout.** Enforce a per-run wall-clock timeout (configurable via env
   var, default 30 min) to prevent stuck Docker containers.
 - [ ] **Rootless runner option.** The current runner mounts the Docker socket,
   which gives pipeline jobs root on the host. Investigate Docker-in-Docker or
   Podman as a rootless alternative and document the trade-offs for self-
   hosters who don't want to expose the socket.
-- [ ] **Runner error surface.** If the Docker daemon is unreachable when a run
+- [x] **Runner error surface.** If the Docker daemon is unreachable when a run
   is triggered, the user should see a clear "Runner unavailable" error on the
   run detail page rather than a perpetually pending run.
 
@@ -268,7 +268,7 @@ OIDC — that comes later.
 
 ## 📋 Process checklist
 
-- [ ] Write `SELF_HOSTING.md` (or expand `deploy/compose/README.md`) covering:
+- [x] Write `SELF_HOSTING.md` (or expand `deploy/compose/README.md`) covering:
   minimum requirements, first-boot steps, HTTPS setup, backup procedure,
   upgrade procedure, GDPR operator checklist.
 - [ ] Add end-to-end integration tests for the critical happy path: register →

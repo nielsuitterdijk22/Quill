@@ -16,6 +16,7 @@ import {
   durationText,
   statusGlyph,
 } from "../../../../../../../../components/pipelines";
+import { ReRunButton } from "./ReRunButton";
 
 function runDuration(startedAt?: string, finishedAt?: string): string {
   return durationText(startedAt, finishedAt) ?? "—";
@@ -87,6 +88,12 @@ export default async function RunDetailPage({
         </div>
         <div className="run-hero-actions">
           <RunStatusBadge status={run.status} />
+          <ReRunButton
+            project={params.project}
+            repo={params.repo}
+            workflowPath={workflowPath}
+            ref={run.ref || repo.defaultBranch}
+          />
           <Link className="btn" href={`${base}/pipelines`}>
             ← All pipelines
           </Link>

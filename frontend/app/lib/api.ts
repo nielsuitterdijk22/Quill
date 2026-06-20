@@ -316,9 +316,10 @@ export function createGitToken(
 }
 
 // listGitTokens returns the user's outstanding git tokens (metadata only).
-export async function listGitTokens(token: string): Promise<GitTokenSummary[]> {
-  const res = await authGet<GitTokenSummary[]>(token, "/api/v1/me/git-tokens");
-  return res.ok ? res.data : [];
+export async function listGitTokens(
+  token: string,
+): Promise<Result<GitTokenSummary[]>> {
+  return authGet<GitTokenSummary[]>(token, "/api/v1/me/git-tokens");
 }
 
 // revokeGitToken revokes one of the user's git tokens by id.
@@ -338,9 +339,12 @@ export type SSHKey = {
 };
 
 // listSSHKeys returns the user's SSH public keys from the git backend.
-export async function listSSHKeys(token: string): Promise<SSHKey[]> {
+export async function listSSHKeys(
+  token: string,
+): Promise<Result<SSHKey[]>> {
   const res = await authGet<{ keys: SSHKey[] }>(token, "/api/v1/me/ssh-keys");
-  return res.ok ? res.data.keys : [];
+  if (!res.ok) return res;
+  return { ok: true, data: res.data.keys };
 }
 
 // addSSHKey registers a new SSH public key for the user.

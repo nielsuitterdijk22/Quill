@@ -9,8 +9,8 @@
 #   dispatch  8090  Pipeline dispatcher + Docker-backed runner
 #   web       3001  Quill Next.js frontend
 #
-# After first boot, create a Forgejo admin token and set QUILL_FORGEJO_ADMIN_TOKEN
-# (used from PR 4 onward) — see deploy/compose/README.md.
+# After first boot run `make provision` to create the Forgejo admin account and
+# generate QUILL_FORGEJO_ADMIN_TOKEN automatically — see deploy/compose/README.md.
 
 name: quill
 
@@ -84,6 +84,8 @@ services:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      forgejo:
         condition: service_healthy
       dispatch:
         condition: service_started

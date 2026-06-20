@@ -57,7 +57,13 @@ async function removeSSHKey(
   }
 }
 
-export function SSHKeyPanel({ keys: initialKeys }: { keys: SSHKey[] }) {
+export function SSHKeyPanel({
+  keys: initialKeys,
+  loadError,
+}: {
+  keys: SSHKey[];
+  loadError?: string;
+}) {
   const [keys, setKeys] = useState<SSHKey[]>(initialKeys);
   const [title, setTitle] = useState("");
   const [keyText, setKeyText] = useState("");
@@ -101,6 +107,11 @@ export function SSHKeyPanel({ keys: initialKeys }: { keys: SSHKey[] }) {
           <span className="mono">~/.ssh/id_ed25519.pub</span> (or equivalent)
           below.
         </p>
+        {loadError && (
+          <div className="form-error">
+            Could not load SSH keys: {loadError}
+          </div>
+        )}
         {error && <div className="form-error">{error}</div>}
 
         <div className="ssh-key-form">

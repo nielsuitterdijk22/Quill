@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 
 import {
   getLineComments,
+  getPipelineRuns,
   getPull,
   getPullComments,
   getPullCommits,
   getPullDiff,
   getPullReviews,
+  type PipelineRun,
   type PolicyGate,
 } from "../../../../../../../lib/api";
 import { getToken, getSession } from "../../../../../../../lib/session";
@@ -24,6 +26,10 @@ import {
   PullStateBadge,
   ReviewStateBadge,
 } from "../../../../../../../components/pulls";
+import {
+  RunStatusBadge,
+  statusGlyph,
+} from "../../../../../../../components/pipelines";
 import { CommentForm } from "./CommentForm";
 import { DiffWithComments } from "./DiffWithComments";
 import { MergeBox } from "./MergeBox";
@@ -77,13 +83,14 @@ export default async function PullDetailPage({
   const { repository: repo, pull } = prRes.data;
   const tab = asTab(searchParams.tab);
 
-  const [commentsRes, diffRes, reviewsRes, commitsRes, lineCommentsRes] =
+  const [commentsRes, diffRes, reviewsRes, commitsRes, lineCommentsRes, runsRes] =
     await Promise.all([
       getPullComments(token, params.project, params.repo, number),
       getPullDiff(token, params.project, params.repo, number),
       getPullReviews(token, params.project, params.repo, number),
       getPullCommits(token, params.project, params.repo, number),
       getLineComments(token, params.project, params.repo, number),
+      getPipelineRuns(token, params.project, params.repo),
     ]);
   const currentUser = await getSession();
   const comments = commentsRes.ok ? commentsRes.data.comments : [];
@@ -92,6 +99,10 @@ export default async function PullDetailPage({
   const gate = reviewsRes.ok ? reviewsRes.data.gate : NO_GATE;
   const commits = commitsRes.ok ? commitsRes.data.commits : [];
   const lineComments = lineCommentsRes.ok ? lineCommentsRes.data.comments : [];
+  // Runs for the PR's head commit — used for the Checks section in the conversation.
+  const headRuns: PipelineRun[] = runsRes.ok
+    ? runsRes.data.runs.filter((r) => r.commitSha === pull.head.sha)
+    : [];
   const isOpen = pull.state === "open" && !pull.merged;
   // Forgejo rejects reviews on your own pull request, so we hide the review form
   // for the author and show an explanation instead. Use the backend flag which
@@ -214,6 +225,47 @@ export default async function PullDetailPage({
               )}
             </div>
           </div>
+
+          {headRuns.length > 0 && (
+            <div className="pr-comment review">
+              <div className="pr-comment-head">
+                <b>Checks</b>
+                <span className="subtle">
+                  {" "}
+                  · {headRuns.length} run{headRuns.length === 1 ? "" : "s"} on{" "}
+                  <span className="mono">{shortSha(pull.head.sha)}</span>
+                </span>
+              </div>
+              <div className="pr-comment-body">
+                <ul className="checks-list">
+                  {headRuns.map((run) => {
+                    const workflowName =
+                      run.workflowPath?.split("/").pop() ??
+                      `Run #${run.runNumber}`;
+                    const href = run.workflowPath
+                      ? `${repoBase(params.project, params.repo)}/pipelines/runs/${run.runNumber}?workflow=${encodeURIComponent(run.workflowPath)}`
+                      : null;
+                    return (
+                      <li key={run.id} className="checks-row">
+                        <span className={`run-glyph ${run.status}`}>
+                          {statusGlyph(run.status)}
+                        </span>
+                        <span className="checks-name">
+                          {href ? (
+                            <Link href={href}>{workflowName}</Link>
+                          ) : (
+                            workflowName
+                          )}
+                        </span>
+                        <span className="spacer" />
+                        <RunStatusBadge status={run.status} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          )}
 
           {comments.map((c) => (
             <div className="pr-comment" key={c.id}>

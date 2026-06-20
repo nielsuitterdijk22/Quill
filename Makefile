@@ -41,6 +41,10 @@ ps: ## Show stack status
 fj-run: ## Run Forgejo locally (http://localhost:3000)
 	$(COMPOSE) up -d forgejo
 
+.PHONY: provision
+provision: ## First-boot: create Forgejo admin user and write token to .env
+	./scripts/provision.sh
+
 ## ---- backend --------------------------------------------------------------
 
 .PHONY: be-run

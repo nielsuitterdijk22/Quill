@@ -43,7 +43,13 @@ function formatDate(iso: string): string {
 // GitTokenPanel mints personal git access tokens for HTTPS clone/push and lists
 // the user's outstanding tokens so they can revoke them. A freshly minted token's
 // secret is shown exactly once; Quill stores only each token's metadata.
-export function GitTokenPanel({ tokens }: { tokens: GitTokenSummary[] }) {
+export function GitTokenPanel({
+  tokens,
+  loadError,
+}: {
+  tokens: GitTokenSummary[];
+  loadError?: string;
+}) {
   const [cred, setCred] = useState<{ username: string; token: string } | null>(
     null,
   );
@@ -84,6 +90,11 @@ export function GitTokenPanel({ tokens }: { tokens: GitTokenSummary[] }) {
           Generate a personal access token to use as your git password when
           cloning or pushing over HTTPS.
         </p>
+        {loadError && (
+          <div className="form-error">
+            Could not load tokens: {loadError}
+          </div>
+        )}
         {error && <div className="form-error">{error}</div>}
 
         {cred && (
