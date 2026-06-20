@@ -57,7 +57,11 @@ func run() error {
 	defer st.Close()
 	logger.Info("database ready")
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	srv := server.New(cfg, logger, st)
+	srv.StartClerk(ctx)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -67,9 +71,6 @@ func run() error {
 		WriteTimeout:      cfg.WriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {

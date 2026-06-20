@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -23,14 +24,15 @@ const Version = "0.1.0"
 
 // Server is the root HTTP handler for the Quill backend.
 type Server struct {
-	cfg          *config.Config
-	logger       *slog.Logger
-	store        *store.Store
-	auth         *auth.Service
-	forgejo      *forgejo.Client
-	platform     *platform.Service
-	router       chi.Router
-	markupCache  *markupCache
+	cfg         *config.Config
+	logger      *slog.Logger
+	store       *store.Store
+	auth        *auth.Service
+	clerk       *auth.ClerkVerifier
+	forgejo     *forgejo.Client
+	platform    *platform.Service
+	router      chi.Router
+	markupCache *markupCache
 }
 
 // New constructs a Server with middleware and routes configured. store may be
@@ -41,11 +43,18 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	if cfg.Pipeline.DispatchURL != "" {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
 	}
+
+	var clerkVerifier *auth.ClerkVerifier
+	if cfg.Clerk.FrontendAPI != "" {
+		clerkVerifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).WithForgejo(fj)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		logger:      logger,
 		store:       st,
 		auth:        auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
+		clerk:       clerkVerifier,
 		forgejo:     fj,
 		platform:    platformSvc,
 		router:      chi.NewRouter(),
@@ -54,6 +63,14 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	s.setupMiddleware()
 	s.setupRoutes()
 	return s
+}
+
+// StartClerk begins background JWKS refresh for Clerk JWT verification.
+// It must be called once the server's context is available (i.e. after New).
+func (s *Server) StartClerk(ctx context.Context) {
+	if s.clerk != nil {
+		s.clerk.Start(ctx)
+	}
 }
 
 // ServeHTTP implements http.Handler.
@@ -91,20 +108,25 @@ func (s *Server) setupRoutes() {
 		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
 		r.Post("/webhooks/forgejo", s.handleWebhook)
 
-		// Authentication: register and login are public but rate-limited per IP;
-		// me and logout require a valid token.
+		// Authentication: /me requires a valid token. Register/login are handled by
+		// Clerk on the frontend; local auth routes are available as a fallback when
+		// QUILL_CLERK_FRONTEND_API is not set (development / self-hosted without Clerk).
 		r.Route("/auth", func(r chi.Router) {
-			authLimiter := newIPRateLimiter(10, time.Minute)
-			r.With(authLimiter.middleware()).Post("/register", s.handleRegister)
-			r.With(authLimiter.middleware()).Post("/login", s.handleLogin)
+			if s.clerk == nil || !s.clerk.Enabled() {
+				authLimiter := newIPRateLimiter(10, time.Minute)
+				r.With(authLimiter.middleware()).Post("/register", s.handleRegister)
+				r.With(authLimiter.middleware()).Post("/login", s.handleLogin)
+			}
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
 				r.Patch("/me", s.handleUpdateProfile)
 				r.Patch("/me/email", s.handleUpdateEmail)
-				r.Patch("/me/password", s.handleChangePassword)
 				r.Delete("/me", s.handleDeleteAccount)
 				r.Post("/logout", s.handleLogout)
+				if s.clerk == nil || !s.clerk.Enabled() {
+					r.Patch("/me/password", s.handleChangePassword)
+				}
 			})
 		})
 
@@ -114,7 +136,9 @@ func (s *Server) setupRoutes() {
 			r.Use(s.requireAdmin)
 			r.Get("/admin/users", s.handleListUsers)
 			r.Patch("/admin/users/{username}/active", s.handleSetUserActive)
-			r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
+			if s.clerk == nil || !s.clerk.Enabled() {
+				r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
+			}
 		})
 
 		// Projects and repositories require authentication.

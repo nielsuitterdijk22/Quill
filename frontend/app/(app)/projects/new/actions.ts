@@ -24,7 +24,7 @@ export async function createProjectAction(
   _prev: CreateState,
   formData: FormData,
 ): Promise<CreateState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const name = String(formData.get("name") ?? "").trim();

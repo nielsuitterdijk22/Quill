@@ -15,7 +15,7 @@ export default async function AdminPoliciesPage() {
   const user = await requireSession();
   if (!user.isAdmin) notFound();
 
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const res = await getTenantPolicies(token, DEFAULT_TENANT);

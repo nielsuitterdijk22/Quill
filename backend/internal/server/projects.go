@@ -168,7 +168,7 @@ func (s *Server) handleListMyProjects(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateProject provisions a project owned by the authenticated user.
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := identityFrom(r.Context())
+	actor, ok := actorFrom(r.Context())
 	if !ok {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
@@ -177,7 +177,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	project, err := s.platform.CreateProject(r.Context(), id.UserID, platform.CreateProjectInput{
+	project, err := s.platform.CreateProject(r.Context(), actor, platform.CreateProjectInput{
 		Slug:        req.Slug,
 		Name:        req.Name,
 		Description: req.Description,
@@ -256,7 +256,7 @@ func actorFrom(ctx context.Context) (platform.Actor, bool) {
 	if !ok {
 		return platform.Actor{}, false
 	}
-	return platform.Actor{UserID: id.UserID, IsAdmin: id.IsAdmin}, true
+	return platform.Actor{UserID: id.UserID, IsAdmin: id.IsAdmin, TenantID: id.TenantID}, true
 }
 
 // writePlatformError maps platform sentinel errors to HTTP responses.

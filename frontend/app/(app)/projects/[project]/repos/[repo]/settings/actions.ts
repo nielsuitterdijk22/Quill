@@ -23,7 +23,7 @@ export async function updateRepoSettingsAction(
   _prev: RepoSettingsFormState,
   formData: FormData,
 ): Promise<RepoSettingsFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const name = String(formData.get("name") ?? "").trim();
@@ -52,7 +52,7 @@ export async function changeVisibilityAction(
   _prev: RepoSettingsFormState,
   formData: FormData,
 ): Promise<RepoSettingsFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const visibility = String(formData.get("visibility") ?? "").trim();
@@ -74,7 +74,7 @@ export async function renameRepoAction(
   _prev: RepoSettingsFormState,
   formData: FormData,
 ): Promise<RepoSettingsFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const slug = String(formData.get("slug") ?? "")
@@ -99,7 +99,7 @@ export async function setRepoArchivedAction(
   _prev: RepoSettingsFormState,
   _formData: FormData,
 ): Promise<RepoSettingsFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const res = await updateRepo(token, project, repo, { archived });
@@ -117,7 +117,7 @@ export async function deleteRepoAction(
   _prev: RepoSettingsFormState,
   formData: FormData,
 ): Promise<RepoSettingsFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const confirm = String(formData.get("confirm") ?? "").trim();

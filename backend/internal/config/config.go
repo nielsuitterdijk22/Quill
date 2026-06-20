@@ -26,6 +26,7 @@ type Config struct {
 	DatabaseURL string
 
 	JWT      JWTConfig
+	Clerk    ClerkConfig
 	Forgejo  ForgejoConfig
 	Pipeline PipelineConfig
 
@@ -53,6 +54,16 @@ type ForgejoConfig struct {
 	PublicURL string
 }
 
+// ClerkConfig holds credentials for Clerk-based authentication.
+type ClerkConfig struct {
+	// FrontendAPI is the Clerk Frontend API URL (e.g. "https://clerk.example.com").
+	// It is both the JWT issuer and the prefix for the JWKS endpoint.
+	FrontendAPI string
+	// SecretKey is the Clerk Backend API secret key used to fetch user profiles
+	// when provisioning a Quill account on first login.
+	SecretKey string
+}
+
 // PipelineConfig controls how workflow runs are dispatched.
 type PipelineConfig struct {
 	// DispatchURL points at the standalone pipeline dispatcher. When empty, the
@@ -78,6 +89,10 @@ func Load() (*Config, error) {
 			Issuer: getenv("QUILL_JWT_ISSUER", "quill"),
 			TTL:    getdur("QUILL_JWT_TTL", 24*time.Hour),
 		},
+		Clerk: ClerkConfig{
+			FrontendAPI: getenv("QUILL_CLERK_FRONTEND_API", ""),
+			SecretKey:   getenv("QUILL_CLERK_SECRET_KEY", ""),
+		},
 		Forgejo: ForgejoConfig{
 			BaseURL:    getenv("QUILL_FORGEJO_BASE_URL", "http://localhost:3000"),
 			AdminToken: getenv("QUILL_FORGEJO_ADMIN_TOKEN", ""),
@@ -91,8 +106,8 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 	}
 
-	if cfg.IsProduction() && cfg.JWT.Secret == "" {
-		return nil, fmt.Errorf("QUILL_JWT_SECRET is required when QUILL_ENV=production")
+	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Clerk.FrontendAPI == "" {
+		return nil, fmt.Errorf("production requires QUILL_JWT_SECRET (local auth) or QUILL_CLERK_FRONTEND_API (Clerk auth)")
 	}
 
 	return cfg, nil

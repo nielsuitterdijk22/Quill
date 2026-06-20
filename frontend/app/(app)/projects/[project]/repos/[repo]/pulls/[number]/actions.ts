@@ -21,7 +21,7 @@ export async function addCommentAction(
   _prev: CommentState,
   formData: FormData,
 ): Promise<CommentState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const body = String(formData.get("body") ?? "").trim();
@@ -47,7 +47,7 @@ export async function addLineCommentAction(
   _prev: LineCommentState,
   formData: FormData,
 ): Promise<LineCommentState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const body = String(formData.get("body") ?? "").trim();
@@ -74,7 +74,7 @@ export async function mergeAction(
   _prev: MergeState,
   formData: FormData,
 ): Promise<MergeState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const method = String(formData.get("method") ?? "merge");
@@ -98,7 +98,7 @@ export async function reviewAction(
   _prev: ReviewActionState,
   formData: FormData,
 ): Promise<ReviewActionState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const event = String(formData.get("event") ?? "");

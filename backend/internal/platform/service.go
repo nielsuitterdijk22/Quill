@@ -21,8 +21,9 @@ import (
 // admins bypass project membership checks; everyone else must belong to the
 // project they act on.
 type Actor struct {
-	UserID  uuid.UUID
-	IsAdmin bool
+	UserID   uuid.UUID
+	IsAdmin  bool
+	TenantID uuid.UUID
 }
 
 // Service implements project and repository management on top of the store and

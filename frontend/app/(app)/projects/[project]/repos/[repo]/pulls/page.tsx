@@ -19,7 +19,7 @@ export default async function PullsPage({
   params: { project: string; repo: string };
   searchParams: { state?: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const wantClosed = searchParams.state === "closed";

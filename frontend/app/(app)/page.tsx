@@ -2,7 +2,7 @@ import { getMeta, getOpenPullRequestCount, listProjects, listReposByProject, typ
 import { getToken } from "../lib/session";
 
 export default async function DashboardPage() {
-  const token = getToken();
+  const token = await getToken();
   const [meta, projects] = await Promise.all([
     getMeta(),
     token ? listProjects(token) : Promise.resolve([]),

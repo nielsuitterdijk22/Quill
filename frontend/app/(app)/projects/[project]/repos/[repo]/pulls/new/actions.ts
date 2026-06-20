@@ -15,7 +15,7 @@ export async function createPullAction(
   _prev: CreatePullState,
   formData: FormData,
 ): Promise<CreatePullState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const title = String(formData.get("title") ?? "").trim();

@@ -17,7 +17,7 @@ export default async function IssueDetailPage({
 }: {
   params: { project: string; repo: string; number: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const number = Number.parseInt(params.number, 10);

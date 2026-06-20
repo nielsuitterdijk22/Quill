@@ -19,7 +19,7 @@ export default async function CommitsPage({
 }: {
   params: { project: string; repo: string; ref: string[] };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const ref = (params.ref ?? []).map(decodeURIComponent).join("/");

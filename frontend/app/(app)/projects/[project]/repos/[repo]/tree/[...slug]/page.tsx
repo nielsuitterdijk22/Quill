@@ -30,7 +30,7 @@ export default async function TreePage({
 }: {
   params: { project: string; repo: string; slug: string[] };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const slug = (params.slug ?? []).map(decodeURIComponent);

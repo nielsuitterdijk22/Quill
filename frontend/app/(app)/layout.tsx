@@ -4,8 +4,8 @@ import { getToken, requireSession } from "../lib/session";
 import { resolveCurrentProject } from "../lib/projects";
 
 // AppLayout is the authenticated shell: a fixed sidebar plus the page body.
-// requireSession gates every route in this group, redirecting to /login when
-// there is no valid session. Routes outside the group (e.g. /login) render
+// requireSession gates every route in this group, redirecting to /sign-in when
+// there is no valid session. Routes outside the group (e.g. /sign-in) render
 // without the shell.
 export default async function AppLayout({
   children,
@@ -13,7 +13,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await requireSession();
-  const token = getToken();
+  const token = await getToken();
   const resolved = token ? await resolveCurrentProject(token) : null;
 
   return (

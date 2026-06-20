@@ -28,7 +28,7 @@ export async function createEnvironmentAction(
   _prev: EnvironmentFormState,
   formData: FormData,
 ): Promise<EnvironmentFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const slug = String(formData.get("slug") ?? "").trim();
@@ -58,7 +58,7 @@ export async function updateEnvironmentAction(
   _prev: EnvironmentFormState,
   formData: FormData,
 ): Promise<EnvironmentFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const slug = String(formData.get("slug") ?? "").trim();
@@ -86,7 +86,7 @@ export async function deleteEnvironmentAction(
   _prev: EnvironmentFormState,
   formData: FormData,
 ): Promise<EnvironmentFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const slug = String(formData.get("slug") ?? "").trim();

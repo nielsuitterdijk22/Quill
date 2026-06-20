@@ -30,7 +30,7 @@ export default async function RepoHomePage({
 }: {
   params: { project: string; repo: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const result = await getContents(token, params.project, params.repo);

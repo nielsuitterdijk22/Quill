@@ -9,7 +9,7 @@ import { resolveCurrentProject } from "../../lib/projects";
 // sidebar project switcher). The current project is resolved from the cookie,
 // falling back to the user's first project.
 export default async function ReposPage() {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const resolved = await resolveCurrentProject(token);

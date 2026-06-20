@@ -21,7 +21,7 @@ export default async function BranchesPage({
 }: {
   params: { project: string; repo: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const [result, meta] = await Promise.all([

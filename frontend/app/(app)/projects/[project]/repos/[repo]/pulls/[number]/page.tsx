@@ -61,7 +61,7 @@ export default async function PullDetailPage({
   params: { project: string; repo: string; number: string };
   searchParams: { tab?: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const number = Number(params.number);

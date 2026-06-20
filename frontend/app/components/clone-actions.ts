@@ -14,7 +14,7 @@ export type GitTokenResult =
 // re-displays the secret. It does record the token's metadata so it can be listed
 // and revoked, so the settings page is refreshed afterwards.
 export async function generateGitTokenAction(name: string): Promise<GitTokenResult> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
 
   const res = await createGitToken(token, name);
@@ -29,7 +29,7 @@ export type RevokeTokenResult = { ok: true } | { ok: false; error: string };
 // revokeGitTokenAction revokes one of the signed-in user's git tokens, then
 // refreshes the settings page so the list reflects the change.
 export async function revokeGitTokenAction(id: string): Promise<RevokeTokenResult> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
 
   const res = await revokeGitToken(token, id);

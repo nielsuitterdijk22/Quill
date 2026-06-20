@@ -6,7 +6,7 @@ import { getToken } from "../../lib/session";
 // ProjectsPage lists every project the signed-in user can see, linking each to
 // its repository list. Project creation is open to any authenticated user.
 export default async function ProjectsPage() {
-  const token = getToken();
+  const token = await getToken();
   const projects = token ? await listProjects(token) : [];
 
   return (

@@ -32,7 +32,7 @@ export default async function RunDetailPage({
   params: { project: string; repo: string; number: string };
   searchParams: { workflow?: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const workflow = (searchParams.workflow ?? "").trim();

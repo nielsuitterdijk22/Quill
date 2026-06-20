@@ -15,7 +15,7 @@ export async function triggerRunAction(
   _prev: TriggerState,
   formData: FormData,
 ): Promise<TriggerState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const workflow = String(formData.get("workflow") ?? "").trim();

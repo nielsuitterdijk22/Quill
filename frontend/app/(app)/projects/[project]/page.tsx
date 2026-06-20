@@ -12,7 +12,7 @@ export default async function ProjectDetailPage({
 }: {
   params: { project: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const result = await getReposByProject(token, params.project);

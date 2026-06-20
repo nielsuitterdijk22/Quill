@@ -27,7 +27,7 @@ export async function resolveCurrentProject(
 // getCurrentProject returns just the current project slug, or null when the
 // user is unauthenticated or has no projects.
 export async function getCurrentProject(): Promise<string | null> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return null;
   const resolved = await resolveCurrentProject(token);
   return resolved?.current.slug ?? null;

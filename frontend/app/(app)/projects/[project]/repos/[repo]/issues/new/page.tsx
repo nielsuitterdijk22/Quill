@@ -10,7 +10,7 @@ export default async function NewIssuePage({
 }: {
   params: { project: string; repo: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const result = await getRepo(token, params.project, params.repo);

@@ -17,10 +17,15 @@ type ctxKey int
 
 const identityKey ctxKey = iota
 
-// requireAuth verifies the bearer token (or quill_token cookie) and attaches the
-// resulting Identity to the request context. It responds 401 when missing or invalid.
-// It also re-reads the user from the DB on every request so that deactivated accounts
-// are blocked immediately and stale JWT claims (isAdmin) can't be exploited.
+// requireAuth verifies the bearer token (or quill_token cookie) and attaches
+// the resulting Identity to the request context. It responds 401 when the
+// token is missing or invalid.
+//
+// When Clerk is configured it is tried first; the local HS256 JWT service is
+// used as a fallback so the server can operate without Clerk during development.
+// The DB lookup that re-reads the user on every request (for deactivation and
+// stale-admin detection) is embedded in ClerkVerifier.Verify; for the local
+// path it is performed here.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
@@ -34,18 +39,33 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		id, err := s.auth.Tokens().Verify(token)
-		if err != nil {
-			httpx.Error(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
-			return
-		}
+		var (
+			id  auth.Identity
+			err error
+		)
 
-		user, err := s.store.GetUserByID(r.Context(), id.UserID)
-		if err != nil || !user.IsActive {
-			httpx.Error(w, http.StatusUnauthorized, "unauthorized", "account not found or inactive")
-			return
+		// Clerk path: verify the RS256 JWT and provision user/tenant on first login.
+		if s.clerk != nil && s.clerk.Enabled() {
+			id, err = s.clerk.Verify(r.Context(), token)
+			if err != nil {
+				httpx.Error(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
+				return
+			}
+		} else {
+			// Local path: HS256 JWT, then re-read the user from the DB to catch
+			// deactivated accounts and stale admin claims.
+			id, err = s.auth.Tokens().Verify(token)
+			if err != nil {
+				httpx.Error(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
+				return
+			}
+			user, err := s.store.GetUserByID(r.Context(), id.UserID)
+			if err != nil || !user.IsActive {
+				httpx.Error(w, http.StatusUnauthorized, "unauthorized", "account not found or inactive")
+				return
+			}
+			id.IsAdmin = user.IsAdmin
 		}
-		id.IsAdmin = user.IsAdmin
 
 		ctx := context.WithValue(r.Context(), identityKey, id)
 		next.ServeHTTP(w, r.WithContext(ctx))

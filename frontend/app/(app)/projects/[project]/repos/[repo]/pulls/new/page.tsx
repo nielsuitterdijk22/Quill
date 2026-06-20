@@ -12,7 +12,7 @@ export default async function NewPullPage({
 }: {
   params: { project: string; repo: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const result = await getBranches(token, params.project, params.repo);

@@ -12,7 +12,7 @@ import { SSHKeyPanel } from "./SSHKeyPanel";
 // or revoke personal git access tokens for cloning and pushing over HTTPS.
 export default async function SettingsPage() {
   const user = await requireSession();
-  const token = getToken();
+  const token = await getToken();
   const [tokensRes, sshRes] = await Promise.all([
     token
       ? listGitTokens(token)

@@ -20,7 +20,7 @@ export default async function RepoSettingsPage({
 }: {
   params: { project: string; repo: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const policiesRes = await getBranchPolicies(token, params.project, params.repo);

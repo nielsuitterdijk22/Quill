@@ -43,7 +43,7 @@ export default async function PipelinesPage({
 }: {
   params: { project: string; repo: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const [pipelinesRes, runsRes, branchesRes] = await Promise.all([

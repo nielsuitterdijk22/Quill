@@ -55,7 +55,7 @@ export async function saveEnvironmentPolicyAction(
   _prev: PolicyFormState,
   formData: FormData,
 ): Promise<PolicyFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const pattern = String(formData.get("pattern") ?? "").trim();
@@ -110,7 +110,7 @@ export async function deleteEnvironmentPolicyAction(
   _prev: PolicyFormState,
   formData: FormData,
 ): Promise<PolicyFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const pattern = String(formData.get("pattern") ?? "").trim();

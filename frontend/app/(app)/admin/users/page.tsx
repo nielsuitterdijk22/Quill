@@ -8,7 +8,7 @@ export default async function AdminUsersPage() {
   const user = await requireSession();
   if (!user.isAdmin) notFound();
 
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const res = await listAdminUsers(token);

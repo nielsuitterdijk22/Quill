@@ -9,7 +9,7 @@ import {
   updateEmail,
   updateProfile,
 } from "../../lib/api";
-import { clearSessionCookie, getToken } from "../../lib/session";
+import { getToken } from "../../lib/session";
 
 export type ProfileFormState = { error?: string; ok?: boolean };
 export type EmailFormState = { error?: string; ok?: boolean };
@@ -21,7 +21,7 @@ export async function updateProfileAction(
   _prev: ProfileFormState,
   formData: FormData,
 ): Promise<ProfileFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const displayName = String(formData.get("displayName") ?? "").trim();
@@ -38,7 +38,7 @@ export async function updateEmailAction(
   _prev: EmailFormState,
   formData: FormData,
 ): Promise<EmailFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const email = String(formData.get("email") ?? "").trim();
@@ -56,7 +56,7 @@ export async function changePasswordAction(
   _prev: PasswordFormState,
   formData: FormData,
 ): Promise<PasswordFormState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const currentPassword = String(formData.get("currentPassword") ?? "");
@@ -83,7 +83,7 @@ export async function deleteAccountAction(
   _prev: DeleteAccountState,
   formData: FormData,
 ): Promise<DeleteAccountState> {
-  const token = getToken();
+  const token = await getToken();
   if (!token) return { error: "Your session has expired. Sign in again." };
 
   const confirm = String(formData.get("confirm") ?? "").trim();
@@ -94,6 +94,5 @@ export async function deleteAccountAction(
   const res = await deleteMyAccount(token);
   if (!res.ok) return { error: res.error };
 
-  clearSessionCookie();
-  redirect("/login");
+  redirect("/sign-in");
 }

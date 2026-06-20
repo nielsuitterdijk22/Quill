@@ -21,11 +21,11 @@ type CreateProjectInput struct {
 	Description string
 }
 
-// CreateProject provisions a project under the default tenant. With Forgejo
+// CreateProject provisions a project under the actor's tenant. With Forgejo
 // enabled it creates the Forgejo org first, then records the project and the
 // creator's membership in one Postgres transaction; if that transaction fails
 // the Forgejo org is deleted so the two systems don't drift.
-func (s *Service) CreateProject(ctx context.Context, creatorID uuid.UUID, in CreateProjectInput) (db.Project, error) {
+func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProjectInput) (db.Project, error) {
 	slug := normalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)
 	if !validSlug(slug) {
@@ -35,9 +35,17 @@ func (s *Service) CreateProject(ctx context.Context, creatorID uuid.UUID, in Cre
 		name = slug
 	}
 
-	tenant, err := s.defaultTenant(ctx)
-	if err != nil {
-		return db.Project{}, err
+	// Use the actor's tenant when set (Clerk multi-tenant), else fall back to the
+	// seeded default tenant for single-tenant / local-auth deployments.
+	var tenantID uuid.UUID
+	if actor.TenantID != (uuid.UUID{}) {
+		tenantID = actor.TenantID
+	} else {
+		tenant, err := s.defaultTenant(ctx)
+		if err != nil {
+			return db.Project{}, err
+		}
+		tenantID = tenant.ID
 	}
 
 	// Fail fast on a known-taken slug to avoid creating an orphan Forgejo org.
@@ -62,9 +70,9 @@ func (s *Service) CreateProject(ctx context.Context, creatorID uuid.UUID, in Cre
 	}
 
 	var created db.Project
-	err = s.store.InTx(ctx, func(q *db.Queries) error {
+	err := s.store.InTx(ctx, func(q *db.Queries) error {
 		project, err := q.CreateProject(ctx, db.CreateProjectParams{
-			TenantID:    tenant.ID,
+			TenantID:    tenantID,
 			Slug:        slug,
 			Name:        name,
 			Description: strings.TrimSpace(in.Description),
@@ -85,7 +93,7 @@ func (s *Service) CreateProject(ctx context.Context, creatorID uuid.UUID, in Cre
 		// immediately.
 		if err := q.AddProjectMember(ctx, db.AddProjectMemberParams{
 			ProjectID: project.ID,
-			UserID:    creatorID,
+			UserID:    actor.UserID,
 			Role:      "owner",
 		}); err != nil {
 			return err

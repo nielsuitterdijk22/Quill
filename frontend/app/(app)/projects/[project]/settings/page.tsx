@@ -19,7 +19,7 @@ export default async function ProjectSettingsPage({
 }: {
   params: { project: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const res = await getProjectPolicies(token, params.project);

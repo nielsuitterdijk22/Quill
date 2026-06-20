@@ -24,7 +24,7 @@ type PipelineRow = {
 // PipelinesOverviewPage lists every pipeline (workflow) across the repositories in
 // the user's default project, each with its source repository and latest CI status.
 export default async function PipelinesOverviewPage() {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const project = await getCurrentProject();

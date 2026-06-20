@@ -16,6 +16,7 @@ import (
 // Provider names. Stored verbatim in auth_identities.provider.
 const (
 	ProviderLocal = "local"
+	ProviderClerk = "clerk"
 )
 
 // Identity is the authenticated Quill principal returned by a Provider and
@@ -25,6 +26,7 @@ type Identity struct {
 	Username string
 	Email    string
 	IsAdmin  bool
+	TenantID uuid.UUID
 }
 
 // Credentials carries provider-specific authentication input. The local provider

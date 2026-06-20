@@ -15,7 +15,7 @@ export default async function PullsOverviewPage({
 }: {
   searchParams: { state?: string };
 }) {
-  const token = getToken();
+  const token = await getToken();
   if (!token) notFound();
 
   const project = await getCurrentProject();

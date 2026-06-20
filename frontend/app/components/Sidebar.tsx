@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { logoutAction, setCurrentProjectAction } from "../lib/actions";
+import { useClerk } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+
+import { setCurrentProjectAction } from "../lib/actions";
 import type { MyProject, User } from "../lib/api";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -245,6 +248,8 @@ export function Sidebar({
   currentProject: string | null;
 }) {
   const pathname = usePathname() || "/";
+  const { signOut } = useClerk();
+  const router = useRouter();
   const repoCtx = parseRepoCtx(pathname);
   const navItems = user.isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
 
@@ -308,11 +313,12 @@ export function Sidebar({
 
       <div className="foot">
         <ThemeToggle />
-        <form action={logoutAction}>
-          <button className="logout-btn" type="submit">
-            Sign out
-          </button>
-        </form>
+        <button
+          className="logout-btn"
+          onClick={() => signOut(() => router.push("/sign-in"))}
+        >
+          Sign out
+        </button>
         <div className="copy">
           © 2026 Quill ·{" "}
           <a
