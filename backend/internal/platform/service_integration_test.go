@@ -67,7 +67,7 @@ func TestCreateProjectProvisionsMembership(t *testing.T) {
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 
-	project, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "Acme", Name: "Acme Inc"})
+	project, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: "Acme", Name: "Acme Inc"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -90,11 +90,11 @@ func TestCreateProjectRejectsDuplicateSlug(t *testing.T) {
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 
-	if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+	if _, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: "acme"}); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 	// Case-insensitive duplicate must conflict.
-	if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "ACME"}); !errors.Is(err, platform.ErrConflict) {
+	if _, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: "ACME"}); !errors.Is(err, platform.ErrConflict) {
 		t.Fatalf("expected ErrConflict, got %v", err)
 	}
 }
@@ -105,7 +105,7 @@ func TestCreateProjectValidatesSlug(t *testing.T) {
 	creator := makeUser(t, st, "alice")
 
 	for _, bad := range []string{"", "-bad", "has space", "_underscore"} {
-		if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: bad}); !errors.Is(err, platform.ErrInvalidInput) {
+		if _, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: bad}); !errors.Is(err, platform.ErrInvalidInput) {
 			t.Fatalf("slug %q: expected ErrInvalidInput, got %v", bad, err)
 		}
 	}
@@ -115,7 +115,7 @@ func TestCreateRepoUnderProject(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
-	project, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "acme"})
+	project, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: "acme"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestCreateRepoRejectsDuplicate(t *testing.T) {
 	svc, st := newService(t)
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
-	if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+	if _, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: "acme"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, actor(creator), "acme", platform.CreateRepoInput{Slug: "widget"}); err != nil {
@@ -174,7 +174,7 @@ func TestProjectAccessRequiresMembership(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, st, "alice")
 	outsider := makeUser(t, st, "mallory")
-	if _, err := svc.CreateProject(ctx, owner, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+	if _, err := svc.CreateProject(ctx, platform.Actor{UserID: owner}, platform.CreateProjectInput{Slug: "acme"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 
@@ -206,7 +206,7 @@ func TestBrowseAuthorizationAndAvailability(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, st, "alice")
 	outsider := makeUser(t, st, "mallory")
-	if _, err := svc.CreateProject(ctx, owner, platform.CreateProjectInput{Slug: "acme"}); err != nil {
+	if _, err := svc.CreateProject(ctx, platform.Actor{UserID: owner}, platform.CreateProjectInput{Slug: "acme"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, actor(owner), "acme", platform.CreateRepoInput{Slug: "widget"}); err != nil {
@@ -248,7 +248,7 @@ func TestCreateProjectRejectsReservedSlug(t *testing.T) {
 	ctx := context.Background()
 	creator := makeUser(t, st, "alice")
 	for _, reserved := range []string{"new", "settings", "api"} {
-		if _, err := svc.CreateProject(ctx, creator, platform.CreateProjectInput{Slug: reserved}); !errors.Is(err, platform.ErrInvalidInput) {
+		if _, err := svc.CreateProject(ctx, platform.Actor{UserID: creator}, platform.CreateProjectInput{Slug: reserved}); !errors.Is(err, platform.ErrInvalidInput) {
 			t.Fatalf("reserved slug %q: expected ErrInvalidInput, got %v", reserved, err)
 		}
 	}
@@ -263,7 +263,7 @@ func seedRepo(t *testing.T, svc *platform.Service, st *store.Store, projectSlug,
 	t.Helper()
 	ctx := context.Background()
 	owner := makeUser(t, st, "owner-"+projectSlug+"-"+repoSlug)
-	if _, err := svc.CreateProject(ctx, owner, platform.CreateProjectInput{Slug: projectSlug}); err != nil {
+	if _, err := svc.CreateProject(ctx, platform.Actor{UserID: owner}, platform.CreateProjectInput{Slug: projectSlug}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, actor(owner), projectSlug, platform.CreateRepoInput{Slug: repoSlug, Name: repoSlug}); err != nil {

@@ -162,6 +162,48 @@ func (s *Store) GetOrCreateTenantByClerkOrg(ctx context.Context, clerkOrgID, slu
 	return t, err
 }
 
+// GetProjectBySlugForTenant looks up a project by slug within a specific tenant
+// so that slugs are unique per-tenant rather than globally unique. Written by
+// hand to avoid a code-generator re-run.
+func (s *Store) GetProjectBySlugForTenant(ctx context.Context, slug string, tenantID uuid.UUID) (db.Project, error) {
+	const q = `
+		SELECT id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at
+		FROM projects
+		WHERE lower(slug) = lower($1) AND tenant_id = $2`
+	row := s.pool.QueryRow(ctx, q, slug, tenantID)
+	var p db.Project
+	err := row.Scan(&p.ID, &p.TenantID, &p.Slug, &p.Name, &p.Description, &p.ForgejoOrgName, &p.CreatedAt, &p.UpdatedAt)
+	return p, err
+}
+
+// ListProjectsForTenant returns projects belonging to a specific tenant, ordered
+// by slug. Written by hand to avoid a code-generator re-run.
+func (s *Store) ListProjectsForTenant(ctx context.Context, tenantID uuid.UUID, limit, offset int32) ([]db.Project, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	const q = `
+		SELECT id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at
+		FROM projects
+		WHERE tenant_id = $1
+		ORDER BY slug
+		LIMIT $2 OFFSET $3`
+	rows, err := s.pool.Query(ctx, q, tenantID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []db.Project
+	for rows.Next() {
+		var p db.Project
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Slug, &p.Name, &p.Description, &p.ForgejoOrgName, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // InTx runs fn inside a transaction, committing on success and rolling back on
 // error. Use it for operations that must write several tables atomically (e.g.
 // creating a project together with its first membership).

@@ -375,6 +375,31 @@ func (s *Server) handleSetUserActive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleReconcileGitTokens deletes orphaned quill-git-* Forgejo tokens for a
+// user — tokens that exist in Forgejo but have no matching Quill DB record.
+// This repairs the rare double-failure where DB insert and compensating Forgejo
+// delete both fail during token creation.
+func (s *Server) handleReconcileGitTokens(w http.ResponseWriter, r *http.Request) {
+	username := chi.URLParam(r, "username")
+	user, err := s.store.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		httpx.Error(w, http.StatusNotFound, "not_found", "user not found")
+		return
+	}
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	cleaned, err := s.platform.ReconcileGitTokens(r.Context(), actor, user.ID)
+	if err != nil {
+		s.logger.Error("reconcile git tokens failed", "user", username, "error", err)
+		httpx.Error(w, http.StatusInternalServerError, "internal", "reconcile failed")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"cleaned": cleaned})
+}
+
 // decodeJSON strictly decodes a size-limited JSON body. It writes a 400 and
 // returns false on any error.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {

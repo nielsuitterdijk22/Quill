@@ -107,7 +107,7 @@ func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, projectSlug, 
 // git-side reads. It returns ErrNotFound, ErrForbidden, or ErrUnavailable as
 // appropriate.
 func (s *Service) resolveRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string, requireGit bool) (db.Repository, string, string, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Repository{}, "", "", err
 	}

@@ -96,7 +96,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if actor.IsAdmin {
-		projects, err := s.platform.ListProjects(r.Context(), 0, 0)
+		projects, err := s.platform.ListProjects(r.Context(), actor, 0, 0)
 		if err != nil {
 			s.logger.Error("list projects failed", "error", err)
 			httpx.Error(w, http.StatusInternalServerError, "internal", "could not list projects")

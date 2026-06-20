@@ -49,7 +49,8 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 	}
 
 	// Fail fast on a known-taken slug to avoid creating an orphan Forgejo org.
-	if _, err := s.store.GetProjectBySlug(ctx, slug); err == nil {
+	// Slug uniqueness is scoped to the tenant so different orgs can reuse names.
+	if _, err := s.store.GetProjectBySlugForTenant(ctx, slug, tenantID); err == nil {
 		return db.Project{}, ErrConflict
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return db.Project{}, fmt.Errorf("lookup project: %w", err)
@@ -120,13 +121,18 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 	return created, nil
 }
 
-// ListProjects returns projects ordered by slug.
-func (s *Service) ListProjects(ctx context.Context, limit, offset int32) ([]db.Project, error) {
+// ListProjects returns projects visible to the actor. When the actor has a
+// tenant ID (Clerk multi-tenant mode) only projects in that tenant are
+// returned; otherwise all projects are returned (single-tenant / platform admin).
+func (s *Service) ListProjects(ctx context.Context, actor Actor, limit, offset int32) ([]db.Project, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
+	}
+	if actor.TenantID != (uuid.UUID{}) {
+		return s.store.ListProjectsForTenant(ctx, actor.TenantID, limit, int32(offset))
 	}
 	return s.store.ListProjects(ctx, db.ListProjectsParams{Limit: limit, Offset: offset})
 }
@@ -143,7 +149,7 @@ func (s *Service) ListMyProjects(ctx context.Context, actor Actor) ([]db.ListPro
 // GetProject returns a project by slug for an authorized actor, or ErrNotFound
 // when it doesn't exist / ErrForbidden when the actor isn't a member.
 func (s *Service) GetProject(ctx context.Context, actor Actor, slug string) (db.Project, error) {
-	project, err := s.getProject(ctx, slug)
+	project, err := s.getProject(ctx, actor, slug)
 	if err != nil {
 		return db.Project{}, err
 	}
@@ -154,9 +160,18 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, slug string) (db.
 }
 
 // getProject loads a project by slug without an authorization check, for
-// internal callers that authorize separately.
-func (s *Service) getProject(ctx context.Context, slug string) (db.Project, error) {
-	project, err := s.store.GetProjectBySlug(ctx, normalizeSlug(slug))
+// internal callers that authorize separately. Scopes the lookup to the actor's
+// tenant when in multi-tenant mode so slugs are per-tenant.
+func (s *Service) getProject(ctx context.Context, actor Actor, slug string) (db.Project, error) {
+	slug = normalizeSlug(slug)
+	if actor.TenantID != (uuid.UUID{}) {
+		project, err := s.store.GetProjectBySlugForTenant(ctx, slug, actor.TenantID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return db.Project{}, ErrNotFound
+		}
+		return project, err
+	}
+	project, err := s.store.GetProjectBySlug(ctx, slug)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return db.Project{}, ErrNotFound
 	}

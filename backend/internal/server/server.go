@@ -136,6 +136,7 @@ func (s *Server) setupRoutes() {
 			r.Use(s.requireAdmin)
 			r.Get("/admin/users", s.handleListUsers)
 			r.Patch("/admin/users/{username}/active", s.handleSetUserActive)
+			r.Post("/admin/users/{username}/git-tokens/reconcile", s.handleReconcileGitTokens)
 			if s.clerk == nil || !s.clerk.Enabled() {
 				r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 			}

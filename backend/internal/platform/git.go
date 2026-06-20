@@ -146,6 +146,63 @@ func (s *Service) RevokeGitToken(ctx context.Context, actor Actor, id uuid.UUID)
 	return nil
 }
 
+// ReconcileGitTokens compares the user's Forgejo personal access tokens against
+// the DB records and deletes any quill-git-* Forgejo tokens that have no
+// matching DB record. Returns the number of orphans deleted. This is an admin
+// operation for recovering from the rare double-failure scenario where the DB
+// write fails after Forgejo token creation and the compensating delete also fails.
+func (s *Service) ReconcileGitTokens(ctx context.Context, actor Actor, targetUserID uuid.UUID) (int, error) {
+	if !s.forgejoEnabled() {
+		return 0, fmt.Errorf("%w: git access requires the Forgejo backend", ErrUnavailable)
+	}
+	user, err := s.store.GetUserByID(ctx, targetUserID)
+	if err != nil {
+		return 0, fmt.Errorf("load user: %w", err)
+	}
+	if !user.ForgejoUsername.Valid || user.ForgejoUsername.String == "" {
+		return 0, nil
+	}
+	username := user.ForgejoUsername.String
+
+	dbTokens, err := s.store.ListGitTokensByUser(ctx, targetUserID)
+	if err != nil {
+		return 0, fmt.Errorf("list db tokens: %w", err)
+	}
+	dbNames := make(map[string]struct{}, len(dbTokens))
+	for _, t := range dbTokens {
+		dbNames[t.ForgejoTokenName] = struct{}{}
+	}
+
+	password, err := randomToken(24)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.forgejo.SetUserPassword(ctx, username, password); err != nil {
+		return 0, fmt.Errorf("prepare reconcile: %w", err)
+	}
+	forgejoTokens, err := s.forgejo.ListUserAccessTokens(ctx, username, password)
+	if err != nil {
+		return 0, fmt.Errorf("list forgejo tokens: %w", err)
+	}
+
+	cleaned := 0
+	for _, ft := range forgejoTokens {
+		if !strings.HasPrefix(ft.Name, "quill-git-") {
+			continue
+		}
+		if _, inDB := dbNames[ft.Name]; inDB {
+			continue
+		}
+		if err := s.forgejo.DeleteAccessToken(ctx, username, password, ft.Name); err != nil && !forgejo.NotFound(err) {
+			s.logger.Error("reconcile: failed to delete orphan token", "user", username, "token", ft.Name, "error", err)
+			continue
+		}
+		s.logger.Info("reconcile: deleted orphan git token", "user", username, "token", ft.Name)
+		cleaned++
+	}
+	return cleaned, nil
+}
+
 // randomToken returns n cryptographically random bytes hex-encoded.
 func randomToken(n int) (string, error) {
 	b := make([]byte, n)

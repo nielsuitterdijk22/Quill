@@ -201,7 +201,7 @@ export type RegisterInput = {
 };
 
 export type GitCredential = { id: string; username: string; token: string };
-export type GitTokenSummary = { id: string; name: string; createdAt: string };
+export type GitTokenSummary = { id: string; name: string; scope: string; createdAt: string };
 
 export type SSHKey = {
   id: number;

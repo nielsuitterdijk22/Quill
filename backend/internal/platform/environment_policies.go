@@ -99,7 +99,7 @@ func (s *Service) ListEnvironmentPolicies(ctx context.Context, actor Actor, proj
 // SetEnvironmentPolicy creates or updates a repository's policy for an
 // environment selector. Project owners and platform admins only.
 func (s *Service) SetEnvironmentPolicy(ctx context.Context, actor Actor, projectSlug, repoSlug string, in EnvironmentPolicyInput) (EnvironmentPolicyView, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return EnvironmentPolicyView{}, err
 	}
@@ -124,7 +124,7 @@ func (s *Service) SetEnvironmentPolicy(ctx context.Context, actor Actor, project
 // DeleteEnvironmentPolicy removes a repository's policy for an environment
 // selector (project owners and platform admins only).
 func (s *Service) DeleteEnvironmentPolicy(ctx context.Context, actor Actor, projectSlug, repoSlug, selector string) error {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func (s *Service) DeleteEnvironmentPolicy(ctx context.Context, actor Actor, proj
 // ListProjectEnvironmentPolicies returns a project's own environment policies
 // plus the ones it inherits from its tenant, for an authorized project member.
 func (s *Service) ListProjectEnvironmentPolicies(ctx context.Context, actor Actor, projectSlug string) (db.Project, EnvironmentPolicySet, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Project{}, EnvironmentPolicySet{}, err
 	}
@@ -171,7 +171,7 @@ func (s *Service) ListProjectEnvironmentPolicies(ctx context.Context, actor Acto
 // policy that applies to every repository in the project. Project owners and
 // platform admins only.
 func (s *Service) SetProjectEnvironmentPolicy(ctx context.Context, actor Actor, projectSlug string, in EnvironmentPolicyInput) (EnvironmentPolicyView, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return EnvironmentPolicyView{}, err
 	}
@@ -184,7 +184,7 @@ func (s *Service) SetProjectEnvironmentPolicy(ctx context.Context, actor Actor, 
 // DeleteProjectEnvironmentPolicy removes a project-scoped environment policy
 // (project owners and platform admins only).
 func (s *Service) DeleteProjectEnvironmentPolicy(ctx context.Context, actor Actor, projectSlug, selector string) error {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return err
 	}

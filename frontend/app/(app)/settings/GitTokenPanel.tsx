@@ -143,15 +143,20 @@ export function GitTokenPanel({
           </button>
         </div>
 
-        {tokens.length > 0 && (
+        {tokens.length === 0 ? (
+          <p className="subtle">
+            No tokens yet. Generate one above to clone and push over HTTPS.
+          </p>
+        ) : (
           <ul className="token-list">
             {tokens.map((t) => (
               <li key={t.id} className="token-row">
                 <div className="token-meta">
                   <span className="token-name">{t.name}</span>
-                  {t.createdAt && (
-                    <span className="subtle">Created {formatDate(t.createdAt)}</span>
-                  )}
+                  <span className="subtle">
+                    {t.scope && <>{t.scope} · </>}
+                    {t.createdAt && <>Created {formatDate(t.createdAt)}</>}
+                  </span>
                 </div>
                 <button
                   type="button"

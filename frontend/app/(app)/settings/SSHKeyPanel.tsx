@@ -143,7 +143,11 @@ export function SSHKeyPanel({
           </button>
         </div>
 
-        {keys.length > 0 && (
+        {keys.length === 0 ? (
+          <p className="subtle">
+            No SSH keys yet. Add one above to clone and push over SSH.
+          </p>
+        ) : (
           <ul className="token-list">
             {keys.map((k) => (
               <li key={k.id} className="token-row">

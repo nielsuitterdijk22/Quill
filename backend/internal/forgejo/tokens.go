@@ -54,6 +54,24 @@ func (c *Client) DeleteAccessToken(ctx context.Context, username, password, toke
 	return c.doBasicAuth(ctx, http.MethodDelete, path, username, password, nil, nil)
 }
 
+// AccessToken is a Forgejo personal access token entry from the list endpoint.
+type AccessToken struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListUserAccessTokens returns all personal access tokens for username,
+// authenticated as that user via basic auth. Quill uses this for orphan
+// reconciliation: comparing Forgejo tokens against the DB records.
+func (c *Client) ListUserAccessTokens(ctx context.Context, username, password string) ([]AccessToken, error) {
+	path := "/users/" + url.PathEscape(username) + "/tokens"
+	var out []AccessToken
+	if err := c.doBasicAuth(ctx, http.MethodGet, path, username, password, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CloneAuth describes how the CI dispatcher should clone a Forgejo repository.
 type CloneAuth struct {
 	URL        string

@@ -50,7 +50,7 @@ type UpdateEnvironmentInput struct {
 // CreateEnvironment defines a new environment under projectSlug for a project
 // admin.
 func (s *Service) CreateEnvironment(ctx context.Context, actor Actor, projectSlug string, in CreateEnvironmentInput) (db.Environment, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Environment{}, err
 	}
@@ -104,7 +104,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, actor Actor, projectSlu
 // ListEnvironments returns a project's environments ordered by promotion rank
 // then slug, for an authorized project member.
 func (s *Service) ListEnvironments(ctx context.Context, actor Actor, projectSlug string) (db.Project, []db.Environment, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Project{}, nil, err
 	}
@@ -121,7 +121,7 @@ func (s *Service) ListEnvironments(ctx context.Context, actor Actor, projectSlug
 // GetEnvironment returns a single environment by slug for an authorized project
 // member.
 func (s *Service) GetEnvironment(ctx context.Context, actor Actor, projectSlug, envSlug string) (db.Environment, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Environment{}, err
 	}
@@ -144,7 +144,7 @@ func (s *Service) GetEnvironment(ctx context.Context, actor Actor, projectSlug, 
 // UpdateEnvironment changes an environment's display fields and rank for a
 // project admin. The slug is immutable.
 func (s *Service) UpdateEnvironment(ctx context.Context, actor Actor, projectSlug, envSlug string, in UpdateEnvironmentInput) (db.Environment, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Environment{}, err
 	}
@@ -184,7 +184,7 @@ func (s *Service) UpdateEnvironment(ctx context.Context, actor Actor, projectSlu
 
 // DeleteEnvironment removes an environment for a project admin.
 func (s *Service) DeleteEnvironment(ctx context.Context, actor Actor, projectSlug, envSlug string) error {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return err
 	}

@@ -101,7 +101,7 @@ func (s *Service) ListBranchPolicies(ctx context.Context, actor Actor, projectSl
 // Only project owners and platform admins may call it. The policy is recorded in
 // Postgres and then mirrored (best-effort) into Forgejo branch protection.
 func (s *Service) SetBranchPolicy(ctx context.Context, actor Actor, projectSlug, repoSlug string, in BranchPolicyInput) (BranchPolicyView, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return BranchPolicyView{}, err
 	}
@@ -131,7 +131,7 @@ func (s *Service) SetBranchPolicy(ctx context.Context, actor Actor, projectSlug,
 // DeleteBranchPolicy removes a repository's policy for a branch pattern (project
 // owners and platform admins only) and clears the mirrored Forgejo protection.
 func (s *Service) DeleteBranchPolicy(ctx context.Context, actor Actor, projectSlug, repoSlug, pattern string) error {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (s *Service) DeleteBranchPolicy(ctx context.Context, actor Actor, projectSl
 // ListProjectBranchPolicies returns a project's own branch policies plus the
 // ones it inherits from its tenant, for an authorized project member.
 func (s *Service) ListProjectBranchPolicies(ctx context.Context, actor Actor, projectSlug string) (db.Project, BranchPolicySet, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Project{}, BranchPolicySet{}, err
 	}
@@ -191,7 +191,7 @@ func (s *Service) ListProjectBranchPolicies(ctx context.Context, actor Actor, pr
 // applies to every repository in the project. Project owners and platform admins
 // only.
 func (s *Service) SetProjectBranchPolicy(ctx context.Context, actor Actor, projectSlug string, in BranchPolicyInput) (BranchPolicyView, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return BranchPolicyView{}, err
 	}
@@ -204,7 +204,7 @@ func (s *Service) SetProjectBranchPolicy(ctx context.Context, actor Actor, proje
 // DeleteProjectBranchPolicy removes a project-scoped branch policy (project
 // owners and platform admins only).
 func (s *Service) DeleteProjectBranchPolicy(ctx context.Context, actor Actor, projectSlug, pattern string) error {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return err
 	}

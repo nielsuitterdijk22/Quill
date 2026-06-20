@@ -42,7 +42,7 @@ export default async function SettingsPage() {
 
       <EmailForm email={user.email} />
 
-      <ChangePasswordForm />
+      {!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && <ChangePasswordForm />}
 
       <GitTokenPanel
         tokens={tokensRes.ok ? tokensRes.data : []}

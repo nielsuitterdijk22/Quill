@@ -66,7 +66,7 @@ func seedScopeRepo(t *testing.T, svc *Service, st *store.Store, projectSlug, rep
 	t.Helper()
 	ctx := context.Background()
 	ownerID := scopeMakeUser(t, st, "owner-"+projectSlug+"-"+repoSlug)
-	project, err := svc.CreateProject(ctx, ownerID, CreateProjectInput{Slug: projectSlug, Name: projectSlug})
+	project, err := svc.CreateProject(ctx, Actor{UserID: ownerID}, CreateProjectInput{Slug: projectSlug, Name: projectSlug})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

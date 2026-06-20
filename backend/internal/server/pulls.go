@@ -257,10 +257,12 @@ type createGitTokenRequest struct {
 }
 
 // gitTokenSummary is the metadata for an outstanding git token. The secret is
-// never returned after creation.
+// never returned after creation. Scope is always write:repository for tokens
+// Quill mints.
 type gitTokenSummary struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	Scope     string    `json:"scope"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -300,7 +302,7 @@ func (s *Server) handleListGitTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]gitTokenSummary, 0, len(tokens))
 	for _, t := range tokens {
-		out = append(out, gitTokenSummary{ID: t.ID.String(), Name: t.Name, CreatedAt: t.CreatedAt})
+		out = append(out, gitTokenSummary{ID: t.ID.String(), Name: t.Name, Scope: "write:repository", CreatedAt: t.CreatedAt})
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }

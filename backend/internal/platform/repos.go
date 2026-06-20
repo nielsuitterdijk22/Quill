@@ -28,7 +28,7 @@ type CreateRepoInput struct {
 // Forgejo first, then records the repo and its Forgejo linkage in Postgres; the
 // Forgejo repo is deleted if the local write fails.
 func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug string, in CreateRepoInput) (db.Repository, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Repository{}, err
 	}
@@ -134,7 +134,7 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 // ListReposByProject returns repositories in a project ordered by slug, for an
 // authorized actor.
 func (s *Service) ListReposByProject(ctx context.Context, actor Actor, projectSlug string, limit, offset int32) (db.Project, []db.Repository, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Project{}, nil, err
 	}
@@ -173,7 +173,7 @@ type UpdateRepoInput struct {
 // Postgres. A rename that fails to persist is rolled back in Forgejo so the two
 // systems don't drift.
 func (s *Service) UpdateRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string, in UpdateRepoInput) (db.Repository, error) {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return db.Repository{}, err
 	}
@@ -303,7 +303,7 @@ func (s *Service) UpdateRepo(ctx context.Context, actor Actor, projectSlug, repo
 // one is treated as success — and then the metadata row (cascading its branch
 // policies) is removed, which keeps a retried delete safe.
 func (s *Service) DeleteRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string) error {
-	project, err := s.getProject(ctx, projectSlug)
+	project, err := s.getProject(ctx, actor, projectSlug)
 	if err != nil {
 		return err
 	}
@@ -407,7 +407,7 @@ func (s *Service) ForkRepo(ctx context.Context, actor Actor, sourceProjectSlug, 
 	if targetSlug == "" {
 		targetSlug = sourceProjectSlug
 	}
-	targetProject, err := s.getProject(ctx, targetSlug)
+	targetProject, err := s.getProject(ctx, actor, targetSlug)
 	if err != nil {
 		return db.Repository{}, err
 	}
