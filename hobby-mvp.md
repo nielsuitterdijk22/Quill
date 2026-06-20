@@ -202,11 +202,11 @@ OIDC — that comes later.
   names must pass before merge is allowed.
 - [x] **Re-run button.** On the pipeline run detail page, add a "Re-run" button
   that triggers a fresh run of the same workflow at the same ref.
-- [ ] **Run cancellation.** If a run is in progress, let the user cancel it (kill
+- [x] **Run cancellation.** If a run is in progress, let the user cancel it (kill
   the act process, mark the run as cancelled in the DB).
 - [x] **Run timeout.** Enforce a per-run wall-clock timeout (configurable via env
   var, default 30 min) to prevent stuck Docker containers.
-- [ ] **Rootless runner option.** The current runner mounts the Docker socket,
+- [x] **Rootless runner option.** The current runner mounts the Docker socket,
   which gives pipeline jobs root on the host. Investigate Docker-in-Docker or
   Podman as a rootless alternative and document the trade-offs for self-
   hosters who don't want to expose the socket.
@@ -226,7 +226,7 @@ OIDC — that comes later.
 
 ### Issues
 
-- [ ] Expose Forgejo's issue tracker through the Quill UI (list, create, comment,
+- [x] Expose Forgejo's issue tracker through the Quill UI (list, create, comment,
   close). Forgejo already stores issues; Quill just needs routes and pages.
 - [ ] `closes #N` in a commit message or PR description auto-closes the linked
   issue on merge (Forgejo already handles this if the PR description is
@@ -236,7 +236,7 @@ OIDC — that comes later.
 
 - [ ] **Repo forking UI.** Forgejo supports fork; expose it in the Quill UI so
   users can fork a public repo into their own project.
-- [ ] **Git LFS.** Confirm whether Forgejo's LFS works end-to-end through the
+- [x] **Git LFS.** Confirm whether Forgejo's LFS works end-to-end through the
   Quill git token auth flow. Document it if it does; note the limitation if
   it doesn't.
 - [ ] **Repo starring / watching.** Basic social signal; low priority but helps
@@ -244,7 +244,7 @@ OIDC — that comes later.
 
 ### Admin panel
 
-- [ ] List users, disable/enable accounts, admin-reset passwords.
+- [x] List users, disable/enable accounts, admin-reset passwords.
 - [ ] View all repos, pipeline run counts, and rough storage usage.
 - [ ] Per-user pipeline rate limiting (prevent one user from queuing 50
   concurrent runs).
@@ -253,15 +253,15 @@ OIDC — that comes later.
 
 - [ ] Surface token scope and last-used timestamp (Forgejo exposes these) in the
   git tokens list so users can audit which tokens are still active.
-- [ ] Warn on duplicate token display names (only the Forgejo-side name is
+- [x] Warn on duplicate token display names (only the Forgejo-side name is
   unique today).
 
 ### Polish
 
-- [ ] Keyboard shortcuts (j/k to navigate PR list, ? for help overlay).
-- [ ] Light / dark mode toggle (currently appears dark-only).
-- [ ] Mobile-responsive pass on the most common pages (repo tree, PR view).
-- [ ] Favicon and consistent branding (name in tab title, og:image for link
+- [x] Keyboard shortcuts (j/k to navigate PR list, ? for help overlay).
+- [x] Light / dark mode toggle (currently appears dark-only).
+- [x] Mobile-responsive pass on the most common pages (repo tree, PR view).
+- [x] Favicon and consistent branding (name in tab title, og:image for link
   previews).
 
 ---

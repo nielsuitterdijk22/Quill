@@ -111,6 +111,8 @@ func (s *Server) setupRoutes() {
 		// Admin-only operations (platform admin required, enforced per handler).
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			r.Get("/admin/users", s.handleListUsers)
+			r.Patch("/admin/users/{username}/active", s.handleSetUserActive)
 			r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 		})
 
@@ -187,11 +189,21 @@ func (s *Server) setupRoutes() {
 								r.Put("/", s.handleSetEnvironmentPolicy)
 								r.Delete("/", s.handleDeleteEnvironmentPolicy)
 							})
+							r.Route("/issues", func(r chi.Router) {
+								r.Get("/", s.handleListIssues)
+								r.Post("/", s.handleCreateIssue)
+								r.Route("/{number}", func(r chi.Router) {
+									r.Get("/", s.handleGetIssue)
+									r.Patch("/", s.handleEditIssue)
+									r.Post("/comments", s.handleCreateIssueComment)
+								})
+							})
 							r.Route("/pipelines", func(r chi.Router) {
 								r.Get("/", s.handleListPipelines)
 								r.Post("/", s.handleTriggerRun)
 								r.Get("/runs", s.handleListRuns)
 								r.Get("/runs/{number}", s.handleGetRun)
+								r.Post("/runs/{number}/cancel", s.handleCancelRun)
 							})
 							r.Route("/pulls", func(r chi.Router) {
 								r.Get("/", s.handleListPulls)

@@ -104,6 +104,7 @@ export type RepoTab =
   | "code"
   | "commits"
   | "branches"
+  | "issues"
   | "pulls"
   | "pipelines"
   | "settings";
@@ -128,6 +129,7 @@ export function RepoHeader({
     { key: "code", label: "Code", href: treeHref(project, repo, refName) },
     { key: "commits", label: "Commits", href: commitsHref(project, repo, refName) },
     { key: "branches", label: "Branches", href: `${base}/branches` },
+    { key: "issues", label: "Issues", href: `${base}/issues` },
     { key: "pulls", label: "Pull requests", href: `${base}/pulls` },
     { key: "pipelines", label: "Pipelines", href: `${base}/pipelines` },
     { key: "settings", label: "Settings", href: `${base}/settings` },

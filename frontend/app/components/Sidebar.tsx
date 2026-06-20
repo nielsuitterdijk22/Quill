@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { logoutAction, setCurrentProjectAction } from "../lib/actions";
 import type { MyProject, User } from "../lib/api";
+import { ThemeToggle } from "./ThemeToggle";
 
 export type NavItem = {
   href: string;
@@ -25,7 +26,8 @@ const NAV: NavItem[] = [
 
 // ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin/policies", label: "Admin", icon: "🛡" },
+  { href: "/admin/policies", label: "Policies", icon: "🛡" },
+  { href: "/admin/users", label: "Users", icon: "◈" },
 ];
 
 // isRepoScoped is true for any path inside a specific repository, i.e.
@@ -76,7 +78,7 @@ function safeDecode(segment: string): string {
 // split here).
 function parseRepoCtx(pathname: string): RepoCtx | null {
   const m = pathname.match(
-    /^\/projects\/([^/]+)\/repos\/([^/]+)(?:\/(branches|tree|commits|blob|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
+    /^\/projects\/([^/]+)\/repos\/([^/]+)(?:\/(branches|tree|commits|blob|issues|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
   );
   if (!m || !m[2] || m[2] === "new") return null;
   let ref = "main";
@@ -98,6 +100,7 @@ const REPO_TABS = [
   { key: "code", label: "Code", icon: "▤" },
   { key: "commits", label: "Commits", icon: "◷" },
   { key: "branches", label: "Branches", icon: "⎇" },
+  { key: "issues", label: "Issues", icon: "○" },
   { key: "pulls", label: "Pull requests", icon: "⤭" },
   { key: "pipelines", label: "Pipelines", icon: "▷" },
   { key: "settings", label: "Settings", icon: "⚙" },
@@ -114,6 +117,8 @@ function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
       return `${b}/commits/${ctx.ref.split("/").map(encodeURIComponent).join("/")}`;
     case "branches":
       return `${b}/branches`;
+    case "issues":
+      return `${b}/issues`;
     case "pulls":
       return `${b}/pulls`;
     case "pipelines":
@@ -140,6 +145,8 @@ function repoTabActive(
       return pathname.startsWith(`${b}/commits/`);
     case "branches":
       return pathname === `${b}/branches`;
+    case "issues":
+      return pathname.startsWith(`${b}/issues`);
     case "pulls":
       return pathname.startsWith(`${b}/pulls`);
     case "pipelines":
@@ -300,6 +307,7 @@ export function Sidebar({
       )}
 
       <div className="foot">
+        <ThemeToggle />
         <form action={logoutAction}>
           <button className="logout-btn" type="submit">
             Sign out

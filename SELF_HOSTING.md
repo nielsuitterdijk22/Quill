@@ -306,6 +306,82 @@ to your deployment before making your instance public.
 
 ---
 
+## Runner security: rootless vs Docker socket
+
+By default the Quill dispatch service mounts the host Docker socket
+(`/var/run/docker.sock`) so pipeline jobs can run containers. This gives
+pipeline code **root on the host**. Accept this trade-off only if you trust
+all users who can trigger pipelines.
+
+### Option A — restrict socket access (simple)
+
+Limit who can push to the repository and limit CI to trusted contributors.
+Add the dispatch service to a dedicated Docker group with restricted access to
+the socket, or use Docker's `userns-remap` feature to remap container UIDs.
+
+### Option B — Podman (rootless, recommended for untrusted users)
+
+[Podman](https://podman.io) can run containers without daemon privileges.
+
+1. Install Podman on the host (`apt install podman` / `dnf install podman`).
+2. Start the Podman system service as a non-root user:
+   ```bash
+   systemctl --user enable --now podman.socket
+   ```
+3. In `docker-compose.yml`, replace the socket mount on the `dispatch` service:
+   ```yaml
+   volumes:
+     - /run/user/1000/podman/podman.sock:/var/run/docker.sock:ro
+   ```
+4. Set `DOCKER_HOST=unix:///var/run/docker.sock` in the dispatch environment.
+
+Podman's rootless mode means a compromised job cannot escalate to host root.
+The trade-off is that some Docker-in-Docker patterns do not work, and
+`privileged: true` containers are not available without extra configuration.
+
+### Option C — firecracker / nsjail (advanced)
+
+For full isolation, run pipeline jobs inside a micro-VM (Firecracker) or
+inside an nsjail. This is out of scope for the hobby tier but the
+`pipeline.Runner` interface in `internal/pipeline/` is designed so alternative
+runners can be plugged in.
+
+---
+
+## Git LFS
+
+Forgejo ships with built-in Git LFS support. It works through Quill's git
+token auth flow without any extra configuration.
+
+### Verify LFS is enabled
+
+Check that `FORGEJO__server__LFS_START_SERVER=true` is set in the Forgejo
+service environment (the default compose file enables this). Forgejo stores
+LFS objects in its data volume alongside the repository objects.
+
+### Cloning with LFS
+
+```bash
+# Install git-lfs on the client first
+git lfs install
+
+# Clone normally — git-lfs hooks negotiate the LFS endpoint automatically
+git clone https://your-domain.example.com/forgejo/owner/repo.git
+
+# Authenticate as usual: use a Quill git token as the HTTP password
+# (Settings → Git tokens → Create token)
+```
+
+### Limitations
+
+- LFS objects count toward the Forgejo data volume size. Include the volume
+  in your backup procedure (see the Backup section).
+- Very large files (> several GB each) may hit Forgejo's upload timeout.
+  Increase `FORGEJO__server__LFS_JWT_TTL` and Nginx/Caddy's client body
+  timeout if you hit this.
+
+---
+
 ## Troubleshooting
 
 **`make stack` fails to start the api service**

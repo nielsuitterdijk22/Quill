@@ -350,6 +350,50 @@ func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleListUsers returns all users (admin only).
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok || !id.IsAdmin {
+		httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
+		return
+	}
+	users, err := s.store.ListUsers(r.Context(), db.ListUsersParams{Limit: 500, Offset: 0})
+	if err != nil {
+		s.logger.Error("list users failed", "error", err)
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not list users")
+		return
+	}
+	out := make([]userResponse, len(users))
+	for i, u := range users {
+		out[i] = newUserResponse(u)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"users": out})
+}
+
+type setUserActiveRequest struct {
+	Active bool `json:"active"`
+}
+
+// handleSetUserActive enables or disables a user account (admin only).
+func (s *Server) handleSetUserActive(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok || !id.IsAdmin {
+		httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
+		return
+	}
+	username := chi.URLParam(r, "username")
+	var req setUserActiveRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.store.SetUserActive(r.Context(), username, req.Active); err != nil {
+		s.logger.Error("set user active failed", "error", err)
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update user")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // decodeJSON strictly decodes a size-limited JSON body. It writes a 400 and
 // returns false on any error.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {

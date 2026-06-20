@@ -17,6 +17,7 @@ import {
   statusGlyph,
 } from "../../../../../../../../components/pipelines";
 import { ReRunButton } from "./ReRunButton";
+import { CancelButton } from "./CancelButton";
 
 function runDuration(startedAt?: string, finishedAt?: string): string {
   return durationText(startedAt, finishedAt) ?? "—";
@@ -94,6 +95,13 @@ export default async function RunDetailPage({
             workflowPath={workflowPath}
             ref={run.ref || repo.defaultBranch}
           />
+          {(run.status === "running" || run.status === "pending") && (
+            <CancelButton
+              project={params.project}
+              repo={params.repo}
+              number={run.runNumber}
+            />
+          )}
           <Link className="btn" href={`${base}/pipelines`}>
             ← All pipelines
           </Link>

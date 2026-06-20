@@ -103,6 +103,32 @@ func (s *Store) UpdateUserEmail(ctx context.Context, id uuid.UUID, email string)
 	return u, err
 }
 
+// SetUserActive sets the is_active flag for the user identified by username.
+func (s *Store) SetUserActive(ctx context.Context, username string, active bool) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE users SET is_active = $2 WHERE lower(username) = lower($1)`,
+		username, active)
+	return err
+}
+
+// CancelRun transitions a pipeline run from running/queued to cancelled if it
+// hasn't already finished. Written by hand to avoid re-running sqlc.
+func (s *Store) CancelRun(ctx context.Context, repoID uuid.UUID, runNumber int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE pipeline_runs r
+		SET status = 'cancelled', finished_at = now()
+		FROM pipelines p
+		WHERE r.pipeline_id = p.id
+		  AND p.repo_id = $1
+		  AND r.run_number = $2
+		  AND r.status IN ('running', 'queued')`,
+		repoID, runNumber)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // InTx runs fn inside a transaction, committing on success and rolling back on
 // error. Use it for operations that must write several tables atomically (e.g.
 // creating a project together with its first membership).

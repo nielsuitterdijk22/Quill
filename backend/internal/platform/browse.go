@@ -137,6 +137,13 @@ func (s *Service) resolveRepo(ctx context.Context, actor Actor, projectSlug, rep
 	return repo, owner, name, nil
 }
 
+// ResolveRepoCoords resolves a project/repo slug pair to the Forgejo owner and
+// repo name. Returns ErrNotFound, ErrForbidden, or ErrUnavailable on failure.
+func (s *Service) ResolveRepoCoords(ctx context.Context, actor Actor, projectSlug, repoSlug string) (owner, name string, err error) {
+	_, o, n, e := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	return o, n, e
+}
+
 // forgejoTarget computes the Forgejo (owner, name) pair for a repository, falling
 // back to slugs when the explicit linkage columns are unset. ok is false when no
 // usable target can be derived.

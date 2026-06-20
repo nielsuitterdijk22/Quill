@@ -58,11 +58,16 @@ export function GitTokenPanel({
   const [pending, startTransition] = useTransition();
   const [revoking, setRevoking] = useState<string | null>(null);
 
+  const trimmedName = name.trim();
+  const isDuplicateName = trimmedName !== "" && tokens.some(
+    (t) => t.name.toLowerCase() === trimmedName.toLowerCase(),
+  );
+
   function generate() {
     setError(null);
     setCred(null);
     startTransition(async () => {
-      const res = await generateGitTokenAction(name.trim());
+      const res = await generateGitTokenAction(trimmedName);
       if (res.ok) {
         setCred({ username: res.username, token: res.token });
         setName("");
@@ -113,6 +118,11 @@ export function GitTokenPanel({
           </div>
         )}
 
+        {isDuplicateName && (
+          <div className="form-error">
+            A token named &ldquo;{trimmedName}&rdquo; already exists. Choose a different name.
+          </div>
+        )}
         <div className="token-create">
           <input
             type="text"
@@ -127,7 +137,7 @@ export function GitTokenPanel({
             type="button"
             className="btn primary"
             onClick={generate}
-            disabled={pending}
+            disabled={pending || isDuplicateName}
           >
             {pending ? "Generating\u2026" : "Generate token"}
           </button>

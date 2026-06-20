@@ -237,6 +237,26 @@ func (s *Server) handleTriggerRun(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]any{"run": out})
 }
 
+// handleCancelRun transitions a running/queued run to cancelled. 409 if already
+// finished.
+func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, err := strconv.Atoi(chi.URLParam(r, "number"))
+	if err != nil || number <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "run number must be a positive integer")
+		return
+	}
+	if err := s.platform.CancelRun(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number); err != nil {
+		s.writePlatformError(w, err, "could not cancel run")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ---- webhook receiver ------------------------------------------------------
 
 // forgejoPushPayload is the subset of Forgejo's push/pull_request webhook bodies

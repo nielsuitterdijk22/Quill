@@ -1,4 +1,5 @@
 import { Sidebar } from "../components/Sidebar";
+import { KeyboardShortcuts } from "../components/KeyboardShortcuts";
 import { getToken, requireSession } from "../lib/session";
 import { resolveCurrentProject } from "../lib/projects";
 
@@ -23,6 +24,7 @@ export default async function AppLayout({
         currentProject={resolved?.current.slug ?? null}
       />
       <main className="main">{children}</main>
+      <KeyboardShortcuts />
     </div>
   );
 }

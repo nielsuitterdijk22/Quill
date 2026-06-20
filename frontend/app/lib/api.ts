@@ -1500,3 +1500,154 @@ export function triggerPipelineRun(
 ): Promise<DataResult<{ run: PipelineRun }>> {
   return postData(token, `/api/v1/projects/${project}/repos/${repo}/pipelines`, input);
 }
+
+// cancelPipelineRun cancels a queued or running pipeline run. Returns ok: false
+// with a 409 message when the run is already finished.
+export function cancelPipelineRun(
+  token: string,
+  project: string,
+  repo: string,
+  number: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return postNoContent(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/pipelines/runs/${number}/cancel`,
+    {},
+  );
+}
+
+// ---- issues ----------------------------------------------------------------
+
+export type Issue = {
+  number: number;
+  title: string;
+  body: string;
+  state: "open" | "closed";
+  author: UserRef | null;
+  comments: number;
+  labels: { name: string; color: string }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type IssueComment = {
+  id: number;
+  body: string;
+  author: UserRef | null;
+  createdAt: string;
+};
+
+export type IssuesResult = { issues: Issue[] };
+
+export function listIssues(
+  token: string,
+  project: string,
+  repo: string,
+  state: "open" | "closed" | "all" = "open",
+  page = 1,
+): Promise<Result<IssuesResult>> {
+  return authGet<IssuesResult>(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/issues?state=${state}&page=${page}`,
+  );
+}
+
+export type IssueDetailResult = { issue: Issue; comments: IssueComment[] };
+
+export function getIssue(
+  token: string,
+  project: string,
+  repo: string,
+  number: number,
+): Promise<Result<IssueDetailResult>> {
+  return authGet<IssueDetailResult>(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/issues/${number}`,
+  );
+}
+
+export function createIssue(
+  token: string,
+  project: string,
+  repo: string,
+  input: { title: string; body: string },
+): Promise<DataResult<{ issue: Issue }>> {
+  return postData(token, `/api/v1/projects/${project}/repos/${repo}/issues`, input);
+}
+
+export function editIssue(
+  token: string,
+  project: string,
+  repo: string,
+  number: number,
+  input: { state?: string; title?: string },
+): Promise<DataResult<{ issue: Issue }>> {
+  return sendData(
+    token,
+    "PATCH",
+    `/api/v1/projects/${project}/repos/${repo}/issues/${number}`,
+    input,
+  );
+}
+
+export function createIssueComment(
+  token: string,
+  project: string,
+  repo: string,
+  number: number,
+  body: string,
+): Promise<DataResult<{ comment: IssueComment }>> {
+  return postData(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/issues/${number}/comments`,
+    { body },
+  );
+}
+
+// ---- admin users -----------------------------------------------------------
+
+export function listAdminUsers(token: string): Promise<Result<{ users: User[] }>> {
+  return authGet<{ users: User[] }>(token, "/api/v1/admin/users");
+}
+
+export function adminSetUserActive(
+  token: string,
+  username: string,
+  active: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return sendNoContent(token, "PATCH", `/api/v1/admin/users/${encodeURIComponent(username)}/active`, { active });
+}
+
+export function adminResetPassword(
+  token: string,
+  username: string,
+  newPassword: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return postNoContent(token, `/api/v1/admin/users/${encodeURIComponent(username)}/reset-password`, { newPassword });
+}
+
+async function sendNoContent(
+  token: string,
+  method: "PATCH" | "PUT",
+  path: string,
+  body: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { message?: string } | null;
+      return { ok: false, error: data?.message || `Request failed (${res.status}).` };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
