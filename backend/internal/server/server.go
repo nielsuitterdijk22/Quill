@@ -108,9 +108,10 @@ func (s *Server) setupRoutes() {
 			})
 		})
 
-		// Admin-only operations (platform admin required, enforced per handler).
+		// Admin-only operations: requireAdmin enforces the admin check for the whole group.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			r.Use(s.requireAdmin)
 			r.Get("/admin/users", s.handleListUsers)
 			r.Patch("/admin/users/{username}/active", s.handleSetUserActive)
 			r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)

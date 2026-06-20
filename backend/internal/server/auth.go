@@ -183,15 +183,6 @@ type adminResetPasswordRequest struct {
 // handleAdminResetPassword lets a platform admin set any user's password without
 // knowing the current one. Returns 204 on success.
 func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
-	id, ok := identityFrom(r.Context())
-	if !ok {
-		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
-		return
-	}
-	if !id.IsAdmin {
-		httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
 	username := chi.URLParam(r, "username")
 	var req adminResetPasswordRequest
 	if !decodeJSON(w, r, &req) {
@@ -352,11 +343,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
 
 // handleListUsers returns all users (admin only).
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	id, ok := identityFrom(r.Context())
-	if !ok || !id.IsAdmin {
-		httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
 	users, err := s.store.ListUsers(r.Context(), db.ListUsersParams{Limit: 500, Offset: 0})
 	if err != nil {
 		s.logger.Error("list users failed", "error", err)
@@ -376,11 +362,6 @@ type setUserActiveRequest struct {
 
 // handleSetUserActive enables or disables a user account (admin only).
 func (s *Server) handleSetUserActive(w http.ResponseWriter, r *http.Request) {
-	id, ok := identityFrom(r.Context())
-	if !ok || !id.IsAdmin {
-		httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
 	username := chi.URLParam(r, "username")
 	var req setUserActiveRequest
 	if !decodeJSON(w, r, &req) {

@@ -86,17 +86,47 @@ type createRepoRequest struct {
 	Visibility  string `json:"visibility"`
 }
 
-// handleListProjects returns all projects.
+// handleListProjects returns projects visible to the actor. Admins see all
+// projects; regular users see only the ones they are members of.
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.platform.ListProjects(r.Context(), 0, 0)
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	if actor.IsAdmin {
+		projects, err := s.platform.ListProjects(r.Context(), 0, 0)
+		if err != nil {
+			s.logger.Error("list projects failed", "error", err)
+			httpx.Error(w, http.StatusInternalServerError, "internal", "could not list projects")
+			return
+		}
+		out := make([]projectResponse, 0, len(projects))
+		for _, p := range projects {
+			out = append(out, newProjectResponse(p))
+		}
+		httpx.JSON(w, http.StatusOK, map[string]any{"projects": out})
+		return
+	}
+
+	rows, err := s.platform.ListMyProjects(r.Context(), actor)
 	if err != nil {
 		s.logger.Error("list projects failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not list projects")
 		return
 	}
-	out := make([]projectResponse, 0, len(projects))
-	for _, p := range projects {
-		out = append(out, newProjectResponse(p))
+	out := make([]projectResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, newProjectResponse(db.Project{
+			ID:             row.ID,
+			TenantID:       row.TenantID,
+			Slug:           row.Slug,
+			Name:           row.Name,
+			Description:    row.Description,
+			ForgejoOrgName: row.ForgejoOrgName,
+			CreatedAt:      row.CreatedAt,
+		}))
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"projects": out})
 }

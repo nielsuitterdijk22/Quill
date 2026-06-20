@@ -110,6 +110,8 @@ func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadGateway, "git_unavailable", "git account not provisioned yet")
 		return
 	}
+	// Forgejo scopes this deletion to user.ForgejoUsername.String, so a
+	// caller supplying a key ID that belongs to a different user gets a 404.
 	if err := s.forgejo.DeleteSSHKey(r.Context(), user.ForgejoUsername.String, keyID); err != nil {
 		s.logger.Error("delete ssh key failed", "keyID", keyID, "error", err)
 		httpx.Error(w, http.StatusBadGateway, "git_unavailable", "could not delete SSH key from git backend")

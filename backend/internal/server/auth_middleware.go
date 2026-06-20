@@ -19,6 +19,8 @@ const identityKey ctxKey = iota
 
 // requireAuth verifies the bearer token (or quill_token cookie) and attaches the
 // resulting Identity to the request context. It responds 401 when missing or invalid.
+// It also re-reads the user from the DB on every request so that deactivated accounts
+// are blocked immediately and stale JWT claims (isAdmin) can't be exploited.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
@@ -38,8 +40,27 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		user, err := s.store.GetUserByID(r.Context(), id.UserID)
+		if err != nil || !user.IsActive {
+			httpx.Error(w, http.StatusUnauthorized, "unauthorized", "account not found or inactive")
+			return
+		}
+		id.IsAdmin = user.IsAdmin
+
 		ctx := context.WithValue(r.Context(), identityKey, id)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// requireAdmin rejects requests from non-admin users with 403. Must run after requireAuth.
+func (s *Server) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := identityFrom(r.Context())
+		if !ok || !id.IsAdmin {
+			httpx.Error(w, http.StatusForbidden, "forbidden", "admin access required")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
