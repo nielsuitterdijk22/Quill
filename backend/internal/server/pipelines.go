@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
@@ -235,6 +237,102 @@ func (s *Server) handleTriggerRun(w http.ResponseWriter, r *http.Request) {
 	out := newRunResponse(run)
 	out.WorkflowPath = req.Workflow
 	httpx.JSON(w, http.StatusCreated, map[string]any{"run": out})
+}
+
+// handleStreamRunLogs serves a Server-Sent Events stream of live log output for
+// a pipeline run. When the run is still active it replays buffered lines and
+// then streams new ones as they arrive; when finished it replays all stored logs
+// and sends a "done" event. The handler bypasses the 60-second chi request
+// timeout by using a detached context for the streaming loop.
+func (s *Server) handleStreamRunLogs(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	workflow := strings.TrimSpace(r.URL.Query().Get("workflow"))
+	if workflow == "" {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "a workflow query parameter is required")
+		return
+	}
+	number, err := strconv.Atoi(chi.URLParam(r, "number"))
+	if err != nil || number <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "run number must be a positive integer")
+		return
+	}
+
+	stream, _, err := s.platform.GetRunStream(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), workflow, number)
+	if err != nil {
+		s.writePlatformError(w, err, "could not load run")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	flush := func() {
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
+
+	writeLog := func(ll platform.LogLine) bool {
+		data, _ := json.Marshal(map[string]string{
+			"jobKey":   ll.JobKey,
+			"stepName": ll.StepName,
+			"line":     ll.Line,
+		})
+		_, err := fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
+		return err == nil
+	}
+
+	subID := uuid.New().String()
+	ch, buffered, alreadyDone := stream.Subscribe(subID)
+	if !alreadyDone {
+		defer stream.Unsubscribe(subID)
+	}
+
+	for _, ll := range buffered {
+		if !writeLog(ll) {
+			return
+		}
+	}
+
+	if alreadyDone {
+		data, _ := json.Marshal(map[string]string{"status": stream.Status()})
+		fmt.Fprintf(w, "event: done\ndata: %s\n\n", data) //nolint:errcheck
+		flush()
+		return
+	}
+
+	flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case ll, ok := <-ch:
+			if !ok {
+				// Channel closed: run finished.
+				data, _ := json.Marshal(map[string]string{"status": stream.Status()})
+				fmt.Fprintf(w, "event: done\ndata: %s\n\n", data) //nolint:errcheck
+				flush()
+				return
+			}
+			if !writeLog(ll) {
+				return
+			}
+			flush()
+		case <-ticker.C:
+			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flush()
+		}
+	}
 }
 
 // handleCancelRun transitions a running/queued run to cancelled. 409 if already

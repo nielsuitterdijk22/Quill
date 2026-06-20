@@ -190,7 +190,7 @@ OIDC — that comes later.
 
 ## 🔵 Finish PR 8 — pipelines
 
-- [ ] **Log streaming.** Replace the one-shot log return (logs returned only on
+- [x] **Log streaming.** Replace the one-shot log return (logs returned only on
   run completion) with a streaming approach: Server-Sent Events from the
   dispatcher so users see live output. The `pipeline.Runner` interface
   already abstracts this; the act runner just needs to emit chunks.
@@ -234,12 +234,12 @@ OIDC — that comes later.
 
 ### Git / repo features
 
-- [ ] **Repo forking UI.** Forgejo supports fork; expose it in the Quill UI so
+- [x] **Repo forking UI.** Forgejo supports fork; expose it in the Quill UI so
   users can fork a public repo into their own project.
 - [x] **Git LFS.** Confirm whether Forgejo's LFS works end-to-end through the
   Quill git token auth flow. Document it if it does; note the limitation if
   it doesn't.
-- [ ] **Repo starring / watching.** Basic social signal; low priority but helps
+- [x] **Repo starring / watching.** Basic social signal; low priority but helps
   discoverability on a shared instance.
 
 ### Admin panel

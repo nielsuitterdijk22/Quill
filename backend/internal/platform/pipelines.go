@@ -230,10 +230,9 @@ func (s *Service) TriggerWebhook(ctx context.Context, repo db.Repository, owner,
 	return runs, nil
 }
 
-// runWorkflow is the shared trigger path: it loads the workflow YAML, ensures a
-// pipeline record, executes the workflow through the runner, and persists the
-// run/job/step tree. The run is recorded even when execution fails so the failure
-// is visible in the UI.
+// runWorkflow is the shared trigger path: it loads the workflow YAML, creates
+// a run record, and kicks off execution in a goroutine so callers get an
+// immediate response. The goroutine persists the full job/step tree when done.
 func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, name string, in TriggerInput, triggeredBy uuid.NullUUID) (db.PipelineRun, error) {
 	path := strings.TrimSpace(in.WorkflowPath)
 	if path == "" {
@@ -285,7 +284,10 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 
 	cloneAuth := s.cloneAuthForRun(owner, name)
 
-	result, runErr := s.runner.Run(ctx, pipeline.JobSpec{
+	bc := newLogBroadcaster()
+	s.activeRuns.Store(run.ID.String(), bc)
+
+	go s.executeRun(run.ID, bc, pipeline.JobSpec{
 		WorkflowYAML:    yaml,
 		WorkflowPath:    path,
 		Event:           event,
@@ -295,17 +297,49 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		CloneAuthHeader: cloneAuth.AuthHeader,
 		RepoFullName:    owner + "/" + name,
 	})
-	if runErr != nil {
-		// The workflow could not be interpreted/started: mark the run failed and
-		// surface the reason as a single synthetic step so the UI shows it.
-		s.recordStartupFailure(ctx, run.ID, runErr)
-		return s.finishRun(ctx, run.ID, pipeline.StatusFailure)
+
+	return run, nil
+}
+
+// executeRun carries out the actual workflow execution in a background goroutine.
+// It wires the log broadcaster to the spec, runs the workflow, persists results,
+// and then finalises the run status in the database.
+func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.JobSpec) {
+	// Use background context: the triggering HTTP request will be gone by the
+	// time the pipeline finishes.
+	bgCtx := context.Background()
+
+	defer func() {
+		// Keep the broadcaster alive for a few minutes so late SSE subscribers
+		// can replay buffered output. Panic safety: finish ensures done is set.
+		if r := recover(); r != nil {
+			s.logger.Error("pipeline goroutine panicked", "run", runID, "panic", r)
+			bc.finish(pipeline.StatusFailure)
+		}
+		time.AfterFunc(5*time.Minute, func() { s.activeRuns.Delete(runID.String()) })
+	}()
+
+	spec.LogSink = func(jobKey, stepName, line string) {
+		bc.publish(LogLine{JobKey: jobKey, StepName: stepName, Line: line})
 	}
 
-	if err := s.persistResult(ctx, run.ID, result); err != nil {
-		s.logger.Warn("could not persist run result", "run", run.ID, "error", err)
+	result, runErr := s.runner.Run(bgCtx, spec)
+	if runErr != nil {
+		s.recordStartupFailure(bgCtx, runID, runErr)
+		if _, err := s.finishRun(bgCtx, runID, pipeline.StatusFailure); err != nil {
+			s.logger.Warn("could not record startup failure", "run", runID, "error", err)
+		}
+		bc.finish(pipeline.StatusFailure)
+		return
 	}
-	return s.finishRun(ctx, run.ID, result.Status)
+
+	if err := s.persistResult(bgCtx, runID, result); err != nil {
+		s.logger.Warn("could not persist run result", "run", runID, "error", err)
+	}
+	if _, err := s.finishRun(bgCtx, runID, result.Status); err != nil {
+		s.logger.Warn("could not finish run", "run", runID, "error", err)
+	}
+	bc.finish(result.Status)
 }
 
 // cloneAuthForRun returns the clone URL and auth header for the dispatcher. On
@@ -459,4 +493,76 @@ func (s *Service) HandleWebhookEvent(ctx context.Context, owner, name, event, re
 		return nil, err
 	}
 	return s.TriggerWebhook(ctx, repo, fo, fn, event, ref)
+}
+
+// GetRunStream returns a LogStream for the given pipeline run. If the run is
+// still active its live broadcaster is returned; if it has already completed a
+// static stream synthesised from the stored step logs is returned instead.
+func (s *Service) GetRunStream(ctx context.Context, actor Actor, projectSlug, repoSlug, workflowPath string, runNumber int) (LogStream, db.PipelineRun, error) {
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
+	if err != nil {
+		return nil, db.PipelineRun{}, err
+	}
+
+	pl, err := s.store.GetPipelineByPath(ctx, db.GetPipelineByPathParams{RepoID: repo.ID, WorkflowPath: workflowPath})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, db.PipelineRun{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, db.PipelineRun{}, fmt.Errorf("lookup pipeline: %w", err)
+	}
+
+	run, err := s.store.GetPipelineRunByNumber(ctx, db.GetPipelineRunByNumberParams{PipelineID: pl.ID, RunNumber: int64(runNumber)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, db.PipelineRun{}, ErrNotFound
+	}
+	if err != nil {
+		return nil, db.PipelineRun{}, fmt.Errorf("lookup run: %w", err)
+	}
+
+	// If the run is still active, return its live broadcaster.
+	if val, ok := s.activeRuns.Load(run.ID.String()); ok {
+		return val.(*logBroadcaster), run, nil
+	}
+
+	// Run is complete: synthesise a static stream from stored step logs.
+	jobs, err := s.store.ListJobsByRun(ctx, run.ID)
+	if err != nil {
+		return nil, db.PipelineRun{}, fmt.Errorf("list jobs: %w", err)
+	}
+	var lines []LogLine
+	for _, j := range jobs {
+		steps, err := s.store.ListStepsByJob(ctx, j.ID)
+		if err != nil {
+			return nil, db.PipelineRun{}, fmt.Errorf("list steps: %w", err)
+		}
+		for _, st := range steps {
+			if st.Logs == "" {
+				continue
+			}
+			for _, line := range splitLines(st.Logs) {
+				lines = append(lines, LogLine{JobKey: j.JobKey, StepName: st.Name, Line: line})
+			}
+		}
+	}
+	return &staticLogStream{lines: lines, status: run.Status}, run, nil
+}
+
+// splitLines splits a log string into individual newline-terminated lines.
+func splitLines(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			out = append(out, s[start:i+1])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		out = append(out, s[start:]+"\n")
+	}
+	return out
 }

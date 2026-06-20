@@ -83,6 +83,10 @@ type Querier interface {
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertPipeline(ctx context.Context, arg UpsertPipelineParams) (Pipeline, error)
 	UpsertPolicy(ctx context.Context, arg UpsertPolicyParams) (Policy, error)
+	StarRepo(ctx context.Context, arg StarRepoParams) error
+	UnstarRepo(ctx context.Context, arg UnstarRepoParams) error
+	GetRepoStar(ctx context.Context, arg GetRepoStarParams) (RepoStar, error)
+	CountRepoStars(ctx context.Context, repoID uuid.UUID) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

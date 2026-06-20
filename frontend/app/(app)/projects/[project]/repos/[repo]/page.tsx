@@ -12,6 +12,8 @@ import {
 import { getToken } from "../../../../../lib/session";
 import { CloneButton } from "../../../../../components/CloneButton";
 import { BranchSelector } from "../../../../../components/BranchSelector";
+import { ForkButton } from "./ForkButton";
+import { StarButton } from "./StarButton";
 import {
   BrowseError,
   cloneHttpUrl,
@@ -127,13 +129,14 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
   const readmeEntry = entries.find(
     (e) => e.type === "file" && /^readme(\.md|\.txt)?$/i.test(e.name),
   );
-  const [branchesRes, commitsRes, readmeRes, meta] = await Promise.all([
+  const [branchesRes, commitsRes, readmeRes, meta, repoDetailRes] = await Promise.all([
     getBranches(token, params.project, params.repo),
     getCommits(token, params.project, params.repo, ref, "", 1),
     readmeEntry
       ? getContents(token, params.project, params.repo, readmeEntry.path, ref)
       : Promise.resolve(null),
     getMeta(),
+    getRepo(token, params.project, params.repo),
   ]);
   const refNames = branchesRes.ok
     ? branchesRes.data.branches.map((b) => b.name)
@@ -184,6 +187,13 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
         <Link className="pill" href={commitsHref(params.project, params.repo, ref)}>
           commits
         </Link>
+        <StarButton
+          project={params.project}
+          repo={params.repo}
+          initialStarred={repoDetailRes.ok ? repoDetailRes.data.viewerHasStarred : false}
+          initialCount={repoDetailRes.ok ? repoDetailRes.data.starCount : 0}
+        />
+        <ForkButton sourceProject={params.project} sourceRepo={params.repo} />
         <CloneButton httpUrl={httpUrl} />
       </div>
 

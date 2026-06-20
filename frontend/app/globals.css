@@ -2427,3 +2427,57 @@ h2.section {
   word-break: break-word;
   overflow-x: auto;
 }
+
+/* Live log streaming */
+.live-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.live-logs .logs {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+.log-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Star button */
+.star-btn {
+  font-size: 13px;
+}
+.star-btn.starred {
+  color: var(--amber, #f59e0b);
+}
+
+/* Fork dialog */
+.fork-dialog {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 24px 28px;
+  width: min(420px, 90vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+}
+.fork-dialog::backdrop {
+  background: rgba(0,0,0,0.5);
+}
+.fork-dialog h2 {
+  margin: 0 0 18px;
+  font-size: 16px;
+}

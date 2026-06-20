@@ -174,6 +174,9 @@ func (s *Server) setupRoutes() {
 							r.Get("/", s.handleGetRepo)
 							r.Patch("/", s.handleUpdateRepo)
 							r.Delete("/", s.handleDeleteRepo)
+							r.Post("/fork", s.handleForkRepo)
+							r.Put("/star", s.handleStarRepo)
+							r.Delete("/star", s.handleUnstarRepo)
 							r.Get("/branches", s.handleListBranches)
 							r.Get("/commits", s.handleListCommits)
 							r.Get("/commits/{sha}", s.handleGetCommit)
@@ -203,6 +206,7 @@ func (s *Server) setupRoutes() {
 								r.Post("/", s.handleTriggerRun)
 								r.Get("/runs", s.handleListRuns)
 								r.Get("/runs/{number}", s.handleGetRun)
+								r.Get("/runs/{number}/logs", s.handleStreamRunLogs)
 								r.Post("/runs/{number}/cancel", s.handleCancelRun)
 							})
 							r.Route("/pulls", func(r chi.Router) {

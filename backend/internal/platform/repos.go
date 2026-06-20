@@ -385,6 +385,119 @@ func forgejoEdit(cur, next db.Repository) (forgejo.EditRepoOptions, bool) {
 	return opts, dirty
 }
 
+// ForkRepoInput specifies where to fork a repository into.
+type ForkRepoInput struct {
+	// TargetProjectSlug is the project that will own the forked repository.
+	// If empty the source project is used (which will fail unless the name differs).
+	TargetProjectSlug string
+	// Slug is the desired repo slug for the fork. Defaults to the source slug.
+	Slug string
+}
+
+// ForkRepo creates a Forgejo fork of sourceRepoSlug inside sourceProjectSlug and
+// registers the resulting repository under targetProjectSlug. An actor must be a
+// member of the target project.
+func (s *Service) ForkRepo(ctx context.Context, actor Actor, sourceProjectSlug, sourceRepoSlug string, in ForkRepoInput) (db.Repository, error) {
+	srcRepo, srcOwner, srcName, err := s.resolveRepo(ctx, actor, sourceProjectSlug, sourceRepoSlug, false)
+	if err != nil {
+		return db.Repository{}, err
+	}
+
+	targetSlug := strings.TrimSpace(in.TargetProjectSlug)
+	if targetSlug == "" {
+		targetSlug = sourceProjectSlug
+	}
+	targetProject, err := s.getProject(ctx, targetSlug)
+	if err != nil {
+		return db.Repository{}, err
+	}
+	if err := s.authorizeProjectMember(ctx, actor, targetProject.ID); err != nil {
+		return db.Repository{}, err
+	}
+
+	forkSlug := normalizeSlug(in.Slug)
+	if forkSlug == "" {
+		forkSlug = srcRepo.Slug
+	}
+	if !validSlug(forkSlug) {
+		return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 alphanumeric/dash/underscore characters", ErrInvalidInput)
+	}
+
+	// Fail fast on a slug collision before creating anything in Forgejo.
+	if _, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{ProjectID: targetProject.ID, Lower: forkSlug}); err == nil {
+		return db.Repository{}, ErrConflict
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return db.Repository{}, fmt.Errorf("lookup repo: %w", err)
+	}
+
+	targetOwner := targetProject.Slug
+	if targetProject.ForgejoOrgName.Valid && targetProject.ForgejoOrgName.String != "" {
+		targetOwner = targetProject.ForgejoOrgName.String
+	}
+
+	var (
+		fjID      pgtype.Int8
+		fjOwner   pgtype.Text
+		fjForkName pgtype.Text
+		fjCreated bool
+	)
+	if s.forgejoEnabled() {
+		fork, err := s.forgejo.ForkRepo(ctx, srcOwner, srcName, forgejo.ForkRepoOptions{
+			Organization: targetOwner,
+			RepoName:     forkSlug,
+		})
+		if err != nil {
+			return db.Repository{}, fmt.Errorf("forgejo fork repo: %w", err)
+		}
+		fjID = pgtype.Int8{Int64: fork.ID, Valid: true}
+		fjOwner = pgtype.Text{String: targetOwner, Valid: true}
+		fjForkName = pgtype.Text{String: fork.Name, Valid: true}
+		fjCreated = true
+	}
+
+	var created db.Repository
+	err = s.store.InTx(ctx, func(q *db.Queries) error {
+		repo, err := q.CreateRepository(ctx, db.CreateRepositoryParams{
+			ProjectID:     targetProject.ID,
+			Slug:          forkSlug,
+			Name:          forkSlug,
+			Description:   "Fork of " + sourceProjectSlug + "/" + sourceRepoSlug,
+			Visibility:    srcRepo.Visibility,
+			DefaultBranch: srcRepo.DefaultBranch,
+		})
+		if err != nil {
+			return err
+		}
+		if fjCreated {
+			repo, err = q.SetRepositoryForgejoLink(ctx, db.SetRepositoryForgejoLinkParams{
+				ID:            repo.ID,
+				ForgejoRepoID: fjID,
+				ForgejoOwner:  fjOwner,
+				ForgejoName:   fjForkName,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		created = repo
+		return nil
+	})
+	if err != nil {
+		if fjCreated {
+			cctx, cancel := detachedContext(ctx)
+			defer cancel()
+			if delErr := s.forgejo.DeleteRepo(cctx, targetOwner, forkSlug); delErr != nil {
+				s.logger.Error("failed to roll back forked repo", "owner", targetOwner, "repo", forkSlug, "error", delErr)
+			}
+		}
+		if isUniqueViolation(err) {
+			return db.Repository{}, ErrConflict
+		}
+		return db.Repository{}, err
+	}
+	return created, nil
+}
+
 // updateRepoParams projects a repository's desired state into UpdateRepository args.
 func updateRepoParams(id uuid.UUID, next db.Repository) db.UpdateRepositoryParams {
 	return db.UpdateRepositoryParams{

@@ -11,6 +11,7 @@ package pipeline
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -30,6 +31,12 @@ const (
 	StepTypeRun  = "run"
 	StepTypeUses = "uses"
 )
+
+// LogSink is a callback invoked for each raw output line produced during a
+// pipeline run. jobKey identifies the job; stepName is the current step's
+// display name; line is the log line (always newline-terminated). It must not
+// block for long — implementations should write to a buffered channel.
+type LogSink func(jobKey, stepName, line string)
 
 // JobSpec is everything a Runner needs to execute one workflow: the raw workflow
 // YAML and the context it runs in. The Runner is responsible for interpreting the
@@ -60,6 +67,17 @@ type JobSpec struct {
 	// Token is an optional credential exposed to the workflow as GITHUB_TOKEN.
 	// Empty is fine — act skips actions/checkout and runs against Workdir.
 	Token string
+	// LogSink is called for each raw output line during execution. It is omitted
+	// from JSON serialisation so it survives only in the dispatching process.
+	LogSink LogSink `json:"-"`
+}
+
+// LogStreamer is an optional interface that Runner implementations may satisfy
+// to allow the platform layer to proxy live log events to SSE clients.
+type LogStreamer interface {
+	// StreamLogs connects to the dispatcher job identified by jobID and returns
+	// the raw SSE byte stream. The caller owns the returned ReadCloser.
+	StreamLogs(ctx context.Context, jobID string) (io.ReadCloser, error)
 }
 
 // StepResult is the outcome of a single step.

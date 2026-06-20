@@ -18,6 +18,7 @@ import {
 } from "../../../../../../../../components/pipelines";
 import { ReRunButton } from "./ReRunButton";
 import { CancelButton } from "./CancelButton";
+import { LiveLogs } from "./LiveLogs";
 
 function runDuration(startedAt?: string, finishedAt?: string): string {
   return durationText(startedAt, finishedAt) ?? "—";
@@ -108,7 +109,17 @@ export default async function RunDetailPage({
         </div>
       </div>
 
-      {run.jobs.length === 0 ? (
+      {/* Active runs: show the live log stream while the pipeline is running */}
+      {(run.status === "running" || run.status === "pending") ? (
+        <div className="panel">
+          <LiveLogs
+            project={params.project}
+            repo={params.repo}
+            runNumber={run.runNumber}
+            workflowPath={workflowPath}
+          />
+        </div>
+      ) : run.jobs.length === 0 ? (
         <div className="panel">
           <div className="empty">This run produced no jobs.</div>
         </div>

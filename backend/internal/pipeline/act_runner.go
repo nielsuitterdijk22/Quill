@@ -114,7 +114,7 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("init runner: %w", err)
 	}
 
-	cap := newLogCapture()
+	cap := newLogCapture(spec.LogSink)
 	exec := rn.NewPlanExecutor(plan)
 
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)

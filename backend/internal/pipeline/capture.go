@@ -25,6 +25,7 @@ type logCapture struct {
 	mu     sync.Mutex
 	logger *logrus.Logger
 	jobs   map[string]*jobCapture
+	sink   LogSink // may be nil
 }
 
 type jobCapture struct {
@@ -43,13 +44,13 @@ type stepCapture struct {
 	finished time.Time
 }
 
-func newLogCapture() *logCapture {
+func newLogCapture(sink LogSink) *logCapture {
 	l := logrus.New()
 	l.SetOutput(io.Discard)
 	// Capture every level: act emits step stdout at Info and some markers at
 	// Debug; hooks only fire for levels the logger has enabled.
 	l.SetLevel(logrus.TraceLevel)
-	c := &logCapture{logger: l, jobs: make(map[string]*jobCapture)}
+	c := &logCapture{logger: l, jobs: make(map[string]*jobCapture), sink: sink}
 	l.AddHook(c)
 	return c
 }
@@ -104,9 +105,14 @@ func (c *logCapture) Fire(e *logrus.Entry) error {
 		sc.outcome = fmt.Sprintf("%v", sr)
 	}
 	if raw, _ := e.Data["raw_output"].(bool); raw {
-		sc.logs.WriteString(e.Message)
-		if !strings.HasSuffix(e.Message, "\n") {
-			sc.logs.WriteByte('\n')
+		line := e.Message
+		if !strings.HasSuffix(line, "\n") {
+			line += "\n"
+		}
+		sc.logs.WriteString(line)
+		if c.sink != nil {
+			key, step := jobID, sc.name
+			c.sink(key, step, line)
 		}
 	}
 	return nil

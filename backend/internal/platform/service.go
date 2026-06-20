@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,10 @@ type Service struct {
 	// path: no per-request Rego compile. The embedded-OPA evaluator stays as the
 	// parity oracle and can be swapped in via WithEvaluator.
 	evaluator policy.Evaluator
+	// activeRuns maps run UUID strings to their live log broadcaster. Entries
+	// are added when a pipeline run starts and removed a few minutes after it
+	// finishes so late SSE subscribers can still replay buffered output.
+	activeRuns sync.Map // string (run UUID) → *logBroadcaster
 }
 
 // NewService wires a platform Service. logger may be nil. The CI runner defaults

@@ -39,16 +39,18 @@ func newProjectResponse(p db.Project) projectResponse {
 
 // repoResponse is the public JSON shape for a repository.
 type repoResponse struct {
-	ID            string    `json:"id"`
-	Slug          string    `json:"slug"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	Visibility    string    `json:"visibility"`
-	DefaultBranch string    `json:"defaultBranch"`
-	IsArchived    bool      `json:"isArchived"`
-	ForgejoOwner  string    `json:"forgejoOwner,omitempty"`
-	ForgejoName   string    `json:"forgejoName,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID               string    `json:"id"`
+	Slug             string    `json:"slug"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	Visibility       string    `json:"visibility"`
+	DefaultBranch    string    `json:"defaultBranch"`
+	IsArchived       bool      `json:"isArchived"`
+	ForgejoOwner     string    `json:"forgejoOwner,omitempty"`
+	ForgejoName      string    `json:"forgejoName,omitempty"`
+	StarCount        int64     `json:"starCount"`
+	ViewerHasStarred bool      `json:"viewerHasStarred"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 func newRepoResponse(r db.Repository) repoResponse {

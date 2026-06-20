@@ -39,6 +39,8 @@ export type Repo = {
   isArchived: boolean;
   forgejoOwner?: string;
   forgejoName?: string;
+  starCount: number;
+  viewerHasStarred: boolean;
   createdAt: string;
 };
 
@@ -621,6 +623,34 @@ export function deleteRepo(
   return deleteResource(token, `/api/v1/projects/${project}/repos/${repo}`);
 }
 
+// forkRepo forks a repository into a target project with an optional new slug.
+export function forkRepo(
+  token: string,
+  project: string,
+  repo: string,
+  input: { targetProject: string; slug: string },
+): Promise<DataResult<{ repository: Repo }>> {
+  return postData(token, `/api/v1/projects/${project}/repos/${repo}/fork`, input);
+}
+
+// starRepo records that the current user has starred a repository.
+export function starRepo(
+  token: string,
+  project: string,
+  repo: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return putResource(token, `/api/v1/projects/${project}/repos/${repo}/star`);
+}
+
+// unstarRepo removes the current user's star from a repository.
+export function unstarRepo(
+  token: string,
+  project: string,
+  repo: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteResource(token, `/api/v1/projects/${project}/repos/${repo}/star`);
+}
+
 // ---- pull requests ---------------------------------------------------------
 
 // pullsResult is the PR listing payload.
@@ -780,6 +810,29 @@ async function sendData<T>(
       };
     }
     return { ok: true, data: data as T };
+  } catch {
+    return { ok: false, error: "Can't reach the Quill backend." };
+  }
+}
+
+// putResource issues an authenticated PUT with no body, treating any 2xx as success.
+async function putResource(
+  token: string,
+  path: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      return { ok: false, error: data?.message || `Request failed (${res.status}).` };
+    }
+    return { ok: true };
   } catch {
     return { ok: false, error: "Can't reach the Quill backend." };
   }

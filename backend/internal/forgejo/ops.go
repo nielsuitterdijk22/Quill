@@ -171,6 +171,21 @@ func (c *Client) DeleteRepo(ctx context.Context, owner, name string) error {
 	return c.do(ctx, http.MethodDelete, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name), nil, nil)
 }
 
+// ForkRepoOptions describes a fork operation. Organization is the Forgejo org
+// handle to fork into; RepoName overrides the default name (source repo name).
+type ForkRepoOptions struct {
+	Organization string `json:"organization,omitempty"`
+	RepoName     string `json:"repo_name,omitempty"`
+}
+
+// ForkRepo forks an existing Forgejo repository into an organization.
+func (c *Client) ForkRepo(ctx context.Context, owner, repo string, opts ForkRepoOptions) (Repo, error) {
+	var out Repo
+	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/forks"
+	err := c.do(ctx, http.MethodPost, p, opts, &out)
+	return out, err
+}
+
 // CreateFile commits a new file at path on a branch (empty branch = default
 // branch). content is raw bytes; the API expects base64 so it is encoded here.
 func (c *Client) CreateFile(ctx context.Context, owner, repo, path string, content []byte, message, branch string) error {

@@ -83,7 +83,40 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not load repository")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, newRepoResponse(repo))
+	resp := newRepoResponse(repo)
+	if info, err := s.platform.GetRepoStarInfo(r.Context(), actor, repo); err == nil {
+		resp.StarCount = info.StarCount
+		resp.ViewerHasStarred = info.ViewerHasStarred
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// handleStarRepo records that the authenticated user has starred a repository.
+func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.platform.StarRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo")); err != nil {
+		s.writePlatformError(w, err, "could not star repository")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleUnstarRepo removes the authenticated user's star from a repository.
+func (s *Server) handleUnstarRepo(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.platform.UnstarRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo")); err != nil {
+		s.writePlatformError(w, err, "could not unstar repository")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // updateRepoRequest is the partial update body for a repository's settings. Every
@@ -136,6 +169,33 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type forkRepoRequest struct {
+	TargetProject string `json:"targetProject"` // slug of the project to fork into
+	Slug          string `json:"slug"`          // desired slug for the forked repo
+}
+
+// handleForkRepo forks a repository into a different (or the same) project.
+func (s *Server) handleForkRepo(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req forkRepoRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	repo, err := s.platform.ForkRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), platform.ForkRepoInput{
+		TargetProjectSlug: req.TargetProject,
+		Slug:              req.Slug,
+	})
+	if err != nil {
+		s.writePlatformError(w, err, "could not fork repository")
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{"repository": newRepoResponse(repo)})
 }
 
 // handleListBranches returns a repository's git branches.
