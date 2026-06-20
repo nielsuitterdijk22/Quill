@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -350,6 +351,161 @@ func (v *ClerkVerifier) provisionForgejo(ctx context.Context, id Identity) {
 	}); err != nil {
 		v.logger.Error("failed to link forgejo user for clerk account", "username", id.Username, "error", err)
 	}
+}
+
+// ---- Clerk Organization Management API -----------------------------------------
+
+// OrgMember is a member of a Clerk organisation with their Quill-visible fields.
+type OrgMember struct {
+	MembershipID string
+	ClerkUserID  string
+	Email        string
+	DisplayName  string
+	Role         string
+}
+
+// OrgInvitation is a pending invitation to a Clerk organisation.
+type OrgInvitation struct {
+	InvitationID string
+	EmailAddress string
+	Role         string
+	Status       string
+}
+
+type clerkMembershipResponse struct {
+	Data []struct {
+		ID         string `json:"id"`
+		Role       string `json:"role"`
+		PublicUser struct {
+			ID               string `json:"id"`
+			FirstName        string `json:"first_name"`
+			LastName         string `json:"last_name"`
+			ImageURL         string `json:"image_url"`
+			EmailAddresses   []struct{ EmailAddress string `json:"email_address"` } `json:"email_addresses"`
+		} `json:"public_user_data"`
+	} `json:"data"`
+	TotalCount int `json:"total_count"`
+}
+
+type clerkInvitationResponse struct {
+	Data []struct {
+		ID           string `json:"id"`
+		EmailAddress string `json:"email_address"`
+		Role         string `json:"role"`
+		Status       string `json:"status"`
+	} `json:"data"`
+	TotalCount int `json:"total_count"`
+}
+
+// clerkDo is a helper for Clerk Management API calls.
+func (v *ClerkVerifier) clerkDo(ctx context.Context, method, path string, body, out any) error {
+	if v.secretKey == "" {
+		return fmt.Errorf("QUILL_CLERK_SECRET_KEY not set")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		bodyReader = strings.NewReader(string(b))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, "https://api.clerk.com/v1"+path, bodyReader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+v.secretKey)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("clerk API %s %s returned %d", method, path, resp.StatusCode)
+	}
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
+}
+
+// ListOrgMembers returns the current members of a Clerk organisation.
+func (v *ClerkVerifier) ListOrgMembers(ctx context.Context, clerkOrgID string) ([]OrgMember, error) {
+	var result clerkMembershipResponse
+	if err := v.clerkDo(ctx, http.MethodGet,
+		"/organizations/"+clerkOrgID+"/memberships?limit=100", nil, &result); err != nil {
+		return nil, fmt.Errorf("list org members: %w", err)
+	}
+	out := make([]OrgMember, 0, len(result.Data))
+	for _, m := range result.Data {
+		email := ""
+		if len(m.PublicUser.EmailAddresses) > 0 {
+			email = m.PublicUser.EmailAddresses[0].EmailAddress
+		}
+		displayName := strings.TrimSpace(m.PublicUser.FirstName + " " + m.PublicUser.LastName)
+		if displayName == "" {
+			displayName = email
+		}
+		out = append(out, OrgMember{
+			MembershipID: m.ID,
+			ClerkUserID:  m.PublicUser.ID,
+			Email:        email,
+			DisplayName:  displayName,
+			Role:         m.Role,
+		})
+	}
+	return out, nil
+}
+
+// ListOrgInvitations returns pending invitations for a Clerk organisation.
+func (v *ClerkVerifier) ListOrgInvitations(ctx context.Context, clerkOrgID string) ([]OrgInvitation, error) {
+	var result clerkInvitationResponse
+	if err := v.clerkDo(ctx, http.MethodGet,
+		"/organizations/"+clerkOrgID+"/invitations?status=pending&limit=100", nil, &result); err != nil {
+		return nil, fmt.Errorf("list org invitations: %w", err)
+	}
+	out := make([]OrgInvitation, 0, len(result.Data))
+	for _, inv := range result.Data {
+		out = append(out, OrgInvitation{
+			InvitationID: inv.ID,
+			EmailAddress: inv.EmailAddress,
+			Role:         inv.Role,
+			Status:       inv.Status,
+		})
+	}
+	return out, nil
+}
+
+// InviteOrgMember sends an invitation to emailAddress to join clerkOrgID.
+// role should be "org:member" or "org:admin".
+func (v *ClerkVerifier) InviteOrgMember(ctx context.Context, clerkOrgID, emailAddress, role string) error {
+	body := map[string]string{
+		"email_address": emailAddress,
+		"role":          role,
+	}
+	return v.clerkDo(ctx, http.MethodPost,
+		"/organizations/"+clerkOrgID+"/invitations", body, nil)
+}
+
+// RemoveOrgMember removes a member from a Clerk organisation by their membership ID.
+func (v *ClerkVerifier) RemoveOrgMember(ctx context.Context, clerkOrgID, membershipID string) error {
+	return v.clerkDo(ctx, http.MethodDelete,
+		"/organizations/"+clerkOrgID+"/memberships/"+membershipID, nil, nil)
+}
+
+// RevokeOrgInvitation cancels a pending invitation by its invitation ID.
+func (v *ClerkVerifier) RevokeOrgInvitation(ctx context.Context, clerkOrgID, invitationID, requesterUserID string) error {
+	body := map[string]string{"requesting_user_id": requesterUserID}
+	return v.clerkDo(ctx, http.MethodPost,
+		"/organizations/"+clerkOrgID+"/invitations/"+invitationID+"/revoke", body, nil)
 }
 
 func deriveUsername(clerkUsername, email, clerkUserID string) string {

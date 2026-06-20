@@ -5,8 +5,32 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+// sentryCapture is a middleware that catches panics, reports them to Sentry,
+// and re-panics so that chi's Recoverer middleware can write the 500 response.
+// It is a no-op when no Sentry client is configured.
+func sentryCapture(next http.Handler) http.Handler {
+	// Skip installing the hook when Sentry has not been initialised.
+	if sentry.CurrentHub().Client() == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				sentry.CurrentHub().WithScope(func(scope *sentry.Scope) {
+					scope.SetRequest(r)
+					sentry.CurrentHub().RecoverWithContext(r.Context(), err)
+				})
+				// Re-panic so chi's Recoverer can write the 500 response.
+				panic(err)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
 
 // securityHeaders sets defensive HTTP response headers on every response. The
 // API serves JSON only (no HTML), so a full Content-Security-Policy is omitted

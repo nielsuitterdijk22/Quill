@@ -36,6 +36,9 @@ type Config struct {
 	WebhookSecret string
 
 	CORSAllowedOrigins []string
+
+	// SentryDSN is the Sentry Data Source Name. When empty, Sentry is disabled.
+	SentryDSN string
 }
 
 // JWTConfig configures Quill-issued access tokens (used from PR 3 onward).
@@ -104,6 +107,7 @@ func Load() (*Config, error) {
 		},
 		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
+		SentryDSN:          getenv("QUILL_SENTRY_DSN", ""),
 	}
 
 	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Clerk.FrontendAPI == "" {

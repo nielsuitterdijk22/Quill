@@ -372,6 +372,24 @@ export type UpdateEnvironmentInput = {
 
 export type MyProject = Project & { role: string };
 
+export type OrgMember = {
+  membershipId: string;
+  clerkUserId: string;
+  email: string;
+  displayName: string;
+  role: string;
+};
+
+export type OrgInvitation = {
+  invitationId: string;
+  email: string;
+  role: string;
+  status: string;
+};
+
+export type OrgMembersResult = { members: OrgMember[] };
+export type OrgInvitationsResult = { invitations: OrgInvitation[] };
+
 export type PipelineRunStatus =
   | "pending"
   | "running"

@@ -82,6 +82,7 @@ func (s *Server) setupMiddleware() {
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(requestLogger(s.logger))
+	s.router.Use(sentryCapture)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Timeout(60 * time.Second))
 	s.router.Use(securityHeaders)
@@ -155,6 +156,13 @@ func (s *Server) setupRoutes() {
 			r.Post("/me/ssh-keys", s.handleAddSSHKey)
 			r.Delete("/me/ssh-keys/{id}", s.handleDeleteSSHKey)
 			r.Get("/me/projects", s.handleListMyProjects)
+			r.Route("/org", func(r chi.Router) {
+				r.Get("/members", s.handleListOrgMembers)
+				r.Post("/members", s.handleInviteOrgMember)
+				r.Delete("/members/{membershipID}", s.handleRemoveOrgMember)
+				r.Get("/invitations", s.handleListOrgInvitations)
+				r.Delete("/invitations/{invitationID}", s.handleRevokeOrgInvitation)
+			})
 			r.Route("/tenants", func(r chi.Router) {
 				r.Route("/{tenant}", func(r chi.Router) {
 					r.Route("/policies", func(r chi.Router) {

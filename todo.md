@@ -15,10 +15,6 @@
   unlimited everything. Without this the product is free.
 - **Email notifications.** PR review requests, CI failures, and @-mentions.
   Without these, users churn silently.
-- **Org member invite flow.** Clerk handles sign-up, but there is no
-  "invite a teammate to your org" UX inside Quill itself.
-- **Error tracking.** Sentry or equivalent. Need to know when things break in
-  prod before users report it.
 
 ## SaaS — important before growth
 

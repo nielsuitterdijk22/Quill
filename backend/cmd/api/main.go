@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/logging"
 	"github.com/nielsuitterdijk22/quill/internal/server"
@@ -33,6 +34,17 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	if cfg.SentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:         cfg.SentryDSN,
+			Environment: cfg.Env,
+			Release:     server.Version,
+		}); err != nil {
+			return fmt.Errorf("sentry init: %w", err)
+		}
+		defer sentry.Flush(2 * time.Second)
 	}
 
 	logger := logging.New(cfg.LogLevel, cfg.LogFormat)
