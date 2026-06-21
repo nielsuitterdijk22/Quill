@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/notify"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store"
@@ -37,6 +38,8 @@ type Service struct {
 	// runner dispatches CI workflows. In compose this is an HTTP client to the
 	// standalone dispatcher; tests can still inject an in-process runner.
 	runner pipeline.Runner
+	// notifier dispatches transactional emails for platform events (CI failures, etc.).
+	notifier *notify.Service
 	// evaluator turns the policies governing a gate plus typed facts into a
 	// verdict (unanimous-allow across scopes). The typed evaluator is the hot
 	// path: no per-request Rego compile. The embedded-OPA evaluator stays as the
@@ -69,6 +72,13 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 // client) and returns the service for chaining.
 func (s *Service) WithRunner(r pipeline.Runner) *Service {
 	s.runner = r
+	return s
+}
+
+// WithNotifier sets the notification service used for CI failure emails and
+// returns the service for chaining.
+func (s *Service) WithNotifier(n *notify.Service) *Service {
+	s.notifier = n
 	return s
 }
 

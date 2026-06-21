@@ -13,8 +13,6 @@
 
 - **Billing.** Stripe + usage-gated plans. Right now every sign-up gets
   unlimited everything. Without this the product is free.
-- **Email notifications.** PR review requests, CI failures, and @-mentions.
-  Without these, users churn silently.
 
 ## SaaS — important before growth
 

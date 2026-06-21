@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/nielsuitterdijk22/quill/internal/notify"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -287,7 +288,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 	bc := newLogBroadcaster()
 	s.activeRuns.Store(run.ID.String(), bc)
 
-	go s.executeRun(run.ID, bc, pipeline.JobSpec{
+	go s.executeRun(run, repo, bc, pipeline.JobSpec{
 		WorkflowYAML:    yaml,
 		WorkflowPath:    path,
 		Event:           event,
@@ -304,7 +305,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 // executeRun carries out the actual workflow execution in a background goroutine.
 // It wires the log broadcaster to the spec, runs the workflow, persists results,
 // and then finalises the run status in the database.
-func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.JobSpec) {
+func (s *Service) executeRun(run db.PipelineRun, repo db.Repository, bc *logBroadcaster, spec pipeline.JobSpec) {
 	// Use background context: the triggering HTTP request will be gone by the
 	// time the pipeline finishes.
 	bgCtx := context.Background()
@@ -313,10 +314,10 @@ func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.
 		// Keep the broadcaster alive for a few minutes so late SSE subscribers
 		// can replay buffered output. Panic safety: finish ensures done is set.
 		if r := recover(); r != nil {
-			s.logger.Error("pipeline goroutine panicked", "run", runID, "panic", r)
+			s.logger.Error("pipeline goroutine panicked", "run", run.ID, "panic", r)
 			bc.finish(pipeline.StatusFailure)
 		}
-		time.AfterFunc(5*time.Minute, func() { s.activeRuns.Delete(runID.String()) })
+		time.AfterFunc(5*time.Minute, func() { s.activeRuns.Delete(run.ID.String()) })
 	}()
 
 	spec.LogSink = func(jobKey, stepName, line string) {
@@ -325,21 +326,45 @@ func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.
 
 	result, runErr := s.runner.Run(bgCtx, spec)
 	if runErr != nil {
-		s.recordStartupFailure(bgCtx, runID, runErr)
-		if _, err := s.finishRun(bgCtx, runID, pipeline.StatusFailure); err != nil {
-			s.logger.Warn("could not record startup failure", "run", runID, "error", err)
+		s.recordStartupFailure(bgCtx, run.ID, runErr)
+		if _, err := s.finishRun(bgCtx, run.ID, pipeline.StatusFailure); err != nil {
+			s.logger.Warn("could not record startup failure", "run", run.ID, "error", err)
 		}
 		bc.finish(pipeline.StatusFailure)
+		s.maybeNotifyCIFailure(bgCtx, run, repo, spec.WorkflowPath)
 		return
 	}
 
-	if err := s.persistResult(bgCtx, runID, result); err != nil {
-		s.logger.Warn("could not persist run result", "run", runID, "error", err)
+	if err := s.persistResult(bgCtx, run.ID, result); err != nil {
+		s.logger.Warn("could not persist run result", "run", run.ID, "error", err)
 	}
-	if _, err := s.finishRun(bgCtx, runID, result.Status); err != nil {
-		s.logger.Warn("could not finish run", "run", runID, "error", err)
+	if _, err := s.finishRun(bgCtx, run.ID, result.Status); err != nil {
+		s.logger.Warn("could not finish run", "run", run.ID, "error", err)
 	}
 	bc.finish(result.Status)
+	if result.Status == pipeline.StatusFailure {
+		s.maybeNotifyCIFailure(bgCtx, run, repo, spec.WorkflowPath)
+	}
+}
+
+// maybeNotifyCIFailure sends a CI failure email to the run's triggerer when
+// notifications are configured and the run has a known triggering user.
+func (s *Service) maybeNotifyCIFailure(ctx context.Context, run db.PipelineRun, repo db.Repository, workflowPath string) {
+	if s.notifier == nil || !run.TriggeredBy.Valid {
+		return
+	}
+	project, err := s.store.GetProjectByID(ctx, repo.ProjectID)
+	if err != nil {
+		return
+	}
+	s.notifier.NotifyCIFailure(ctx, notify.CIFailureEvent{
+		ProjectSlug:  project.Slug,
+		RepoSlug:     repo.Slug,
+		RunNumber:    run.RunNumber,
+		WorkflowPath: workflowPath,
+		Ref:          run.Ref,
+		TriggeredBy:  run.TriggeredBy.UUID,
+	})
 }
 
 // cloneAuthForRun returns the clone URL and auth header for the dispatcher. On

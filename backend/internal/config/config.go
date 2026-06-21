@@ -39,6 +39,14 @@ type Config struct {
 
 	// SentryDSN is the Sentry Data Source Name. When empty, Sentry is disabled.
 	SentryDSN string
+
+	// SMTP is the outbound mail server configuration for transactional emails.
+	// When SMTPHost is empty, email notifications are disabled.
+	SMTP SMTPConfig
+
+	// AppURL is the externally-accessible frontend URL, used to build links in
+	// notification emails (e.g. "https://app.example.com"). Optional.
+	AppURL string
 }
 
 // JWTConfig configures Quill-issued access tokens (used from PR 3 onward).
@@ -65,6 +73,15 @@ type ClerkConfig struct {
 	// SecretKey is the Clerk Backend API secret key used to fetch user profiles
 	// when provisioning a Quill account on first login.
 	SecretKey string
+}
+
+// SMTPConfig holds outbound mail server settings for email notifications.
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	From     string
 }
 
 // PipelineConfig controls how workflow runs are dispatched.
@@ -108,6 +125,14 @@ func Load() (*Config, error) {
 		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 		SentryDSN:          getenv("QUILL_SENTRY_DSN", ""),
+		SMTP: SMTPConfig{
+			Host:     getenv("QUILL_SMTP_HOST", ""),
+			Port:     getint("QUILL_SMTP_PORT", 587),
+			User:     getenv("QUILL_SMTP_USER", ""),
+			Password: getenv("QUILL_SMTP_PASSWORD", ""),
+			From:     getenv("QUILL_SMTP_FROM", ""),
+		},
+		AppURL: getenv("QUILL_APP_URL", ""),
 	}
 
 	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Clerk.FrontendAPI == "" {
@@ -131,6 +156,16 @@ func getdur(key string, fallback time.Duration) time.Duration {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return fallback
+}
+
+func getint(key string, fallback int) int {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		var n int
+		if _, err := fmt.Sscan(v, &n); err == nil {
+			return n
 		}
 	}
 	return fallback

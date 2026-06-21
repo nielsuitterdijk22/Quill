@@ -11,6 +11,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
+	"github.com/nielsuitterdijk22/quill/internal/notify"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
 
@@ -445,20 +446,24 @@ func (s *Server) handleCreatePullComment(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	id, _ := identityFrom(r.Context())
 	number, ok := pullNumber(w, r)
 	if !ok {
 		return
 	}
+	projectSlug := chi.URLParam(r, "slug")
+	repoSlug := chi.URLParam(r, "repo")
 	var req createCommentRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	comment, err := s.platform.CreatePullComment(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number, req.Body)
+	comment, err := s.platform.CreatePullComment(r.Context(), actor, projectSlug, repoSlug, number, req.Body)
 	if err != nil {
 		s.writePlatformError(w, err, "could not add comment")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newPullCommentResponse(comment)})
+	s.fireNotificationsForPRComment(r.Context(), projectSlug, repoSlug, number, req.Body, id.Username, actor)
 }
 
 // handleListPullCommits returns the commits contained in a pull request.
@@ -706,18 +711,95 @@ func (s *Server) handleCreatePullReview(w http.ResponseWriter, r *http.Request) 
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	id, _ := identityFrom(r.Context())
 	number, ok := pullNumber(w, r)
 	if !ok {
 		return
 	}
+	projectSlug := chi.URLParam(r, "slug")
+	repoSlug := chi.URLParam(r, "repo")
 	var req createReviewRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	review, err := s.platform.CreatePullReview(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number, req.Event, req.Body)
+	review, err := s.platform.CreatePullReview(r.Context(), actor, projectSlug, repoSlug, number, req.Event, req.Body)
 	if err != nil {
 		s.writePlatformError(w, err, "could not submit review")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"review": newReviewResponse(review)})
+	s.fireNotificationsForPRReview(r.Context(), projectSlug, repoSlug, number, req.Event, req.Body, id.Username, actor)
+}
+
+// fireNotificationsForPRReview fires the PR review notification and any
+// @-mention notifications from the review body in background goroutines.
+func (s *Server) fireNotificationsForPRReview(ctx context.Context, project, repo string, number int, event, body, reviewerUsername string, actor platform.Actor) {
+	_, pr, err := s.platform.GetPull(ctx, actor, project, repo, number)
+	if err != nil {
+		return
+	}
+	prAuthorLogin := ""
+	if pr.User != nil {
+		prAuthorLogin = pr.User.Login
+	}
+	s.notifier.NotifyPRReview(ctx, notify.PRReviewEvent{
+		ProjectSlug:         project,
+		RepoSlug:            repo,
+		PRNumber:            number,
+		PRTitle:             pr.Title,
+		PRAuthorForgejoUser: prAuthorLogin,
+		ReviewerName:        reviewerUsername,
+		ReviewState:         event,
+	})
+	if body != "" {
+		mentions := notify.ParseMentions(body)
+		s.notifier.NotifyMentions(ctx, mentions, notify.MentionEvent{
+			ProjectSlug:   project,
+			RepoSlug:      repo,
+			Context:       "pull request review",
+			ContextTitle:  pr.Title,
+			ContextURL:    "",
+			MentionerName: reviewerUsername,
+			BodyExcerpt:   truncate(body, 300),
+		})
+	}
+}
+
+// fireNotificationsForPRComment fires the PR comment notification and any
+// @-mention notifications from the comment body.
+func (s *Server) fireNotificationsForPRComment(ctx context.Context, project, repo string, number int, body, commenterUsername string, actor platform.Actor) {
+	_, pr, err := s.platform.GetPull(ctx, actor, project, repo, number)
+	if err != nil {
+		return
+	}
+	prAuthorLogin := ""
+	if pr.User != nil {
+		prAuthorLogin = pr.User.Login
+	}
+	s.notifier.NotifyPRComment(ctx, notify.PRCommentEvent{
+		ProjectSlug:         project,
+		RepoSlug:            repo,
+		PRNumber:            number,
+		PRTitle:             pr.Title,
+		PRAuthorForgejoUser: prAuthorLogin,
+		CommenterName:       commenterUsername,
+	})
+	mentions := notify.ParseMentions(body)
+	s.notifier.NotifyMentions(ctx, mentions, notify.MentionEvent{
+		ProjectSlug:   project,
+		RepoSlug:      repo,
+		Context:       "pull request",
+		ContextTitle:  pr.Title,
+		ContextURL:    "",
+		MentionerName: commenterUsername,
+		BodyExcerpt:   truncate(body, 300),
+	})
+}
+
+func truncate(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "…"
 }

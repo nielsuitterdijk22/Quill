@@ -14,6 +14,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/notify"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
@@ -31,6 +32,7 @@ type Server struct {
 	clerk       *auth.ClerkVerifier
 	forgejo     *forgejo.Client
 	platform    *platform.Service
+	notifier    *notify.Service
 	router      chi.Router
 	markupCache *markupCache
 }
@@ -39,7 +41,17 @@ type Server struct {
 // nil in tests that only exercise handlers which don't touch the database.
 func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	fj := forgejo.New(cfg.Forgejo)
+	notifyCfg := notify.Config{
+		SMTPHost:    cfg.SMTP.Host,
+		SMTPPort:    cfg.SMTP.Port,
+		SMTPUser:    cfg.SMTP.User,
+		SMTPPassword: cfg.SMTP.Password,
+		FromAddress: cfg.SMTP.From,
+		AppURL:      cfg.AppURL,
+	}
+	notifySvc := notify.New(notifyCfg, st, logger)
 	platformSvc := platform.NewService(st, fj, logger)
+	platformSvc.WithNotifier(notifySvc)
 	if cfg.Pipeline.DispatchURL != "" {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
 	}
@@ -57,6 +69,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		clerk:       clerkVerifier,
 		forgejo:     fj,
 		platform:    platformSvc,
+		notifier:    notifySvc,
 		router:      chi.NewRouter(),
 		markupCache: newMarkupCache(),
 	}

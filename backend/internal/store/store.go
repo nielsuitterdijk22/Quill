@@ -204,6 +204,24 @@ func (s *Store) ListProjectsForTenant(ctx context.Context, tenantID uuid.UUID, l
 	return out, rows.Err()
 }
 
+// GetUserByForgejoUsername returns the Quill user whose linked Forgejo account
+// has the given username. Written by hand to avoid a code-generator re-run.
+func (s *Store) GetUserByForgejoUsername(ctx context.Context, forgejoUsername string) (db.User, error) {
+	const q = `
+		SELECT id, username, email, display_name, is_admin, is_active,
+		       forgejo_user_id, forgejo_username, created_at, updated_at
+		FROM users
+		WHERE lower(forgejo_username) = lower($1)`
+	row := s.pool.QueryRow(ctx, q, forgejoUsername)
+	var u db.User
+	err := row.Scan(
+		&u.ID, &u.Username, &u.Email, &u.DisplayName,
+		&u.IsAdmin, &u.IsActive, &u.ForgejoUserID, &u.ForgejoUsername,
+		&u.CreatedAt, &u.UpdatedAt,
+	)
+	return u, err
+}
+
 // InTx runs fn inside a transaction, committing on success and rolling back on
 // error. Use it for operations that must write several tables atomically (e.g.
 // creating a project together with its first membership).

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
+	"github.com/nielsuitterdijk22/quill/internal/notify"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
 
@@ -232,6 +233,7 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	id, _ := identityFrom(r.Context())
 	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
 	if err != nil || number <= 0 {
 		httpx.Error(w, http.StatusBadRequest, "invalid_input", "issue number must be a positive integer")
@@ -252,4 +254,14 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newIssueCommentResponse(comment)})
+	projectSlug := chi.URLParam(r, "slug")
+	repoSlug := chi.URLParam(r, "repo")
+	s.notifier.NotifyMentions(r.Context(), notify.ParseMentions(req.Body), notify.MentionEvent{
+		ProjectSlug:   projectSlug,
+		RepoSlug:      repoSlug,
+		Context:       "issue comment",
+		ContextTitle:  owner + "/" + name + " #" + chi.URLParam(r, "number"),
+		MentionerName: id.Username,
+		BodyExcerpt:   truncate(req.Body, 300),
+	})
 }
