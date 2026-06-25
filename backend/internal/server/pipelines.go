@@ -234,6 +234,13 @@ func (s *Server) handleTriggerRun(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not trigger run")
 		return
 	}
+	s.logAudit(r, "pipeline.run_triggered", "pipeline_run", run.ID.String(), map[string]any{
+		"project":  chi.URLParam(r, "slug"),
+		"repo":     chi.URLParam(r, "repo"),
+		"workflow": req.Workflow,
+		"ref":      req.Ref,
+		"event":    "manual",
+	})
 	out := newRunResponse(run)
 	out.WorkflowPath = req.Workflow
 	httpx.JSON(w, http.StatusCreated, map[string]any{"run": out})

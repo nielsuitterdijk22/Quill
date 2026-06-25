@@ -1,3 +1,16 @@
+// Derive the Clerk Frontend API hostname from the publishable key so the CSP
+// is correct for any Clerk instance without hardcoding the domain.
+function clerkHost() {
+  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+  const b64 = key.replace(/^pk_(test|live)_/, "");
+  if (!b64) return null;
+  try {
+    return Buffer.from(b64, "base64").toString("utf8").replace(/\$$/, "");
+  } catch {
+    return null;
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -16,15 +29,18 @@ const nextConfig = {
     ];
   },
   async headers() {
+    const clerk = clerkHost();
+    const clerkSrc = clerk ? ` https://${clerk}` : "";
     const csp = [
       "default-src 'self'",
       // Next.js injects inline scripts for hydration; unsafe-inline is required
       // until nonce-based CSP is wired through the App Router.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval'${clerkSrc} https://challenges.cloudflare.com`,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      `img-src 'self' data: blob: https://img.clerk.com${clerkSrc}`,
       "font-src 'self' data:",
-      "connect-src 'self'",
+      `connect-src 'self'${clerkSrc} https://challenges.cloudflare.com`,
+      `frame-src${clerkSrc} https://challenges.cloudflare.com`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

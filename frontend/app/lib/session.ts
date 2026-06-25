@@ -9,7 +9,7 @@ import { fetchMe, type User } from "./api";
 // getToken returns the current Clerk session JWT for use as a Bearer token in
 // Quill backend API calls, or undefined when the user is not signed in.
 export async function getToken(): Promise<string | undefined> {
-  const { getToken } = auth();
+  const { getToken } = await auth();
   const token = await getToken();
   return token ?? undefined;
 }

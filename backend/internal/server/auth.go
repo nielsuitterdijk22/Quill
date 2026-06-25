@@ -115,6 +115,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
+			s.logAudit(r, "auth.sign_in_failed", "user", req.Username, map[string]any{"username": req.Username})
 			httpx.Error(w, http.StatusUnauthorized, "invalid_credentials", "incorrect username or password")
 			return
 		}
@@ -129,6 +130,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "signed in but could not load user")
 		return
 	}
+	s.logAudit(r, "auth.sign_in", "user", id.UserID.String(), map[string]any{"username": id.Username})
 	httpx.JSON(w, http.StatusOK, authResponse{Token: token, User: newUserResponse(user)})
 }
 
@@ -372,6 +374,11 @@ func (s *Server) handleSetUserActive(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not update user")
 		return
 	}
+	action := "admin.user_deactivated"
+	if req.Active {
+		action = "admin.user_activated"
+	}
+	s.logAudit(r, action, "user", username, map[string]any{"username": username})
 	w.WriteHeader(http.StatusNoContent)
 }
 

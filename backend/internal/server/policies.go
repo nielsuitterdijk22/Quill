@@ -120,6 +120,12 @@ func (s *Server) handleSetBranchPolicy(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not save branch policy")
 		return
 	}
+	s.logAudit(r, "policy.updated", "branch_policy", req.Pattern, map[string]any{
+		"scope":   "repo",
+		"project": chi.URLParam(r, "slug"),
+		"repo":    chi.URLParam(r, "repo"),
+		"pattern": req.Pattern,
+	})
 	httpx.JSON(w, http.StatusOK, map[string]any{"policy": newBranchPolicyResponse(policy)})
 }
 
@@ -138,6 +144,12 @@ func (s *Server) handleDeleteBranchPolicy(w http.ResponseWriter, r *http.Request
 		s.writePlatformError(w, err, "could not delete branch policy")
 		return
 	}
+	s.logAudit(r, "policy.deleted", "branch_policy", pattern, map[string]any{
+		"scope":   "repo",
+		"project": chi.URLParam(r, "slug"),
+		"repo":    chi.URLParam(r, "repo"),
+		"pattern": pattern,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -179,6 +191,11 @@ func (s *Server) handleSetProjectPolicy(w http.ResponseWriter, r *http.Request) 
 		s.writePlatformError(w, err, "could not save project policy")
 		return
 	}
+	s.logAudit(r, "policy.updated", "branch_policy", req.Pattern, map[string]any{
+		"scope":   "project",
+		"project": chi.URLParam(r, "slug"),
+		"pattern": req.Pattern,
+	})
 	httpx.JSON(w, http.StatusOK, map[string]any{"policy": newBranchPolicyResponse(policy)})
 }
 
@@ -197,6 +214,11 @@ func (s *Server) handleDeleteProjectPolicy(w http.ResponseWriter, r *http.Reques
 		s.writePlatformError(w, err, "could not delete project policy")
 		return
 	}
+	s.logAudit(r, "policy.deleted", "branch_policy", pattern, map[string]any{
+		"scope":   "project",
+		"project": chi.URLParam(r, "slug"),
+		"pattern": pattern,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 

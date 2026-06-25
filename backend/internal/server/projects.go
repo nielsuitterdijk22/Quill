@@ -186,6 +186,10 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not create project")
 		return
 	}
+	s.logAudit(r, "project.created", "project", project.ID.String(), map[string]any{
+		"slug": project.Slug,
+		"name": project.Name,
+	})
 	httpx.JSON(w, http.StatusCreated, newProjectResponse(project))
 }
 
@@ -247,6 +251,11 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not create repository")
 		return
 	}
+	s.logAudit(r, "repo.created", "repository", repo.ID.String(), map[string]any{
+		"slug":       repo.Slug,
+		"project":    chi.URLParam(r, "slug"),
+		"visibility": repo.Visibility,
+	})
 	httpx.JSON(w, http.StatusCreated, newRepoResponse(repo))
 }
 

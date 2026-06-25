@@ -3,6 +3,7 @@ package forgejo
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -129,6 +130,30 @@ func (c *Client) GetOrg(ctx context.Context, name string) (Org, error) {
 // DeleteOrg removes a Forgejo organization.
 func (c *Client) DeleteOrg(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/orgs/"+url.PathEscape(name), nil, nil)
+}
+
+// AddOrgMember adds username to the organization's Owners team. It is
+// idempotent — re-adding an existing member returns no error.
+func (c *Client) AddOrgMember(ctx context.Context, org, username string) error {
+	var teams []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/orgs/"+url.PathEscape(org)+"/teams", nil, &teams); err != nil {
+		return err
+	}
+	var ownerTeamID int64
+	for _, t := range teams {
+		if t.Name == "Owners" {
+			ownerTeamID = t.ID
+			break
+		}
+	}
+	if ownerTeamID == 0 {
+		return nil // no Owners team — org may be in an unexpected state; skip
+	}
+	p := "/teams/" + url.PathEscape(fmt.Sprintf("%d", ownerTeamID)) + "/members/" + url.PathEscape(username)
+	return c.do(ctx, http.MethodPut, p, nil, nil)
 }
 
 // CreateOrgRepo creates a repository under an organization.

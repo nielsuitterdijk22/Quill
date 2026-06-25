@@ -7,22 +7,26 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const insertAuditLog = `-- name: InsertAuditLog :one
-INSERT INTO audit_log (actor_user_id, action, target_type, target_id, metadata)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, actor_user_id, action, target_type, target_id, metadata, created_at
+INSERT INTO audit_log (actor_user_id, action, target_type, target_id, metadata, ip_address, actor_username)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, actor_user_id, action, target_type, target_id, metadata, created_at, ip_address, actor_username
 `
 
 type InsertAuditLogParams struct {
-	ActorUserID uuid.NullUUID `json:"actorUserId"`
-	Action      string        `json:"action"`
-	TargetType  string        `json:"targetType"`
-	TargetID    string        `json:"targetId"`
-	Metadata    []byte        `json:"metadata"`
+	ActorUserID   uuid.NullUUID `json:"actorUserId"`
+	Action        string        `json:"action"`
+	TargetType    string        `json:"targetType"`
+	TargetID      string        `json:"targetId"`
+	Metadata      []byte        `json:"metadata"`
+	IPAddress     string        `json:"ipAddress"`
+	ActorUsername string        `json:"actorUsername"`
 }
 
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) (AuditLog, error) {
@@ -32,6 +36,8 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.TargetType,
 		arg.TargetID,
 		arg.Metadata,
+		arg.IPAddress,
+		arg.ActorUsername,
 	)
 	var i AuditLog
 	err := row.Scan(
@@ -42,23 +48,39 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		&i.TargetID,
 		&i.Metadata,
 		&i.CreatedAt,
+		&i.IPAddress,
+		&i.ActorUsername,
 	)
 	return i, err
 }
 
-const listAuditLog = `-- name: ListAuditLog :many
-SELECT id, actor_user_id, action, target_type, target_id, metadata, created_at FROM audit_log
+const listAuditLogFiltered = `-- name: ListAuditLogFiltered :many
+SELECT id, actor_user_id, action, target_type, target_id, metadata, created_at, ip_address, actor_username
+FROM audit_log
+WHERE
+  ($1::text = '' OR action LIKE $1 || '%')
+  AND ($2::timestamptz IS NULL OR created_at >= $2)
+  AND ($3::timestamptz IS NULL OR created_at <= $3)
 ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
+LIMIT $4 OFFSET $5
 `
 
-type ListAuditLogParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+type ListAuditLogFilteredParams struct {
+	ActionPrefix string              `json:"actionPrefix"`
+	Since        pgtype.Timestamptz  `json:"since"`
+	Until        pgtype.Timestamptz  `json:"until"`
+	Limit        int32               `json:"limit"`
+	Offset       int32               `json:"offset"`
 }
 
-func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]AuditLog, error) {
-	rows, err := q.db.Query(ctx, listAuditLog, arg.Limit, arg.Offset)
+func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilteredParams) ([]AuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLogFiltered,
+		arg.ActionPrefix,
+		arg.Since,
+		arg.Until,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +96,8 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]A
 			&i.TargetID,
 			&i.Metadata,
 			&i.CreatedAt,
+			&i.IPAddress,
+			&i.ActorUsername,
 		); err != nil {
 			return nil, err
 		}
@@ -84,3 +108,32 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]A
 	}
 	return items, nil
 }
+
+const countAuditLogFiltered = `-- name: CountAuditLogFiltered :one
+SELECT count(*)
+FROM audit_log
+WHERE
+  ($1::text = '' OR action LIKE $1 || '%')
+  AND ($2::timestamptz IS NULL OR created_at >= $2)
+  AND ($3::timestamptz IS NULL OR created_at <= $3)
+`
+
+type CountAuditLogFilteredParams struct {
+	ActionPrefix string             `json:"actionPrefix"`
+	Since        pgtype.Timestamptz `json:"since"`
+	Until        pgtype.Timestamptz `json:"until"`
+}
+
+func (q *Queries) CountAuditLogFiltered(ctx context.Context, arg CountAuditLogFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditLogFiltered,
+		arg.ActionPrefix,
+		arg.Since,
+		arg.Until,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+// ensure time import is used
+var _ = time.Time{}

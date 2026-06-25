@@ -12,13 +12,15 @@ import (
 )
 
 type AuditLog struct {
-	ID          int64         `json:"id"`
-	ActorUserID uuid.NullUUID `json:"actorUserId"`
-	Action      string        `json:"action"`
-	TargetType  string        `json:"targetType"`
-	TargetID    string        `json:"targetId"`
-	Metadata    []byte        `json:"metadata"`
-	CreatedAt   time.Time     `json:"createdAt"`
+	ID            int64         `json:"id"`
+	ActorUserID   uuid.NullUUID `json:"actorUserId"`
+	Action        string        `json:"action"`
+	TargetType    string        `json:"targetType"`
+	TargetID      string        `json:"targetId"`
+	Metadata      []byte        `json:"metadata"`
+	CreatedAt     time.Time     `json:"createdAt"`
+	IPAddress     string        `json:"ipAddress"`
+	ActorUsername string        `json:"actorUsername"`
 }
 
 type AuthIdentity struct {

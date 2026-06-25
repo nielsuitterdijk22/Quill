@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 export function StarButton({
   project,
@@ -16,15 +17,17 @@ export function StarButton({
   const [starred, setStarred] = useState(initialStarred);
   const [count, setCount] = useState(initialCount);
   const [pending, startTransition] = useTransition();
+  const { getToken } = useAuth();
 
   function toggle() {
     const next = !starred;
     startTransition(async () => {
+      const token = await getToken();
       const res = await fetch(
         `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}/star`,
         {
           method: next ? "PUT" : "DELETE",
-          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         },
       );
       if (res.ok) {

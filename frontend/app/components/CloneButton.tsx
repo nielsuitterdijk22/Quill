@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { generateGitTokenAction } from "./clone-actions";
 
@@ -45,6 +45,25 @@ export function CloneButton({ httpUrl }: { httpUrl: string }) {
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    function onPointerDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [open]);
 
   function generate() {
     setError(null);
@@ -56,7 +75,7 @@ export function CloneButton({ httpUrl }: { httpUrl: string }) {
   }
 
   return (
-    <div className="clone-wrap">
+    <div className="clone-wrap" ref={wrapRef}>
       <button
         type="button"
         className="btn primary clone-toggle"

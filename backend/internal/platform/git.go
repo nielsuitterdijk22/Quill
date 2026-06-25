@@ -48,7 +48,15 @@ func (s *Service) CreateGitToken(ctx context.Context, actor Actor, name string) 
 		return GitCredential{}, fmt.Errorf("load user: %w", err)
 	}
 	if !user.ForgejoUsername.Valid || user.ForgejoUsername.String == "" {
-		return GitCredential{}, fmt.Errorf("%w: your account is not yet linked to the git backend", ErrUnavailable)
+		// Forgejo provisioning may have failed at signup (e.g. stale admin token).
+		// Attempt it now so the user isn't permanently locked out of git access.
+		if err := s.provisionForgejoUser(ctx, user); err != nil {
+			return GitCredential{}, fmt.Errorf("%w: git backend link failed: %v", ErrUnavailable, err)
+		}
+		user, err = s.store.GetUserByID(ctx, actor.UserID)
+		if err != nil || !user.ForgejoUsername.Valid {
+			return GitCredential{}, fmt.Errorf("%w: your account is not yet linked to the git backend", ErrUnavailable)
+		}
 	}
 	username := user.ForgejoUsername.String
 

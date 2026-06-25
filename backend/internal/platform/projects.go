@@ -67,6 +67,14 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 			return db.Project{}, fmt.Errorf("forgejo create org: %w", err)
 		}
 		forgejoName = pgtype.Text{String: org.Handle(), Valid: true}
+		// Add the creating user to the org so they can clone/push repos in it.
+		// This is best-effort: failure doesn't roll back the org or project.
+		if actorUser, uerr := s.store.GetUserByID(ctx, actor.UserID); uerr == nil &&
+			actorUser.ForgejoUsername.Valid && actorUser.ForgejoUsername.String != "" {
+			if merr := s.forgejo.AddOrgMember(ctx, org.Handle(), actorUser.ForgejoUsername.String); merr != nil {
+				s.logger.Warn("failed to add creator to forgejo org", "org", org.Handle(), "user", actorUser.ForgejoUsername.String, "error", merr)
+			}
+		}
 	}
 
 	var created db.Project

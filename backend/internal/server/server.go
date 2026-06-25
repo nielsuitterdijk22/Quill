@@ -139,6 +139,8 @@ func (s *Server) setupRoutes() {
 			if s.clerk == nil || !s.clerk.Enabled() {
 				r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 			}
+			r.Get("/admin/audit-log", s.handleListAuditLog)
+			r.Get("/admin/audit-log/export", s.handleExportAuditLog)
 		})
 
 		// Projects and repositories require authentication.

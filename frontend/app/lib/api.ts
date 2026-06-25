@@ -14,3 +14,4 @@ export * from "./api/pipelines";
 export * from "./api/issues";
 export * from "./api/policies";
 export * from "./api/admin";
+export * from "./api/audit";

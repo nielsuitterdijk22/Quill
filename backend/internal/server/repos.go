@@ -154,6 +154,17 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not update repository")
 		return
 	}
+	meta := map[string]any{"project": chi.URLParam(r, "slug"), "slug": repo.Slug}
+	if req.Visibility != nil {
+		meta["visibility"] = *req.Visibility
+		s.logAudit(r, "repo.visibility_changed", "repository", repo.ID.String(), meta)
+	} else if req.Archived != nil {
+		if *req.Archived {
+			s.logAudit(r, "repo.archived", "repository", repo.ID.String(), meta)
+		} else {
+			s.logAudit(r, "repo.unarchived", "repository", repo.ID.String(), meta)
+		}
+	}
 	httpx.JSON(w, http.StatusOK, newRepoResponse(repo))
 }
 
@@ -164,10 +175,15 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	if err := s.platform.DeleteRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo")); err != nil {
+	project, repoSlug := chi.URLParam(r, "slug"), chi.URLParam(r, "repo")
+	if err := s.platform.DeleteRepo(r.Context(), actor, project, repoSlug); err != nil {
 		s.writePlatformError(w, err, "could not delete repository")
 		return
 	}
+	s.logAudit(r, "repo.deleted", "repository", repoSlug, map[string]any{
+		"slug":    repoSlug,
+		"project": project,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -195,6 +211,12 @@ func (s *Server) handleForkRepo(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not fork repository")
 		return
 	}
+	s.logAudit(r, "repo.forked", "repository", repo.ID.String(), map[string]any{
+		"source_project": chi.URLParam(r, "slug"),
+		"source_repo":    chi.URLParam(r, "repo"),
+		"target_project": req.TargetProject,
+		"fork_slug":      repo.Slug,
+	})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"repository": newRepoResponse(repo)})
 }
 

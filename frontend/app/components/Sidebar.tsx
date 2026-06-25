@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { useClerk } from "@clerk/nextjs";
+import { useClerk, useOrganization } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 
 import { setCurrentProjectAction } from "../lib/actions";
@@ -31,6 +31,7 @@ const NAV: NavItem[] = [
 const ADMIN_NAV: NavItem[] = [
   { href: "/admin/policies", label: "Policies", icon: "🛡" },
   { href: "/admin/users", label: "Users", icon: "◈" },
+  { href: "/admin/audit-log", label: "Audit log", icon: "◎" },
 ];
 
 // isRepoScoped is true for any path inside a specific repository, i.e.
@@ -249,6 +250,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname() || "/";
   const { signOut } = useClerk();
+  const { organization } = useOrganization();
   const router = useRouter();
   const repoCtx = parseRepoCtx(pathname);
   const navItems = user.isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
@@ -262,6 +264,7 @@ export function Sidebar({
       <div className="project">
         <span className="who">Signed in as</span>
         <b>{user.displayName || user.username}</b>
+        {organization && <span className="who">{organization.name}</span>}
         {projects.length > 0 && (
           <ProjectSwitcher projects={projects} currentProject={currentProject} />
         )}
@@ -315,7 +318,7 @@ export function Sidebar({
         <ThemeToggle />
         <button
           className="logout-btn"
-          onClick={() => signOut(() => router.push("/sign-in"))}
+          onClick={() => signOut({ redirectUrl: "/sign-in" })}
         >
           Sign out
         </button>

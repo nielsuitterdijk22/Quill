@@ -997,6 +997,15 @@ select:focus {
   font-weight: 600;
 }
 
+/* Auth pages (sign-in / sign-up) */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
 /* File/dir rows reuse .row-item; the icon sets the leading glyph color. */
 .tree-icon {
   width: 16px;
@@ -1772,6 +1781,49 @@ h2.section {
 .policy-lock {
   margin-left: 8px;
 }
+/* Header row above the policy table — holds the "New policy" button flush right. */
+.policy-list-header {
+  display: flex;
+  justify-content: flex-end;
+}
+/* Policy modal — wider than fork-dialog to fit the form fields. */
+.policy-modal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 24px 28px;
+  width: min(520px, 95vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+}
+.policy-modal::backdrop {
+  background: rgba(0,0,0,0.5);
+}
+.policy-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.policy-modal-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.policy-modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.policy-modal-close:hover {
+  color: var(--text);
+}
+.policy-modal .check {
+  margin-bottom: 10px;
+}
 
 /* ---- repository settings sections (general + danger zone) ------------------- */
 .settings-section {
@@ -2480,4 +2532,30 @@ h2.section {
 .fork-dialog h2 {
   margin: 0 0 18px;
   font-size: 16px;
+}
+
+/* ---- Audit log filters ---------------------------------------------------- */
+.audit-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.audit-filters select,
+.audit-filters input[type="date"] {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+  height: 32px;
+  line-height: 1;
+}
+.audit-filter-sep {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  user-select: none;
+}
+.audit-meta {
+  margin-top: 10px;
+  font-size: 12px;
 }

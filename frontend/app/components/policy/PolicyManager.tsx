@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 
 import type { BranchPolicy } from "../../lib/api";
@@ -31,8 +31,6 @@ function DeleteButton() {
   );
 }
 
-// DeletePolicyForm is a one-button form that removes a single policy at the
-// component's scope.
 function DeletePolicyForm({
   target,
   pattern,
@@ -75,8 +73,6 @@ function FlagTags({ policy }: { policy: BranchPolicy }) {
   );
 }
 
-// InheritedTable lists policies a scope receives from broader scopes. They are
-// read-only here; each is edited where it is declared.
 function InheritedTable({ policies }: { policies: BranchPolicy[] }) {
   return (
     <table className="policy-table">
@@ -107,10 +103,6 @@ function InheritedTable({ policies }: { policies: BranchPolicy[] }) {
   );
 }
 
-// PolicyManager renders the branch policies a scope owns (editable) plus the
-// ones it inherits from broader scopes (read-only). target selects the scope so
-// the same component backs repo, project, and tenant settings. canLock enables
-// the "lock" toggle, which only makes sense at project and tenant scope.
 export function PolicyManager({
   target,
   policies,
@@ -129,6 +121,18 @@ export function PolicyManager({
   const action = savePolicyAction.bind(null, target);
   const [state, formAction] = useFormState(action, initial);
   const [editing, setEditing] = useState<BranchPolicy | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const prevState = useRef(state);
+
+  useEffect(() => {
+    if (state !== prevState.current) {
+      if (state.ok) {
+        dialogRef.current?.close();
+        setEditing(null);
+      }
+      prevState.current = state;
+    }
+  }, [state]);
 
   const blank: BranchPolicy = {
     pattern: defaultBranch,
@@ -144,6 +148,21 @@ export function PolicyManager({
   const current = editing ?? blank;
   const formKey = editing ? editing.pattern : "new";
 
+  function openNew() {
+    setEditing(null);
+    dialogRef.current?.showModal();
+  }
+
+  function openEdit(p: BranchPolicy) {
+    setEditing(p);
+    dialogRef.current?.showModal();
+  }
+
+  function closeModal() {
+    dialogRef.current?.close();
+    setEditing(null);
+  }
+
   return (
     <div className="policy-area">
       {inherited.length > 0 && (
@@ -156,6 +175,12 @@ export function PolicyManager({
           <InheritedTable policies={inherited} />
         </div>
       )}
+
+      <div className="policy-list-header">
+        <button type="button" className="btn ghost small" onClick={openNew}>
+          + New policy
+        </button>
+      </div>
 
       {policies.length > 0 ? (
         <table className="policy-table">
@@ -182,7 +207,7 @@ export function PolicyManager({
                   <button
                     type="button"
                     className="btn ghost small"
-                    onClick={() => setEditing(p)}
+                    onClick={() => openEdit(p)}
                   >
                     Edit
                   </button>
@@ -194,13 +219,27 @@ export function PolicyManager({
         </table>
       ) : (
         <div className="empty">
-          No branch policies yet. Add one below to require reviews before
-          merging.
+          No branch policies yet. Add one to require reviews before merging.
         </div>
       )}
 
-      <div className="panel form-narrow policy-form-panel">
-        <h3>{editing ? `Edit ${editing.pattern}` : "Add a branch policy"}</h3>
+      <dialog
+        ref={dialogRef}
+        className="policy-modal"
+        onCancel={closeModal}
+        onClick={(e) => { if (e.target === dialogRef.current) closeModal(); }}
+      >
+        <div className="policy-modal-head">
+          <h3>{editing ? `Edit "${editing.pattern}"` : "New branch policy"}</h3>
+          <button
+            type="button"
+            className="policy-modal-close"
+            onClick={closeModal}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
         {state.error && <div className="form-error">{state.error}</div>}
         <form action={formAction} key={formKey}>
           <label className="field">
@@ -282,18 +321,16 @@ export function PolicyManager({
           )}
           <div className="form-actions">
             <SaveButton editing={!!editing} />
-            {editing && (
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => setEditing(null)}
-              >
-                Cancel
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={closeModal}
+            >
+              Cancel
+            </button>
           </div>
         </form>
-      </div>
+      </dialog>
     </div>
   );
 }

@@ -10,11 +10,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store"
+	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
 // Actor is the authenticated principal performing a platform operation. Platform
@@ -133,6 +135,35 @@ func (s *Service) authorizePlatformAdmin(actor Actor) error {
 		return nil
 	}
 	return ErrForbidden
+}
+
+// provisionForgejoUser creates a Forgejo account for user and writes the link
+// back to the database. It is idempotent: if the Forgejo account already exists
+// the existing one is used. This is called on-demand when a user's Forgejo link
+// is absent — e.g. because provisioning failed at signup due to a stale token.
+func (s *Service) provisionForgejoUser(ctx context.Context, user db.User) error {
+	if !s.forgejoEnabled() {
+		return fmt.Errorf("Forgejo is not configured")
+	}
+	fjUser, err := s.forgejo.CreateUser(ctx, forgejo.CreateUserOptions{
+		Username:           user.Username,
+		Email:              user.Email,
+		Password:           func() string { s, _ := randomToken(24); return s }(),
+		MustChangePassword: false,
+	})
+	if err != nil {
+		existing, getErr := s.forgejo.GetUser(ctx, user.Username)
+		if getErr != nil {
+			return fmt.Errorf("create forgejo user: %w", err)
+		}
+		fjUser = existing
+	}
+	_, err = s.store.SetUserForgejoLink(ctx, db.SetUserForgejoLinkParams{
+		ID:              user.ID,
+		ForgejoUserID:   pgtype.Int8{Int64: fjUser.ID, Valid: true},
+		ForgejoUsername: pgtype.Text{String: fjUser.Login, Valid: true},
+	})
+	return err
 }
 
 // isUniqueViolation reports whether err is a Postgres unique-constraint violation,

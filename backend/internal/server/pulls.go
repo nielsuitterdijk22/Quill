@@ -433,6 +433,13 @@ func (s *Server) handleCreatePull(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not create pull request")
 		return
 	}
+	s.logAudit(r, "pr.opened", "pull_request", strconv.Itoa(pr.Number), map[string]any{
+		"project": chi.URLParam(r, "slug"),
+		"repo":    chi.URLParam(r, "repo"),
+		"title":   pr.Title,
+		"head":    req.Head,
+		"base":    req.Base,
+	})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"pull": newPullResponse(pr)})
 }
 
@@ -582,6 +589,13 @@ func (s *Server) handleMergePull(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not merge pull request")
 		return
 	}
+	s.logAudit(r, "pr.merged", "pull_request", strconv.Itoa(pr.Number), map[string]any{
+		"project": chi.URLParam(r, "slug"),
+		"repo":    chi.URLParam(r, "repo"),
+		"title":   pr.Title,
+		"method":  req.Method,
+		"sha":     pr.MergeCommit,
+	})
 	httpx.JSON(w, http.StatusOK, map[string]any{"pull": newPullResponse(pr)})
 }
 
