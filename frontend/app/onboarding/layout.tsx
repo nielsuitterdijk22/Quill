@@ -6,12 +6,5 @@ export default async function OnboardingLayout({
   children: React.ReactNode;
 }) {
   await requireSession();
-  return (
-    <div className="onboarding-shell">
-      <div className="brand" style={{ padding: "2rem" }}>
-        <span className="dot" /> Quill
-      </div>
-      {children}
-    </div>
-  );
+  return <div className="onboarding-shell">{children}</div>;
 }
