@@ -15,3 +15,4 @@ export * from "./api/issues";
 export * from "./api/policies";
 export * from "./api/admin";
 export * from "./api/audit";
+export * from "./api/github";

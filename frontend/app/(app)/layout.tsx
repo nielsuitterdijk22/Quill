@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
+
 import { Sidebar } from "../components/Sidebar";
 import { KeyboardShortcuts } from "../components/KeyboardShortcuts";
 import { getToken, requireSession } from "../lib/session";
-import { resolveCurrentProject } from "../lib/projects";
+import { getMyProjects } from "../lib/api";
 
 // AppLayout is the authenticated shell: a fixed sidebar plus the page body.
 // requireSession gates every route in this group, redirecting to /sign-in when
@@ -14,14 +16,18 @@ export default async function AppLayout({
 }) {
   const user = await requireSession();
   const token = await getToken();
-  const resolved = token ? await resolveCurrentProject(token) : null;
+  const projects = token ? await getMyProjects(token) : [];
+
+  // New users with no projects are sent to onboarding.
+  if (projects.length === 0) {
+    redirect("/onboarding");
+  }
 
   return (
     <div className="app">
       <Sidebar
         user={user}
-        projects={resolved?.projects ?? []}
-        currentProject={resolved?.current.slug ?? null}
+        projects={projects}
       />
       <main className="main">{children}</main>
       <KeyboardShortcuts />

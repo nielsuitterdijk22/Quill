@@ -1,19 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
-import {
-  getPipelines,
-  listReposByProject,
-  type PipelineRun,
-} from "../../lib/api";
-import { getCurrentProject } from "../../lib/projects";
+import { getPipelines, listReposByProject, getMyProjects, type PipelineRun } from "../../lib/api";
 import { getToken } from "../../lib/session";
 import { fmtDate } from "../../components/repo";
 import { RunStatusBadge } from "../../components/pipelines";
 
-// PipelineRow is one workflow flattened with the repository it belongs to, so the
-// overview can list pipelines (not repositories) while still naming their source.
 type PipelineRow = {
+  projectSlug: string;
   repoSlug: string;
   repoName: string;
   workflowPath: string;
@@ -21,56 +14,42 @@ type PipelineRow = {
   lastRun?: PipelineRun;
 };
 
-// PipelinesOverviewPage lists every pipeline (workflow) across the repositories in
-// the user's default project, each with its source repository and latest CI status.
+// PipelinesOverviewPage lists every pipeline across all of the user's repos.
 export default async function PipelinesOverviewPage() {
   const token = await getToken();
-  if (!token) notFound();
+  const projects = token ? await getMyProjects(token) : [];
 
-  const project = await getCurrentProject();
-  if (!project) {
-    return (
-      <>
-        <div className="top">
-          <h1>Pipelines</h1>
-        </div>
-        <div className="panel">
-          <div className="empty">
-            Create a project and a repository to start running pipelines.
-          </div>
-        </div>
-      </>
-    );
-  }
+  const perProject = token
+    ? await Promise.all(
+        projects.map(async (project) => {
+          const repos = await listReposByProject(token, project.slug);
+          const perRepo = await Promise.all(
+            repos.map(async (repo) => {
+              const res = await getPipelines(token, project.slug, repo.slug);
+              const pipelines = res.ok ? res.data.pipelines : [];
+              return pipelines.map<PipelineRow>((p) => ({
+                projectSlug: project.slug,
+                repoSlug: repo.slug,
+                repoName: repo.name,
+                workflowPath: p.workflowPath,
+                name: p.name,
+                lastRun: p.lastRun,
+              }));
+            }),
+          );
+          return perRepo.flat();
+        }),
+      )
+    : [];
 
-  const repos = await listReposByProject(token, project);
-
-  // Fetch each repo's workflows and flatten them into a single pipeline list.
-  const perRepo = await Promise.all(
-    repos.map(async (repo) => {
-      const res = await getPipelines(token, project, repo.slug);
-      const pipelines = res.ok ? res.data.pipelines : [];
-      return pipelines.map<PipelineRow>((p) => ({
-        repoSlug: repo.slug,
-        repoName: repo.name,
-        workflowPath: p.workflowPath,
-        name: p.name,
-        lastRun: p.lastRun,
-      }));
-    }),
-  );
-
-  // Most recently active pipelines first; never-run pipelines fall to the end.
-  const rows = perRepo.flat().sort((a, b) => {
-    const at = a.lastRun?.createdAt ?? "";
-    const bt = b.lastRun?.createdAt ?? "";
-    return bt.localeCompare(at);
-  });
+  const rows = perProject
+    .flat()
+    .sort((a, b) => (b.lastRun?.createdAt ?? "").localeCompare(a.lastRun?.createdAt ?? ""));
 
   return (
     <>
       <div className="top">
-        <h1>Pipelines in {project}</h1>
+        <h1>Pipelines</h1>
       </div>
 
       <div className="panel">
@@ -81,15 +60,14 @@ export default async function PipelinesOverviewPage() {
         {rows.length === 0 ? (
           <div className="empty">
             No pipelines yet. Add a workflow under{" "}
-            <span className="mono">.github/workflows</span> in a repository to
-            define one.
+            <span className="mono">.github/workflows</span> in a repository.
           </div>
         ) : (
           rows.map((row) => (
             <Link
               className="row-item"
-              key={`${row.repoSlug}:${row.workflowPath}`}
-              href={`/projects/${project}/repos/${row.repoSlug}/pipelines`}
+              key={`${row.projectSlug}:${row.repoSlug}:${row.workflowPath}`}
+              href={`/${encodeURIComponent(row.projectSlug)}/${encodeURIComponent(row.repoSlug)}/pipelines`}
             >
               <span className="tree-icon">◇</span>
               <div className="pr-main">

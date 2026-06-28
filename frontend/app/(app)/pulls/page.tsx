@@ -3,13 +3,9 @@ import { notFound } from "next/navigation";
 
 import { getMyPulls } from "../../lib/api";
 import { getToken } from "../../lib/session";
-import { getCurrentProject } from "../../lib/projects";
 import { fmtDate } from "../../components/repo";
 import { DiffStat, PullStateBadge } from "../../components/pulls";
 
-// PullsOverviewPage lists open pull requests across the repositories of the
-// current project (chosen via the sidebar project switcher), with Open/Closed
-// filters. Each row links back to the repo-level pull request view.
 export default async function PullsOverviewPage({
   searchParams,
 }: {
@@ -18,26 +14,10 @@ export default async function PullsOverviewPage({
   const token = await getToken();
   if (!token) notFound();
 
-  const project = await getCurrentProject();
-  if (!project) {
-    return (
-      <>
-        <div className="top">
-          <h1>Pull requests</h1>
-        </div>
-        <div className="panel">
-          <div className="empty">
-            Create a project and a repository to start opening pull requests.
-          </div>
-        </div>
-      </>
-    );
-  }
-
   const wantClosed = searchParams.state === "closed";
   const [openRes, closedRes] = await Promise.all([
-    getMyPulls(token, { state: "open", project }),
-    getMyPulls(token, { state: "closed", project }),
+    getMyPulls(token, { state: "open" }),
+    getMyPulls(token, { state: "closed" }),
   ]);
 
   const active = wantClosed ? closedRes : openRes;
@@ -81,7 +61,7 @@ export default async function PullsOverviewPage({
             <Link
               className="row-item pr-row"
               key={`${rp.projectSlug}/${rp.repoSlug}#${rp.pull.number}`}
-              href={`/projects/${encodeURIComponent(rp.projectSlug)}/repos/${encodeURIComponent(rp.repoSlug)}/pulls/${rp.pull.number}`}
+              href={`/${encodeURIComponent(rp.projectSlug)}/${encodeURIComponent(rp.repoSlug)}/pulls/${rp.pull.number}`}
             >
               <PullStateBadge pull={rp.pull} />
               <div className="pr-main">

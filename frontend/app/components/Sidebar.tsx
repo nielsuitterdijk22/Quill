@@ -23,15 +23,22 @@ const NAV: NavItem[] = [
   { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭" },
   { href: "/pipelines", label: "Pipelines", icon: "▷" },
-  { href: "/projects", label: "Projects", icon: "▤" },
   { href: "/settings", label: "Settings", icon: "⚙" },
+];
+
+const ORG_NAV: NavItem[] = [
+  { href: "/projects", label: "Projects", icon: "▤" },
 ];
 
 // ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
 const ADMIN_NAV: NavItem[] = [
   { href: "/admin/policies", label: "Policies", icon: "🛡" },
-  { href: "/admin/users", label: "Users", icon: "◈" },
   { href: "/admin/audit-log", label: "Audit log", icon: "◎" },
+];
+
+// ORG_ADMIN_NAV holds entries only relevant when org projects exist.
+const ORG_ADMIN_NAV: NavItem[] = [
+  { href: "/admin/users", label: "Users", icon: "◈" },
 ];
 
 // Top-level paths that are app routes, not owner namespaces.
@@ -273,17 +280,21 @@ function ProjectSwitcher({
 export function Sidebar({
   user,
   projects,
-  currentProject,
 }: {
   user: User;
   projects: MyProject[];
-  currentProject: string | null;
 }) {
   const pathname = usePathname() || "/";
   const { signOut } = useClerk();
   const { organization } = useOrganization();
   const repoCtx = parseRepoCtx(pathname);
-  const navItems = user.isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
+
+  const hasOrgProjects = projects.some((p) => !p.isPersonal);
+  const navItems = [
+    ...NAV,
+    ...(hasOrgProjects ? ORG_NAV : []),
+    ...(user.isAdmin ? [...ADMIN_NAV, ...(hasOrgProjects ? ORG_ADMIN_NAV : [])] : []),
+  ];
 
   return (
     <aside className="side">
@@ -295,8 +306,8 @@ export function Sidebar({
         <span className="who">Signed in as</span>
         <b>{user.displayName || user.username}</b>
         {organization && <span className="who">{organization.name}</span>}
-        {projects.length > 0 && (
-          <ProjectSwitcher projects={projects} currentProject={currentProject} />
+        {hasOrgProjects && (
+          <ProjectSwitcher projects={projects} currentProject={null} />
         )}
       </div>
 

@@ -219,6 +219,26 @@ func (c *Client) ForkRepo(ctx context.Context, owner, repo string, opts ForkRepo
 	return out, err
 }
 
+// MigrateRepoOptions describes a repository migration from an external source.
+type MigrateRepoOptions struct {
+	CloneURL    string `json:"clone_addr"`
+	AuthToken   string `json:"auth_token,omitempty"`
+	UID         int64  `json:"uid"`
+	RepoName    string `json:"repo_name"`
+	Description string `json:"description,omitempty"`
+	Private     bool   `json:"private"`
+	Mirror      bool   `json:"mirror"`
+}
+
+// MigrateRepo clones an external repository into Forgejo under the given user
+// or org (identified by UID). Forgejo handles the git clone; no local disk I/O
+// is needed on the Quill side.
+func (c *Client) MigrateRepo(ctx context.Context, opts MigrateRepoOptions) (Repo, error) {
+	var out Repo
+	err := c.do(ctx, http.MethodPost, "/repos/migrate", opts, &out)
+	return out, err
+}
+
 // CreateFile commits a new file at path on a branch (empty branch = default
 // branch). content is raw bytes; the API expects base64 so it is encoded here.
 func (c *Client) CreateFile(ctx context.Context, owner, repo, path string, content []byte, message, branch string) error {

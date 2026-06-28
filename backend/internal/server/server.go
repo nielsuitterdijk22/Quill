@@ -47,10 +47,9 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	var clerkVerifier *auth.ClerkVerifier
 	if cfg.Clerk.FrontendAPI != "" {
 		clerkVerifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).
-			WithForgejo(fj).
-			WithPostProvision(func(ctx context.Context, id auth.Identity) error {
-				return platformSvc.CreatePersonalProject(ctx, id.UserID, id.Username)
-			})
+			WithForgejo(fj)
+		// Personal project creation is now handled during onboarding so the user
+		// can choose between an individual or org workspace on first login.
 	}
 
 	s := &Server{
@@ -121,6 +120,10 @@ func (s *Server) setupRoutes() {
 				r.With(authLimiter.middleware()).Post("/register", s.handleRegister)
 				r.With(authLimiter.middleware()).Post("/login", s.handleLogin)
 			}
+			// GitHub OAuth for onboarding repo import (no Quill auth required —
+			// the user is redirected from the frontend during onboarding).
+			r.Get("/github", s.handleGitHubOAuthRedirect)
+			r.Get("/github/callback", s.handleGitHubOAuthCallback)
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
@@ -150,6 +153,13 @@ func (s *Server) setupRoutes() {
 		// Projects and repositories require authentication.
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			// GitHub import (token comes from the OAuth cookie, not the Quill JWT).
+			r.Get("/import/github/repos", s.handleListGitHubRepos)
+			r.Post("/import/github", s.handleImportGitHubRepos)
+
+			// Onboarding: provision the caller's personal project on demand.
+			r.Post("/me/personal-project", s.handleCreatePersonalProject)
+
 			r.Get("/me/export", s.handleExportMyData)
 			r.Get("/me/pulls", s.handleListMyPulls)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)

@@ -20,6 +20,7 @@ type projectResponse struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	ForgejoOrg  string    `json:"forgejoOrg,omitempty"`
+	IsPersonal  bool      `json:"isPersonal"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -29,6 +30,7 @@ func newProjectResponse(p db.Project) projectResponse {
 		Slug:        p.Slug,
 		Name:        p.Name,
 		Description: p.Description,
+		IsPersonal:  p.IsPersonal,
 		CreatedAt:   p.CreatedAt,
 	}
 	if p.ForgejoOrgName.Valid {
@@ -158,6 +160,7 @@ func (s *Server) handleListMyProjects(w http.ResponseWriter, r *http.Request) {
 				Name:           row.Name,
 				Description:    row.Description,
 				ForgejoOrgName: row.ForgejoOrgName,
+				IsPersonal:     row.IsPersonal,
 				CreatedAt:      row.CreatedAt,
 			}),
 			Role: row.MemberRole,
@@ -289,4 +292,21 @@ func (s *Server) writePlatformError(w http.ResponseWriter, err error, fallback s
 		s.logger.Error("platform operation failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", fallback)
 	}
+}
+
+// handleCreatePersonalProject provisions the caller's personal-namespace
+// project (slug = username). Idempotent — safe to call more than once.
+func (s *Server) handleCreatePersonalProject(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.platform.CreatePersonalProject(r.Context(), actor.UserID, actor.Username); err != nil {
+		s.logger.Error("create personal project failed", "error", err)
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not create personal project")
+		return
+	}
+	// Return the slug so the frontend can use it immediately for the import step.
+	httpx.JSON(w, http.StatusOK, map[string]any{"slug": actor.Username})
 }
