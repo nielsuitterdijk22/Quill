@@ -165,14 +165,16 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	repo, runs, err := s.platform.ListRuns(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
+	repo, runs, workflowByPipeline, err := s.platform.ListRuns(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
 	if err != nil {
 		s.writePlatformError(w, err, "could not list runs")
 		return
 	}
 	out := make([]runResponse, 0, len(runs))
 	for _, run := range runs {
-		out = append(out, newRunResponse(run))
+		rr := newRunResponse(run)
+		rr.WorkflowPath = workflowByPipeline[run.PipelineID]
+		out = append(out, rr)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"repository": newRepoResponse(repo),

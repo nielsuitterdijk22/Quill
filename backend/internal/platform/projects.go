@@ -84,6 +84,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 			Slug:        slug,
 			Name:        name,
 			Description: strings.TrimSpace(in.Description),
+			IsPersonal:  false,
 		})
 		if err != nil {
 			return err
@@ -126,6 +127,43 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 		return db.Project{}, err
 	}
 	return created, nil
+}
+
+// CreatePersonalProject provisions a personal-namespace project for userID.
+// The project slug equals the username so /{username} routes resolve to it.
+// Idempotent: returns nil without error if the slug is already taken (a previous
+// successful call or a race). Called from Clerk post-provisioning; must never
+// fail the login response.
+func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, username string) error {
+	slug := normalizeSlug(username)
+	tenant, err := s.defaultTenant(ctx)
+	if err != nil {
+		return err
+	}
+	// Fast idempotency check.
+	if _, err := s.store.GetProjectBySlug(ctx, slug); err == nil {
+		return nil
+	}
+	return s.store.InTx(ctx, func(q *db.Queries) error {
+		project, err := q.CreateProject(ctx, db.CreateProjectParams{
+			TenantID:    tenant.ID,
+			Slug:        slug,
+			Name:        username,
+			Description: "",
+			IsPersonal:  true,
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return nil // race: another goroutine already created it
+			}
+			return err
+		}
+		return q.AddProjectMember(ctx, db.AddProjectMemberParams{
+			ProjectID: project.ID,
+			UserID:    userID,
+			Role:      "owner",
+		})
+	})
 }
 
 // ListProjects returns projects ordered by slug.

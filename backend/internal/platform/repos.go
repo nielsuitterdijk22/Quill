@@ -66,25 +66,43 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 		owner = project.ForgejoOrgName.String
 	}
 
+	// Personal projects use the actor's Forgejo user namespace instead of an org.
+	useUserNamespace := project.IsPersonal && s.forgejoEnabled()
+	if useUserNamespace {
+		actorUser, err := s.store.GetUserByID(ctx, actor.UserID)
+		if err == nil && actorUser.ForgejoUsername.Valid && actorUser.ForgejoUsername.String != "" {
+			owner = actorUser.ForgejoUsername.String
+		} else {
+			useUserNamespace = false // fall back to org-style if user not linked yet
+		}
+	}
+
 	var (
 		fjID            pgtype.Int8
 		fjOwner, fjName pgtype.Text
 		fjCreated       bool
 	)
 	if s.forgejoEnabled() {
-		repo, err := s.forgejo.CreateOrgRepo(ctx, owner, forgejo.CreateRepoOptions{
+		repoOpts := forgejo.CreateRepoOptions{
 			Name:          slug,
 			Description:   strings.TrimSpace(in.Description),
 			Private:       forgejoPrivate(visibility),
 			AutoInit:      true,
 			DefaultBranch: defaultBranch,
-		})
+		}
+		var fjRepo forgejo.Repo
+		var err error
+		if useUserNamespace {
+			fjRepo, err = s.forgejo.CreateUserRepo(ctx, owner, repoOpts)
+		} else {
+			fjRepo, err = s.forgejo.CreateOrgRepo(ctx, owner, repoOpts)
+		}
 		if err != nil {
 			return db.Repository{}, fmt.Errorf("forgejo create repo: %w", err)
 		}
-		fjID = pgtype.Int8{Int64: repo.ID, Valid: true}
+		fjID = pgtype.Int8{Int64: fjRepo.ID, Valid: true}
 		fjOwner = pgtype.Text{String: owner, Valid: true}
-		fjName = pgtype.Text{String: repo.Name, Valid: true}
+		fjName = pgtype.Text{String: fjRepo.Name, Valid: true}
 		fjCreated = true
 	}
 

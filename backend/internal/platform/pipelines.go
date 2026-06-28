@@ -105,17 +105,26 @@ func (s *Service) ListPipelines(ctx context.Context, actor Actor, projectSlug, r
 	return repo, out, nil
 }
 
-// ListRuns returns the most recent runs across every pipeline in a repository.
-func (s *Service) ListRuns(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []db.PipelineRun, error) {
+// ListRuns returns the most recent runs across every pipeline in a repository,
+// plus a map of pipelineID → workflowPath so callers can annotate each run.
+func (s *Service) ListRuns(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []db.PipelineRun, map[uuid.UUID]string, error) {
 	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
-		return db.Repository{}, nil, err
+		return db.Repository{}, nil, nil, err
 	}
 	runs, err := s.store.ListRunsByRepo(ctx, db.ListRunsByRepoParams{RepoID: repo.ID, Limit: maxRunsListed})
 	if err != nil {
-		return db.Repository{}, nil, fmt.Errorf("list runs: %w", err)
+		return db.Repository{}, nil, nil, fmt.Errorf("list runs: %w", err)
 	}
-	return repo, runs, nil
+	pipelines, err := s.store.ListPipelinesByRepo(ctx, repo.ID)
+	if err != nil {
+		return db.Repository{}, nil, nil, fmt.Errorf("list pipelines: %w", err)
+	}
+	workflowByPipeline := make(map[uuid.UUID]string, len(pipelines))
+	for _, p := range pipelines {
+		workflowByPipeline[p.ID] = p.WorkflowPath
+	}
+	return repo, runs, workflowByPipeline, nil
 }
 
 // GetRun returns a single run (by its per-pipeline run number) with its full
@@ -311,9 +320,13 @@ func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.
 
 	defer func() {
 		// Keep the broadcaster alive for a few minutes so late SSE subscribers
-		// can replay buffered output. Panic safety: finish ensures done is set.
+		// can replay buffered output. Panic safety: finish and finishRun ensure
+		// the broadcaster and DB row are both finalized.
 		if r := recover(); r != nil {
 			s.logger.Error("pipeline goroutine panicked", "run", runID, "panic", r)
+			if _, err := s.finishRun(bgCtx, runID, pipeline.StatusFailure); err != nil {
+				s.logger.Warn("could not finalize panicked run", "run", runID, "error", err)
+			}
 			bc.finish(pipeline.StatusFailure)
 		}
 		time.AfterFunc(5*time.Minute, func() { s.activeRuns.Delete(runID.String()) })
@@ -325,6 +338,12 @@ func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.
 
 	result, runErr := s.runner.Run(bgCtx, spec)
 	if runErr != nil {
+		// "read log stream" errors come from the HTTP dispatcher's SSE stream
+		// dropping after the job was already submitted. Wrap with a clearer message
+		// so the step log is readable in the UI.
+		if strings.Contains(runErr.Error(), "read log stream") || strings.Contains(runErr.Error(), "log stream ended") {
+			runErr = fmt.Errorf("runner connection lost — the workflow may still be executing on the runner: %w", runErr)
+		}
 		s.recordStartupFailure(bgCtx, runID, runErr)
 		if _, err := s.finishRun(bgCtx, runID, pipeline.StatusFailure); err != nil {
 			s.logger.Warn("could not record startup failure", "run", runID, "error", err)

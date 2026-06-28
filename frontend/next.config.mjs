@@ -21,10 +21,25 @@ const nextConfig = {
     // a public API URL baked in at build time. Server components can also call
     // the backend directly via QUILL_API_BASE_URL.
     const api = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
+    // Top-level app routes that must not be treated as owner namespaces.
+    const reserved =
+      "projects|settings|admin|repositories|pulls|pipelines|sign-in|sign-up|login|register|api";
     return [
       {
         source: "/api/backend/:path*",
         destination: `${api}/api/v1/:path*`,
+      },
+      // Short namespace URL: /{owner}/{repo}/sub-path → /projects/{owner}/repos/{repo}/sub-path
+      // Lets /{owner}/{repo}/... resolve via the existing /projects/[project]/repos/[repo]/...
+      // pages without duplicating every page file.
+      {
+        source: `/:owner((?!${reserved})[^/]+)/:repo/:path+`,
+        destination: "/projects/:owner/repos/:repo/:path*",
+      },
+      // Short namespace URL root: /{owner}/{repo} (no trailing path)
+      {
+        source: `/:owner((?!${reserved})[^/]+)/:repo`,
+        destination: "/projects/:owner/repos/:repo",
       },
     ];
   },

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { useClerk, useOrganization } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
@@ -34,12 +34,20 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/audit-log", label: "Audit log", icon: "◎" },
 ];
 
-// isRepoScoped is true for any path inside a specific repository, i.e.
-// /projects/{project}/repos/{repo} and everything beneath it (code/commits/
-// branches/blob/tree/pulls/settings). These browse code, not project
-// management, so the top-level "Repositories" entry should light up for them.
+// Top-level paths that are app routes, not owner namespaces.
+const RESERVED_TOP_LEVEL = new Set([
+  "projects", "settings", "admin", "repositories", "pulls", "pipelines",
+  "sign-in", "sign-up", "login", "register", "api",
+]);
+
+// isRepoScoped is true for any path inside a specific repository. Handles both
+// the long form /projects/{project}/repos/{repo}/... and the short namespace
+// form /{owner}/{repo}/...
 function isRepoScoped(pathname: string): boolean {
-  return /^\/projects\/[^/]+\/repos\/[^/]+(\/|$)/.test(pathname);
+  if (/^\/projects\/[^/]+\/repos\/[^/]+(\/|$)/.test(pathname)) return true;
+  const m = pathname.match(/^\/([^/]+)\/[^/]+(\/|$)/);
+  if (!m) return false;
+  return !RESERVED_TOP_LEVEL.has(safeDecode(m[1]));
 }
 
 function isActive(pathname: string, href: string): boolean {
@@ -73,31 +81,40 @@ function safeDecode(segment: string): string {
   }
 }
 
-// Extract repo context from /projects/{project}/repos/{repo}/* paths. Returns
-// null for project-management pages (/projects, /projects/new,
-// /projects/{project}, /projects/{project}/repos/new) and non-repo routes. Refs
-// can contain slashes (e.g. feature/login-page), so the commits route — which
-// never carries a path — keeps its whole tail as the ref, while tree/blob fall
-// back to the first segment (their tail mixes ref and file path, which we can't
-// split here).
+// Extract repo context from both URL forms:
+//   long:  /projects/{project}/repos/{repo}/[tab]/[ref/path...]
+//   short: /{owner}/{repo}/[tab]/[ref/path...]
+// Returns null for project management pages and non-repo routes.
 function parseRepoCtx(pathname: string): RepoCtx | null {
-  const m = pathname.match(
+  // Long form first.
+  const longM = pathname.match(
     /^\/projects\/([^/]+)\/repos\/([^/]+)(?:\/(branches|tree|commits|blob|issues|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
   );
-  if (!m || !m[2] || m[2] === "new") return null;
-  let ref = "main";
-  if (m[4]) {
-    if (m[3] === "commits") {
-      ref = m[4].split("/").map(safeDecode).join("/");
-    } else {
-      ref = safeDecode(m[4].split("/")[0]);
+  if (longM && longM[2] && longM[2] !== "new") {
+    let ref = "main";
+    if (longM[4]) {
+      ref = longM[3] === "commits"
+        ? longM[4].split("/").map(safeDecode).join("/")
+        : safeDecode(longM[4].split("/")[0]);
     }
+    return { project: safeDecode(longM[1]), repo: safeDecode(longM[2]), ref };
   }
-  return {
-    project: safeDecode(m[1]),
-    repo: safeDecode(m[2]),
-    ref,
-  };
+
+  // Short namespace form /{owner}/{repo}/...
+  const shortM = pathname.match(
+    /^\/([^/]+)\/([^/]+)(?:\/(branches|tree|commits|blob|issues|pulls|pipelines|settings)(?:\/(.+))?)?\/?$/,
+  );
+  if (!shortM || !shortM[2]) return null;
+  const owner = safeDecode(shortM[1]);
+  const repo = safeDecode(shortM[2]);
+  if (RESERVED_TOP_LEVEL.has(owner) || repo === "new") return null;
+  let ref = "main";
+  if (shortM[4]) {
+    ref = shortM[3] === "commits"
+      ? shortM[4].split("/").map(safeDecode).join("/")
+      : safeDecode(shortM[4].split("/")[0]);
+  }
+  return { project: owner, repo, ref };
 }
 
 const REPO_TABS = [
@@ -113,7 +130,7 @@ const REPO_TABS = [
 type RepoTabKey = (typeof REPO_TABS)[number]["key"];
 
 function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
-  const b = `/projects/${encodeURIComponent(ctx.project)}/repos/${encodeURIComponent(ctx.repo)}`;
+  const b = `/${encodeURIComponent(ctx.project)}/${encodeURIComponent(ctx.repo)}`;
   switch (key) {
     case "code":
       return b;
@@ -137,27 +154,32 @@ function repoTabActive(
   key: RepoTabKey,
   ctx: RepoCtx,
 ): boolean {
-  const b = `/projects/${encodeURIComponent(ctx.project)}/repos/${encodeURIComponent(ctx.repo)}`;
-  switch (key) {
-    case "code":
-      return (
-        pathname === b ||
-        pathname.startsWith(`${b}/tree/`) ||
-        pathname.startsWith(`${b}/blob/`)
-      );
-    case "commits":
-      return pathname.startsWith(`${b}/commits/`);
-    case "branches":
-      return pathname === `${b}/branches`;
-    case "issues":
-      return pathname.startsWith(`${b}/issues`);
-    case "pulls":
-      return pathname.startsWith(`${b}/pulls`);
-    case "pipelines":
-      return pathname.startsWith(`${b}/pipelines`);
-    case "settings":
-      return pathname === `${b}/settings`;
+  // Accept both short /{project}/{repo}/... and long /projects/{project}/repos/{repo}/...
+  const shortB = `/${encodeURIComponent(ctx.project)}/${encodeURIComponent(ctx.repo)}`;
+  const longB = `/projects/${encodeURIComponent(ctx.project)}/repos/${encodeURIComponent(ctx.repo)}`;
+  function check(b: string): boolean {
+    switch (key) {
+      case "code":
+        return (
+          pathname === b ||
+          pathname.startsWith(`${b}/tree/`) ||
+          pathname.startsWith(`${b}/blob/`)
+        );
+      case "commits":
+        return pathname.startsWith(`${b}/commits/`);
+      case "branches":
+        return pathname === `${b}/branches`;
+      case "issues":
+        return pathname.startsWith(`${b}/issues`);
+      case "pulls":
+        return pathname.startsWith(`${b}/pulls`);
+      case "pipelines":
+        return pathname.startsWith(`${b}/pipelines`);
+      case "settings":
+        return pathname === `${b}/settings`;
+    }
   }
+  return check(shortB) || check(longB);
 }
 
 // ProjectSwitcher is the sidebar's current-project dropdown. Picking a project
@@ -173,7 +195,9 @@ function ProjectSwitcher({
   currentProject: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const active = projects.find((p) => p.slug === currentProject);
   const label = active?.name ?? "Select project";
 
@@ -195,6 +219,16 @@ function ProjectSwitcher({
     };
   }, [open]);
 
+  function selectProject(slug: string) {
+    setOpen(false);
+    startTransition(async () => {
+      const data = new FormData();
+      data.set("project", slug);
+      await setCurrentProjectAction(data);
+      router.refresh();
+    });
+  }
+
   return (
     <div className="project-switcher" ref={ref}>
       <button
@@ -203,28 +237,25 @@ function ProjectSwitcher({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={pending}
       >
         {label}
         <span className="project-switcher-caret">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className="project-switcher-menu" role="listbox">
-          <form action={setCurrentProjectAction}>
-            {projects.map((p) => (
-              <button
-                key={p.id}
-                type="submit"
-                name="project"
-                value={p.slug}
-                role="option"
-                aria-selected={p.slug === currentProject}
-                className={`project-switcher-item${p.slug === currentProject ? " active" : ""}`}
-                onClick={() => setOpen(false)}
-              >
-                {p.name}
-              </button>
-            ))}
-          </form>
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="option"
+              aria-selected={p.slug === currentProject}
+              className={`project-switcher-item${p.slug === currentProject ? " active" : ""}`}
+              onClick={() => selectProject(p.slug)}
+            >
+              {p.name}
+            </button>
+          ))}
           <hr className="project-switcher-divider" />
           <Link
             href="/projects/new"
@@ -251,7 +282,6 @@ export function Sidebar({
   const pathname = usePathname() || "/";
   const { signOut } = useClerk();
   const { organization } = useOrganization();
-  const router = useRouter();
   const repoCtx = parseRepoCtx(pathname);
   const navItems = user.isAdmin ? [...NAV, ...ADMIN_NAV] : NAV;
 
@@ -287,12 +317,12 @@ export function Sidebar({
       {repoCtx && (
         <div className="repo-ctx">
           <div className="repo-ctx-label">
-            <Link href={`/projects/${encodeURIComponent(repoCtx.project)}`}>
+            <Link href={`/${encodeURIComponent(repoCtx.project)}`}>
               {repoCtx.project}
             </Link>
             {" / "}
             <Link
-              href={`/projects/${encodeURIComponent(repoCtx.project)}/repos/${encodeURIComponent(repoCtx.repo)}`}
+              href={`/${encodeURIComponent(repoCtx.project)}/${encodeURIComponent(repoCtx.repo)}`}
             >
               <b>{repoCtx.repo}</b>
             </Link>

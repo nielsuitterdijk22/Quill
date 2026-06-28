@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 
 interface LogLine {
   jobKey: string;
@@ -44,41 +45,89 @@ export function LiveLogs({
   const [error, setError] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { getToken } = useAuth();
 
   const logsUrl =
     `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}` +
     `/pipelines/runs/${runNumber}/logs?workflow=${encodeURIComponent(workflowPath)}`;
 
   useEffect(() => {
-    const es = new EventSource(logsUrl);
+    const controller = new AbortController();
+    let cancelled = false;
 
-    es.addEventListener("log", (e: MessageEvent) => {
+    (async () => {
+      let token: string | null = null;
       try {
-        const ll = JSON.parse(e.data) as LogLine;
-        setLines((prev) => [...prev, ll]);
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+        token = await getToken();
       } catch {
-        // ignore malformed events
+        // proceed without token; middleware will reject if auth is required
       }
-    });
 
-    es.addEventListener("done", () => {
-      setDone(true);
-      es.close();
-      // Give the DB a moment to commit before refreshing so the status badge
-      // reflects the final result.
-      setTimeout(() => router.refresh(), 1000);
-    });
+      try {
+        const res = await fetch(logsUrl, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
 
-    es.onerror = () => {
-      setError(true);
-      es.close();
-    };
+        if (!res.ok || !res.body) {
+          if (!cancelled) setError(true);
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        let ename = "";
+        let edata = "";
+
+        outer: while (true) {
+          const { done: streamDone, value } = await reader.read();
+          if (streamDone) {
+            // Stream closed without a done event.
+            if (!cancelled) setError(true);
+            break;
+          }
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n");
+          buf = parts.pop() ?? "";
+
+          for (const part of parts) {
+            if (part.startsWith("event:")) {
+              ename = part.slice(6).trim();
+            } else if (part.startsWith("data:")) {
+              edata = part.slice(5).trim();
+            } else if (part === "") {
+              if (ename === "log" && edata) {
+                try {
+                  const ll = JSON.parse(edata) as LogLine;
+                  setLines((prev) => [...prev, ll]);
+                  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                } catch {
+                  // ignore malformed events
+                }
+              } else if (ename === "done") {
+                setDone(true);
+                reader.cancel().catch(() => {});
+                setTimeout(() => router.refresh(), 1000);
+                break outer;
+              }
+              ename = "";
+              edata = "";
+            }
+          }
+        }
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    })();
 
     return () => {
-      es.close();
+      cancelled = true;
+      controller.abort();
     };
-  }, [logsUrl, router]);
+    // logsUrl encodes project/repo/runNumber/workflowPath; stable for this run
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logsUrl]);
 
   const groups = groupLines(lines);
 

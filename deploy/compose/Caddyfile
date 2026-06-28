@@ -1,0 +1,7 @@
+{$QUILL_DOMAIN} {
+	reverse_proxy web:3001
+}
+
+git.{$QUILL_DOMAIN} {
+	reverse_proxy forgejo:3000
+}

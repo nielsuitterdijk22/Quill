@@ -25,9 +25,9 @@ func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
 }
 
 const createProject = `-- name: CreateProject :one
-INSERT INTO projects (tenant_id, slug, name, description)
-VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at
+INSERT INTO projects (tenant_id, slug, name, description, is_personal)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, tenant_id, slug, name, description, forgejo_org_name, is_personal, created_at, updated_at
 `
 
 type CreateProjectParams struct {
@@ -35,6 +35,7 @@ type CreateProjectParams struct {
 	Slug        string    `json:"slug"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	IsPersonal  bool      `json:"isPersonal"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -43,6 +44,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.Slug,
 		arg.Name,
 		arg.Description,
+		arg.IsPersonal,
 	)
 	var i Project
 	err := row.Scan(
@@ -52,6 +54,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Name,
 		&i.Description,
 		&i.ForgejoOrgName,
+		&i.IsPersonal,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -59,7 +62,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
-SELECT id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at FROM projects WHERE id = $1
+SELECT id, tenant_id, slug, name, description, forgejo_org_name, is_personal, created_at, updated_at FROM projects WHERE id = $1
 `
 
 func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, error) {
@@ -72,6 +75,7 @@ func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, er
 		&i.Name,
 		&i.Description,
 		&i.ForgejoOrgName,
+		&i.IsPersonal,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -79,7 +83,7 @@ func (q *Queries) GetProjectByID(ctx context.Context, id uuid.UUID) (Project, er
 }
 
 const getProjectBySlug = `-- name: GetProjectBySlug :one
-SELECT id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at FROM projects WHERE lower(slug) = lower($1)
+SELECT id, tenant_id, slug, name, description, forgejo_org_name, is_personal, created_at, updated_at FROM projects WHERE lower(slug) = lower($1)
 `
 
 func (q *Queries) GetProjectBySlug(ctx context.Context, lower string) (Project, error) {
@@ -92,6 +96,7 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, lower string) (Project, 
 		&i.Name,
 		&i.Description,
 		&i.ForgejoOrgName,
+		&i.IsPersonal,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -99,7 +104,7 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, lower string) (Project, 
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at FROM projects
+SELECT id, tenant_id, slug, name, description, forgejo_org_name, is_personal, created_at, updated_at FROM projects
 ORDER BY slug
 LIMIT $1 OFFSET $2
 `
@@ -125,6 +130,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.Name,
 			&i.Description,
 			&i.ForgejoOrgName,
+			&i.IsPersonal,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -139,7 +145,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 }
 
 const listProjectsByUser = `-- name: ListProjectsByUser :many
-SELECT p.id, p.tenant_id, p.slug, p.name, p.description, p.forgejo_org_name, p.created_at, p.updated_at, m.role AS member_role
+SELECT p.id, p.tenant_id, p.slug, p.name, p.description, p.forgejo_org_name, p.is_personal, p.created_at, p.updated_at, m.role AS member_role
 FROM project_members m
 JOIN projects p ON p.id = m.project_id
 WHERE m.user_id = $1
@@ -153,6 +159,7 @@ type ListProjectsByUserRow struct {
 	Name           string      `json:"name"`
 	Description    string      `json:"description"`
 	ForgejoOrgName pgtype.Text `json:"forgejoOrgName"`
+	IsPersonal     bool        `json:"isPersonal"`
 	CreatedAt      time.Time   `json:"createdAt"`
 	UpdatedAt      time.Time   `json:"updatedAt"`
 	MemberRole     string      `json:"memberRole"`
@@ -174,6 +181,7 @@ func (q *Queries) ListProjectsByUser(ctx context.Context, userID uuid.UUID) ([]L
 			&i.Name,
 			&i.Description,
 			&i.ForgejoOrgName,
+			&i.IsPersonal,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MemberRole,
@@ -192,7 +200,7 @@ const setProjectForgejoName = `-- name: SetProjectForgejoName :one
 UPDATE projects
 SET forgejo_org_name = $2
 WHERE id = $1
-RETURNING id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at
+RETURNING id, tenant_id, slug, name, description, forgejo_org_name, is_personal, created_at, updated_at
 `
 
 type SetProjectForgejoNameParams struct {
@@ -210,6 +218,7 @@ func (q *Queries) SetProjectForgejoName(ctx context.Context, arg SetProjectForge
 		&i.Name,
 		&i.Description,
 		&i.ForgejoOrgName,
+		&i.IsPersonal,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

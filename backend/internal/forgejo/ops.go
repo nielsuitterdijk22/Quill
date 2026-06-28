@@ -156,6 +156,14 @@ func (c *Client) AddOrgMember(ctx context.Context, org, username string) error {
 	return c.do(ctx, http.MethodPut, p, nil, nil)
 }
 
+// CreateUserRepo creates a repository under a user account via the admin API.
+// Used for personal-namespace projects where the owner is the user, not an org.
+func (c *Client) CreateUserRepo(ctx context.Context, username string, opts CreateRepoOptions) (Repo, error) {
+	var out Repo
+	err := c.do(ctx, http.MethodPost, "/admin/users/"+url.PathEscape(username)+"/repos", opts, &out)
+	return out, err
+}
+
 // CreateOrgRepo creates a repository under an organization.
 func (c *Client) CreateOrgRepo(ctx context.Context, org string, opts CreateRepoOptions) (Repo, error) {
 	var out Repo

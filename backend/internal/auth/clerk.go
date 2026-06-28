@@ -23,17 +23,23 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
+// PostProvisionFunc is called after a Clerk user is provisioned for the first
+// time (first ever login). Runs in a background goroutine; errors are logged
+// and swallowed so they never fail the login response.
+type PostProvisionFunc func(ctx context.Context, id Identity) error
+
 // ClerkVerifier verifies Clerk-issued RS256 JWTs, caches the JWKS in memory,
 // and provisions Quill users and tenants on first login.
 type ClerkVerifier struct {
-	store       *store.Store
-	forgejo     *forgejo.Client
-	logger      *slog.Logger
-	frontendAPI string
-	secretKey   string
-	jwksURL     string
-	mu          sync.RWMutex
-	keySet      jwk.Set
+	store         *store.Store
+	forgejo       *forgejo.Client
+	logger        *slog.Logger
+	frontendAPI   string
+	secretKey     string
+	jwksURL       string
+	mu            sync.RWMutex
+	keySet        jwk.Set
+	postProvision PostProvisionFunc
 }
 
 // NewClerkVerifier creates a ClerkVerifier from configuration. Call Start to
@@ -53,6 +59,14 @@ func NewClerkVerifier(cfg config.ClerkConfig, st *store.Store, logger *slog.Logg
 // login and returns the verifier for chaining.
 func (v *ClerkVerifier) WithForgejo(fj *forgejo.Client) *ClerkVerifier {
 	v.forgejo = fj
+	return v
+}
+
+// WithPostProvision registers a function called once after a Clerk user is
+// provisioned for the very first time. Runs in the background; failures are
+// logged at warn level and do not affect the login response.
+func (v *ClerkVerifier) WithPostProvision(fn PostProvisionFunc) *ClerkVerifier {
+	v.postProvision = fn
 	return v
 }
 
@@ -181,9 +195,19 @@ func (v *ClerkVerifier) resolveIdentity(ctx context.Context, clerkUserID, orgID,
 	}
 	id.TenantID = tenantID
 
-	// Best-effort Forgejo provisioning — must not block the login response.
+	// Best-effort background provisioning — must not block the login response.
+	bgCtx := context.WithoutCancel(ctx)
 	if v.forgejo != nil && v.forgejo.Enabled() {
-		go v.provisionForgejo(context.WithoutCancel(ctx), id)
+		go v.provisionForgejo(bgCtx, id)
+	}
+	if v.postProvision != nil {
+		go func() {
+			pCtx, cancel := context.WithTimeout(bgCtx, 30*time.Second)
+			defer cancel()
+			if err := v.postProvision(pCtx, id); err != nil {
+				v.logger.Warn("post-provision failed", "username", id.Username, "error", err)
+			}
+		}()
 	}
 
 	return id, nil
@@ -241,6 +265,14 @@ func (v *ClerkVerifier) fetchClerkUser(ctx context.Context, clerkUserID string) 
 }
 
 var invalidUsernameCharsRe = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// reservedUsernames mirrors the frontend top-level routes so derived usernames
+// never shadow an app page. Kept in sync with platform.reservedSlugs.
+var reservedUsernames = map[string]bool{
+	"new": true, "edit": true, "settings": true, "api": true,
+	"projects": true, "repositories": true, "pulls": true, "pipelines": true,
+	"admin": true, "sign-in": true, "sign-up": true, "login": true, "register": true,
+}
 
 func (v *ClerkVerifier) provisionUser(ctx context.Context, clerkUserID string, profile clerkUserProfile) (Identity, error) {
 	username := deriveUsername(profile.Username, profile.PrimaryEmailAddr, clerkUserID)
@@ -360,7 +392,7 @@ func deriveUsername(clerkUsername, email, clerkUserID string) string {
 		}
 	}
 	candidate = invalidUsernameCharsRe.ReplaceAllString(candidate, "-")
-	if len(candidate) < 2 {
+	if len(candidate) < 2 || reservedUsernames[strings.ToLower(candidate)] {
 		candidate = "user-" + tailOf(clerkUserID, 8)
 	}
 	if len(candidate) > 39 {

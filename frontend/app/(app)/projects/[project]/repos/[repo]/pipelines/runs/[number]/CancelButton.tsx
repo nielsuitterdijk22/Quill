@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 
 type CancelButtonProps = {
   project: string;
@@ -13,17 +14,21 @@ export function CancelButton({ project, repo, number }: CancelButtonProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const { getToken } = useAuth();
 
   function cancel() {
     setError(null);
     startTransition(async () => {
       try {
+        const token = await getToken();
         const res = await fetch(
           `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}/pipelines/runs/${number}/cancel`,
           {
             method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
             body: "{}",
           },
         );

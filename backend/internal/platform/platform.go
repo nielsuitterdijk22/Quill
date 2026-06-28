@@ -46,13 +46,24 @@ const defaultTenantSlug = "default"
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // reservedSlugs are handles Quill keeps for itself so project/repo slugs never
-// collide with reserved frontend routes (e.g. the "/projects/new" create form or
-// a repo's "/new" create form).
+// collide with reserved frontend routes. Personal namespaces sit at /{slug}, so
+// top-level app routes must be included here.
 var reservedSlugs = map[string]bool{
+	// Repo/project sub-routes
 	"new":      true,
 	"edit":     true,
 	"settings": true,
 	"api":      true,
+	// Top-level frontend app routes (personal namespaces live at /{slug})
+	"projects":     true,
+	"repositories": true,
+	"pulls":        true,
+	"pipelines":    true,
+	"admin":        true,
+	"sign-in":      true,
+	"sign-up":      true,
+	"login":        true,
+	"register":     true,
 }
 
 // normalizeSlug lowercases and trims a candidate slug.

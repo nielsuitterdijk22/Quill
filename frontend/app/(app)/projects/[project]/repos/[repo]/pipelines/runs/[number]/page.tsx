@@ -94,7 +94,7 @@ export default async function RunDetailPage({
             project={params.project}
             repo={params.repo}
             workflowPath={workflowPath}
-            ref={run.ref || repo.defaultBranch}
+            gitRef={run.ref || repo.defaultBranch}
           />
           {(run.status === "running" || run.status === "pending") && (
             <CancelButton

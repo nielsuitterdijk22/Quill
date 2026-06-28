@@ -6,8 +6,10 @@ import Link from "next/link";
 import type { Commit, ContentEntry } from "../lib/api";
 
 // repoBase is the URL prefix for a repository's pages.
+// Uses the short /{owner}/{repo} format; personal namespaces and org namespaces
+// both resolve via this path (project slug === owner name).
 export function repoBase(project: string, repo: string): string {
-  return `/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}`;
+  return `/${encodeURIComponent(project)}/${encodeURIComponent(repo)}`;
 }
 
 // cloneHttpUrl builds the public HTTPS git URL for a repository, used by the

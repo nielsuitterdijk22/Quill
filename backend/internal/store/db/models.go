@@ -124,6 +124,7 @@ type Project struct {
 	Name           string      `json:"name"`
 	Description    string      `json:"description"`
 	ForgejoOrgName pgtype.Text `json:"forgejoOrgName"`
+	IsPersonal     bool        `json:"isPersonal"`
 	CreatedAt      time.Time   `json:"createdAt"`
 	UpdatedAt      time.Time   `json:"updatedAt"`
 }

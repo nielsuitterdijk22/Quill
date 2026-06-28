@@ -1,29 +1,34 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAuth } from "@clerk/nextjs";
 
 type ReRunButtonProps = {
   project: string;
   repo: string;
   workflowPath: string;
-  ref: string;
+  gitRef: string;
 };
 
-export function ReRunButton({ project, repo, workflowPath, ref }: ReRunButtonProps) {
+export function ReRunButton({ project, repo, workflowPath, gitRef }: ReRunButtonProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const { getToken } = useAuth();
 
   function reRun() {
     setError(null);
     startTransition(async () => {
       try {
+        const token = await getToken();
         const res = await fetch(
           `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}/pipelines`,
           {
             method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ workflow: workflowPath, ref }),
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ workflow: workflowPath, ref: gitRef }),
           },
         );
         const body = (await res.json().catch(() => null)) as {

@@ -46,7 +46,11 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 
 	var clerkVerifier *auth.ClerkVerifier
 	if cfg.Clerk.FrontendAPI != "" {
-		clerkVerifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).WithForgejo(fj)
+		clerkVerifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).
+			WithForgejo(fj).
+			WithPostProvision(func(ctx context.Context, id auth.Identity) error {
+				return platformSvc.CreatePersonalProject(ctx, id.UserID, id.Username)
+			})
 	}
 
 	s := &Server{
