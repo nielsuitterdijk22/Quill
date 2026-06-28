@@ -302,11 +302,16 @@ func (s *Server) handleCreatePersonalProject(w http.ResponseWriter, r *http.Requ
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	if err := s.platform.CreatePersonalProject(r.Context(), actor.UserID, actor.Username); err != nil {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.platform.CreatePersonalProject(r.Context(), actor.UserID, id.Username); err != nil {
 		s.logger.Error("create personal project failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not create personal project")
 		return
 	}
 	// Return the slug so the frontend can use it immediately for the import step.
-	httpx.JSON(w, http.StatusOK, map[string]any{"slug": actor.Username})
+	httpx.JSON(w, http.StatusOK, map[string]any{"slug": id.Username})
 }

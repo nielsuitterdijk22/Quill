@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
@@ -256,7 +255,7 @@ func fetchGitHubRepos(ctx context.Context, token string) ([]githubRepo, error) {
 			return nil, fmt.Errorf("github API returned %d", resp.StatusCode)
 		}
 
-		var page []struct {
+		var batch []struct {
 			ID          int64  `json:"id"`
 			Name        string `json:"name"`
 			FullName    string `json:"full_name"`
@@ -265,10 +264,10 @@ func fetchGitHubRepos(ctx context.Context, token string) ([]githubRepo, error) {
 			CloneURL    string `json:"clone_url"`
 			HTMLURL     string `json:"html_url"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&batch); err != nil {
 			return nil, err
 		}
-		for _, r := range page {
+		for _, r := range batch {
 			all = append(all, githubRepo{
 				ID:          r.ID,
 				Name:        r.Name,
@@ -279,12 +278,10 @@ func fetchGitHubRepos(ctx context.Context, token string) ([]githubRepo, error) {
 				HTMLURL:     r.HTMLURL,
 			})
 		}
-		if len(page) < 100 {
+		if len(batch) < 100 {
 			break
 		}
 		resp.Body.Close()
-		page2 := page
-		_ = page2
 		page++
 	}
 	return all, nil
