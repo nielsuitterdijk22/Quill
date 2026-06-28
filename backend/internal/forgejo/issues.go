@@ -11,13 +11,13 @@ import (
 
 // Issue is a Forgejo issue (distinct from a pull request).
 type Issue struct {
-	Number    int64    `json:"number"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body"`
-	State     string   `json:"state"` // "open" | "closed"
-	User      *User    `json:"user,omitempty"`
-	Labels    []Label  `json:"labels"`
-	Comments  int      `json:"comments"`
+	Number    int64     `json:"number"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	State     string    `json:"state"` // "open" | "closed"
+	User      *User     `json:"user,omitempty"`
+	Labels    []Label   `json:"labels"`
+	Comments  int       `json:"comments"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

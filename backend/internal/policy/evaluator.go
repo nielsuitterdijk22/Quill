@@ -26,11 +26,11 @@ type ActorFacts struct {
 // refs, its review tally, and the changed paths. Pointer fields on Context keep
 // kinds that don't apply (e.g. a deploy gate) out of the branch input.
 type BranchFacts struct {
-	BaseRef          string   `json:"baseRef"`
-	HeadRef          string   `json:"headRef"`
-	Approvals        int      `json:"approvals"`
-	ChangesRequested int      `json:"changesRequested"`
-	UpToDate         bool     `json:"upToDate"`
+	BaseRef          string `json:"baseRef"`
+	HeadRef          string `json:"headRef"`
+	Approvals        int    `json:"approvals"`
+	ChangesRequested int    `json:"changesRequested"`
+	UpToDate         bool   `json:"upToDate"`
 	// AllChecksPass is true when every pipeline run recorded for the PR's head
 	// commit has a "success" status, or when no runs exist yet. The platform
 	// service computes this before evaluation; the evaluator only reads it.

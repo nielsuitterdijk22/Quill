@@ -366,7 +366,7 @@ export default function OnboardingPage() {
               </div>
               <h2 className="ob-gh-title">Connect GitHub</h2>
               <p className="ob-gh-desc">
-                Authorize Quill to read your repos. We'll mirror them into Quill — your GitHub stays untouched.
+                Authorize Quill to read your repos. We&apos;ll mirror them into Quill — your GitHub stays untouched.
               </p>
               <button className="ob-btn-gh" onClick={connectGitHub}>
                 <IconGitHub />

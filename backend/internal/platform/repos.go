@@ -490,10 +490,10 @@ func (s *Service) ForkRepo(ctx context.Context, actor Actor, sourceProjectSlug, 
 	}
 
 	var (
-		fjID      pgtype.Int8
-		fjOwner   pgtype.Text
+		fjID       pgtype.Int8
+		fjOwner    pgtype.Text
 		fjForkName pgtype.Text
-		fjCreated bool
+		fjCreated  bool
 	)
 	if s.forgejoEnabled() {
 		fork, err := s.forgejo.ForkRepo(ctx, srcOwner, srcName, forgejo.ForkRepoOptions{

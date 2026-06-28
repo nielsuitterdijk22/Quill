@@ -312,7 +312,7 @@ func (s *Server) handleExportMyData(w http.ResponseWriter, r *http.Request) {
 			"displayName": user.DisplayName,
 			"createdAt":   user.CreatedAt,
 		},
-		"gitTokens":   tokenExports,
+		"gitTokens":          tokenExports,
 		"projectMemberships": projectExports,
 	}
 

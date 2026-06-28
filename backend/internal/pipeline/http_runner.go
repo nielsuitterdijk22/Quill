@@ -24,10 +24,10 @@ import (
 // can stream them to SSE clients in real time. The final RunResult is extracted
 // from the "done" event payload.
 type HTTPRunner struct {
-	endpoint    string
-	streamBase  string
-	secret      string
-	postClient  *http.Client
+	endpoint     string
+	streamBase   string
+	secret       string
+	postClient   *http.Client
 	streamClient *http.Client
 }
 
@@ -35,10 +35,10 @@ type HTTPRunner struct {
 func NewHTTPRunner(dispatchURL, secret string) *HTTPRunner {
 	base := strings.TrimRight(dispatchURL, "/")
 	return &HTTPRunner{
-		endpoint:    base + "/api/v1/runs",
-		streamBase:  base + "/api/v1/runs",
-		secret:      secret,
-		postClient:  &http.Client{Timeout: 30 * time.Second},
+		endpoint:     base + "/api/v1/runs",
+		streamBase:   base + "/api/v1/runs",
+		secret:       secret,
+		postClient:   &http.Client{Timeout: 30 * time.Second},
 		streamClient: &http.Client{Timeout: 40 * time.Minute},
 	}
 }
@@ -184,9 +184,9 @@ func (r *HTTPRunner) handleSSEEvent(eventName, data string, sink LogSink) (RunRe
 		}
 	case "done":
 		var done struct {
-			Status string      `json:"status"`
-			Error  string      `json:"error,omitempty"`
-			Result *RunResult  `json:"result,omitempty"`
+			Status string     `json:"status"`
+			Error  string     `json:"error,omitempty"`
+			Result *RunResult `json:"result,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(data), &done); err != nil {
 			return RunResult{}, true, fmt.Errorf("decode done event: %w", err)
