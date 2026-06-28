@@ -3,10 +3,30 @@ name: Deploy
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  deploy:
+  build:
+    name: Build
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend
+        run: docker build -t quill-api ./backend
+
+      - name: Build frontend
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }} \
+            -t quill-web ./frontend
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Deploy to Scaleway VM
         uses: appleboy/ssh-action@v1.2.0

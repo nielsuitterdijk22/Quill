@@ -27,7 +27,7 @@ const NAV: NavItem[] = [
 ];
 
 const ORG_NAV: NavItem[] = [
-  { href: "/projects", label: "Projects", icon: "▤" },
+  { href: "/projects", label: "Projects", icon: "⊞" },
 ];
 
 // ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
@@ -280,9 +280,11 @@ function ProjectSwitcher({
 export function Sidebar({
   user,
   projects,
+  currentProject,
 }: {
   user: User;
   projects: MyProject[];
+  currentProject: string | null;
 }) {
   const pathname = usePathname() || "/";
   const { signOut } = useClerk();
@@ -307,7 +309,7 @@ export function Sidebar({
         <b>{user.displayName || user.username}</b>
         {organization && <span className="who">{organization.name}</span>}
         {hasOrgProjects && (
-          <ProjectSwitcher projects={projects} currentProject={null} />
+          <ProjectSwitcher projects={projects} currentProject={currentProject} />
         )}
       </div>
 
