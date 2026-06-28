@@ -16,6 +16,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -euo pipefail
-            cd ~/quill
-            git pull origin main
+            cd /home/quill/quill
+            git fetch origin main
+            git reset --hard origin/main
             docker compose -f deploy/compose/docker-compose.yml --profile production up -d --build --remove-orphans
