@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -178,6 +179,99 @@ func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, u
 			Role:      "owner",
 		})
 	})
+}
+
+// PurgeOwnedProjects deletes every project the user solely owns — its repos
+// (in Forgejo and the DB), policies, Forgejo org and the project row — so that
+// account deletion is a true erasure and a later re-signup can re-import the
+// same repos without "already exists" conflicts. Shared projects (a non-personal
+// project with other members) are left intact; only the caller's membership is
+// removed later when the user row is deleted. Best-effort and idempotent: a
+// missing Forgejo resource is treated as already gone, and per-project failures
+// are logged and skipped rather than aborting the whole purge.
+func (s *Service) PurgeOwnedProjects(ctx context.Context, userID uuid.UUID) error {
+	projects, err := s.store.ListProjectsByUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("list user projects: %w", err)
+	}
+	for _, row := range projects {
+		members, err := s.store.ListProjectMembers(ctx, row.ID)
+		if err != nil {
+			s.logger.Warn("purge: list members failed; skipping project", "project", row.Slug, "error", err)
+			continue
+		}
+		// Leave shared org projects in place — deleting them would destroy other
+		// members' work. Personal projects (and solo-owned ones) are fully removed.
+		if !row.IsPersonal && len(members) > 1 {
+			continue
+		}
+
+		project := db.Project{
+			ID:             row.ID,
+			TenantID:       row.TenantID,
+			Slug:           row.Slug,
+			Name:           row.Name,
+			Description:    row.Description,
+			ForgejoOrgName: row.ForgejoOrgName,
+			IsPersonal:     row.IsPersonal,
+		}
+		if err := s.purgeProject(ctx, project); err != nil {
+			s.logger.Warn("purge: project cleanup failed", "project", row.Slug, "error", err)
+		}
+	}
+	return nil
+}
+
+// purgeProject removes one project's repositories (Forgejo + DB), its policies,
+// its Forgejo org, and finally the project row. repositories.project_id is
+// ON DELETE RESTRICT, so repos must go before the project row.
+func (s *Service) purgeProject(ctx context.Context, project db.Project) error {
+	repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{
+		ProjectID: project.ID,
+		Limit:     1000,
+		Offset:    0,
+	})
+	if err != nil {
+		return fmt.Errorf("list repos: %w", err)
+	}
+	for _, repo := range repos {
+		if s.forgejoEnabled() {
+			if owner, name, ok := forgejoTarget(repo, project); ok {
+				if derr := s.forgejo.DeleteRepo(ctx, owner, name); derr != nil && !forgejo.NotFound(derr) {
+					s.logger.Warn("purge: forgejo delete repo failed", "owner", owner, "name", name, "error", derr)
+				}
+			}
+		}
+		if derr := s.store.DeleteRepository(ctx, repo.ID); derr != nil {
+			return fmt.Errorf("delete repo %s: %w", repo.Slug, derr)
+		}
+		if _, derr := s.store.DeletePoliciesByScope(ctx, db.DeletePoliciesByScopeParams{
+			ScopeType: string(policy.ScopeRepo),
+			ScopeID:   repo.ID,
+		}); derr != nil {
+			s.logger.Warn("purge: delete repo policies failed", "repo", repo.ID, "error", derr)
+		}
+	}
+
+	if _, derr := s.store.DeletePoliciesByScope(ctx, db.DeletePoliciesByScopeParams{
+		ScopeType: string(policy.ScopeProject),
+		ScopeID:   project.ID,
+	}); derr != nil {
+		s.logger.Warn("purge: delete project policies failed", "project", project.ID, "error", derr)
+	}
+
+	// Personal projects live under the user's Forgejo namespace (removed when the
+	// Forgejo user is deleted), so only org-backed projects own a Forgejo org.
+	if s.forgejoEnabled() && project.ForgejoOrgName.Valid && project.ForgejoOrgName.String != "" {
+		if derr := s.forgejo.DeleteOrg(ctx, project.ForgejoOrgName.String); derr != nil && !forgejo.NotFound(derr) {
+			s.logger.Warn("purge: forgejo delete org failed", "org", project.ForgejoOrgName.String, "error", derr)
+		}
+	}
+
+	if derr := s.store.DeleteProject(ctx, project.ID); derr != nil {
+		return fmt.Errorf("delete project %s: %w", project.Slug, derr)
+	}
+	return nil
 }
 
 // ListProjects returns projects ordered by slug.

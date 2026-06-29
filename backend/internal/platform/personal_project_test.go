@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -25,6 +26,64 @@ func TestCreatePersonalProjectGrantsMembership(t *testing.T) {
 	}
 	if len(mine) != 1 || mine[0].Slug != "solo" || !mine[0].IsPersonal {
 		t.Fatalf("expected one personal project 'solo', got %+v", mine)
+	}
+}
+
+// TestPurgeOwnedProjectsRemovesReposAndProjects verifies account-deletion
+// erasure: a solo-owned project and its repositories are fully removed so a
+// later re-signup can re-import the same repos without conflicts.
+func TestPurgeOwnedProjectsRemovesReposAndProjects(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	uid := makeUser(t, st, "owner")
+
+	if err := svc.CreatePersonalProject(ctx, uid, "owner"); err != nil {
+		t.Fatalf("create personal project: %v", err)
+	}
+	if _, err := svc.CreateRepo(ctx, actor(uid), "owner", platform.CreateRepoInput{Slug: "widget", Name: "Widget"}); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+
+	if err := svc.PurgeOwnedProjects(ctx, uid); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	// Project (and thus its repos) must be gone.
+	if mine, err := svc.ListMyProjects(ctx, actor(uid)); err != nil || len(mine) != 0 {
+		t.Fatalf("expected no projects after purge, got %+v (err=%v)", mine, err)
+	}
+	// The slug is free again — a fresh personal project can be created.
+	if err := svc.CreatePersonalProject(ctx, uid, "owner"); err != nil {
+		t.Fatalf("re-create personal project after purge: %v", err)
+	}
+	if _, err := svc.CreateRepo(ctx, actor(uid), "owner", platform.CreateRepoInput{Slug: "widget", Name: "Widget"}); err != nil {
+		t.Fatalf("re-create repo after purge should succeed (no conflict), got: %v", err)
+	}
+}
+
+// TestPurgeOwnedProjectsKeepsSharedProjects verifies a non-personal project with
+// other members is left intact when one member's account is purged.
+func TestPurgeOwnedProjectsKeepsSharedProjects(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	owner := makeUser(t, st, "alice")
+	other := makeUser(t, st, "bob")
+
+	proj, err := svc.CreateProject(ctx, platform.Actor{UserID: owner}, platform.CreateProjectInput{Slug: "acme", Name: "Acme"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: proj.ID, UserID: other, Role: "member"}); err != nil {
+		t.Fatalf("add second member: %v", err)
+	}
+
+	if err := svc.PurgeOwnedProjects(ctx, owner); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+
+	// Shared project survives; the remaining member can still see it.
+	if mine, err := svc.ListMyProjects(ctx, actor(other)); err != nil || len(mine) != 1 || mine[0].Slug != "acme" {
+		t.Fatalf("shared project should remain for other member, got %+v (err=%v)", mine, err)
 	}
 }
 

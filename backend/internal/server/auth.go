@@ -345,6 +345,16 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Purge the user's solely-owned projects (repos, pipelines, Forgejo orgs)
+	// BEFORE deleting the user, while their memberships still resolve the project
+	// list. Otherwise the project/repo rows survive the cascade and a later
+	// re-signup hits "repository already exists" on import. Best-effort: failures
+	// are logged inside the purge and must not block account deletion.
+	if err := s.platform.PurgeOwnedProjects(r.Context(), id.UserID); err != nil {
+		s.logger.Warn("purge owned projects failed during account deletion",
+			"username", id.Username, "error", err)
+	}
+
 	if err := s.auth.DeleteAccount(r.Context(), id); err != nil {
 		s.logger.Error("delete account failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete account")
