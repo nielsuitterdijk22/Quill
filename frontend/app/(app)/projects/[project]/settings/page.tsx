@@ -77,6 +77,7 @@ export default async function ProjectSettingsPage({
           policies={policies}
           inherited={inherited}
           canLock
+          canEdit
         />
       </section>
 
@@ -106,6 +107,7 @@ export default async function ProjectSettingsPage({
           policies={envPolicies}
           inherited={envInherited}
           canLock
+          canEdit
         />
       </section>
     </>

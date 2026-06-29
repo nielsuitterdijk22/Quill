@@ -137,6 +137,21 @@ func (s *Service) authorizePlatformAdmin(actor Actor) error {
 	return ErrForbidden
 }
 
+// authorizeTenantMember returns nil when the actor is a platform admin or
+// belongs to tenantID, and ErrForbidden otherwise. It gates read-only access to
+// tenant-scoped governance: every member of a tenant may view the policies that
+// apply to them, while only platform admins may change them
+// (authorizePlatformAdmin).
+func (s *Service) authorizeTenantMember(actor Actor, tenantID uuid.UUID) error {
+	if actor.IsAdmin {
+		return nil
+	}
+	if actor.TenantID == tenantID {
+		return nil
+	}
+	return ErrForbidden
+}
+
 // provisionForgejoUser creates a Forgejo account for user and writes the link
 // back to the database. It is idempotent: if the Forgejo account already exists
 // the existing one is used. This is called on-demand when a user's Forgejo link

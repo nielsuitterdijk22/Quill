@@ -14,9 +14,10 @@ import (
 // This file holds the branch-policy endpoints: listing, upserting, and deleting
 // the protection rules Quill stores for a branch. Policies live at three scopes —
 // repo, project, and tenant — and a repo inherits its project's and tenant's
-// rules (folded by the policy engine). Reads are open to project members (tenant
-// reads require a platform admin); writes require a project owner at repo/project
-// scope and a platform admin at tenant scope, enforced in the platform service.
+// rules (folded by the policy engine). Reads are open to project members at
+// repo/project scope and to any tenant member at tenant scope; writes require a
+// project owner at repo/project scope and a platform admin at tenant scope, all
+// enforced in the platform service.
 
 // branchPolicyResponse is the public JSON shape for a branch policy. scope tells
 // the client which level declared it; locked marks a floor that narrower scopes

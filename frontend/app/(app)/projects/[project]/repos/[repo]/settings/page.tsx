@@ -92,6 +92,7 @@ export default async function RepoSettingsPage({
           inherited={inherited}
           branchNames={branchNames}
           defaultBranch={repo.defaultBranch}
+          canEdit
         />
       </section>
 
@@ -109,6 +110,7 @@ export default async function RepoSettingsPage({
           target={{ scope: "repo", project: params.project, repo: params.repo }}
           policies={envPolicies}
           inherited={envInherited}
+          canEdit
         />
       </section>
 

@@ -23,6 +23,9 @@ const NAV: NavItem[] = [
   { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭" },
   { href: "/pipelines", label: "Pipelines", icon: "▷" },
+  // Tenant policies are visible to every member (they govern everyone's work);
+  // only admins can edit them, enforced on the page and in the backend.
+  { href: "/admin/policies", label: "Policies", icon: "🛡" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
@@ -32,7 +35,6 @@ const ORG_NAV: NavItem[] = [
 
 // ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin/policies", label: "Policies", icon: "🛡" },
   { href: "/admin/audit-log", label: "Audit log", icon: "◎" },
 ];
 

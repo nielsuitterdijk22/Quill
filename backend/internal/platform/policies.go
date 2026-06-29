@@ -218,13 +218,14 @@ func (s *Service) DeleteProjectBranchPolicy(ctx context.Context, actor Actor, pr
 
 // ListTenantBranchPolicies returns a tenant's own branch policies. Tenant
 // policies are governance set by platform admins and apply to every project and
-// repository in the tenant.
+// repository in the tenant. Any member of the tenant may read them — they govern
+// everyone's work — but only platform admins may change them (SetTenantBranchPolicy).
 func (s *Service) ListTenantBranchPolicies(ctx context.Context, actor Actor, tenantSlug string) (db.Tenant, BranchPolicySet, error) {
-	if err := s.authorizePlatformAdmin(actor); err != nil {
-		return db.Tenant{}, BranchPolicySet{}, err
-	}
 	tenant, err := s.getTenant(ctx, tenantSlug)
 	if err != nil {
+		return db.Tenant{}, BranchPolicySet{}, err
+	}
+	if err := s.authorizeTenantMember(actor, tenant.ID); err != nil {
 		return db.Tenant{}, BranchPolicySet{}, err
 	}
 	own, err := s.listBranchPoliciesAt(ctx, policyScope{policy.ScopeTenant, tenant.ID})

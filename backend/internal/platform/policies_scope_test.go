@@ -95,6 +95,21 @@ func TestTenantPolicyRequiresPlatformAdmin(t *testing.T) {
 	if _, err := svc.SetTenantBranchPolicy(ctx, admin, "default", BranchPolicyInput{Pattern: "main", RequiredApprovals: 2, Locked: true}); err != nil {
 		t.Fatalf("admin tenant write: %v", err)
 	}
+
+	// Tenant policies govern everyone's work, so any member of the tenant may
+	// read them — even a non-admin — while a user outside the tenant may not.
+	tenant, err := st.GetTenantBySlug(ctx, "default")
+	if err != nil {
+		t.Fatalf("get default tenant: %v", err)
+	}
+	member := Actor{UserID: owner.UserID, TenantID: tenant.ID}
+	if _, _, err := svc.ListTenantBranchPolicies(ctx, member, "default"); err != nil {
+		t.Fatalf("tenant member read: %v", err)
+	}
+	stranger := Actor{UserID: scopeMakeUser(t, st, "stranger"), TenantID: uuid.New()}
+	if _, _, err := svc.ListTenantBranchPolicies(ctx, stranger, "default"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-member tenant read: want ErrForbidden, got %v", err)
+	}
 }
 
 func TestProjectPolicyAuthz(t *testing.T) {
