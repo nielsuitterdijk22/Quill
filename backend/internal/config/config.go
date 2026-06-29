@@ -25,8 +25,14 @@ type Config struct {
 
 	DatabaseURL string
 
+	// AuthProvider selects the external identity provider: "clerk" (default) or
+	// "zitadel". The matching provider config below must be populated. Local
+	// username/password auth is always available regardless of this setting.
+	AuthProvider string
+
 	JWT      JWTConfig
 	Clerk    ClerkConfig
+	Zitadel  ZitadelConfig
 	GitHub   GitHubConfig
 	Forgejo  ForgejoConfig
 	Pipeline PipelineConfig
@@ -65,6 +71,18 @@ type ClerkConfig struct {
 	SecretKey string
 }
 
+// ZitadelConfig holds settings for self-hosted Zitadel OIDC authentication.
+type ZitadelConfig struct {
+	// Issuer is the Zitadel instance base URL (e.g. "https://auth.example.com").
+	// It is the JWT issuer; the JWKS lives at <Issuer>/oauth/v2/keys.
+	Issuer string
+	// ManagementToken is a Zitadel service-account token (PAT or machine key JWT)
+	// used for the Management API: deleting a user on account deletion (to stop
+	// session resurrection) and, later, org/member provisioning. Optional — when
+	// empty, those server-side calls are skipped and logged.
+	ManagementToken string
+}
+
 // GitHubConfig holds credentials for the GitHub OAuth integration used during
 // onboarding to import existing repositories.
 type GitHubConfig struct {
@@ -92,6 +110,7 @@ func Load() (*Config, error) {
 		ReadTimeout:  getdur("QUILL_HTTP_READ_TIMEOUT", 15*time.Second),
 		WriteTimeout: getdur("QUILL_HTTP_WRITE_TIMEOUT", 30*time.Second),
 		DatabaseURL:  getenv("QUILL_DATABASE_URL", "postgres://quill:quill@localhost:5432/quill?sslmode=disable"),
+		AuthProvider: strings.ToLower(getenv("QUILL_AUTH_PROVIDER", "clerk")),
 		JWT: JWTConfig{
 			Secret: getenv("QUILL_JWT_SECRET", ""),
 			Issuer: getenv("QUILL_JWT_ISSUER", "quill"),
@@ -100,6 +119,10 @@ func Load() (*Config, error) {
 		Clerk: ClerkConfig{
 			FrontendAPI: getenv("QUILL_CLERK_FRONTEND_API", ""),
 			SecretKey:   getenv("QUILL_CLERK_SECRET_KEY", ""),
+		},
+		Zitadel: ZitadelConfig{
+			Issuer:          strings.TrimSuffix(getenv("QUILL_ZITADEL_ISSUER", ""), "/"),
+			ManagementToken: getenv("QUILL_ZITADEL_MANAGEMENT_TOKEN", ""),
 		},
 		GitHub: GitHubConfig{
 			ClientID:     getenv("QUILL_GITHUB_CLIENT_ID", ""),
@@ -118,8 +141,8 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 	}
 
-	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Clerk.FrontendAPI == "" {
-		return nil, fmt.Errorf("production requires QUILL_JWT_SECRET (local auth) or QUILL_CLERK_FRONTEND_API (Clerk auth)")
+	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Clerk.FrontendAPI == "" && cfg.Zitadel.Issuer == "" {
+		return nil, fmt.Errorf("production requires QUILL_JWT_SECRET (local auth), QUILL_CLERK_FRONTEND_API (Clerk), or QUILL_ZITADEL_ISSUER (Zitadel)")
 	}
 
 	return cfg, nil

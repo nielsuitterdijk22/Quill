@@ -28,11 +28,18 @@ type Server struct {
 	logger      *slog.Logger
 	store       *store.Store
 	auth        *auth.Service
-	clerk       *auth.ClerkVerifier
+	verifier    auth.TokenVerifier
 	forgejo     *forgejo.Client
 	platform    *platform.Service
 	router      chi.Router
 	markupCache *markupCache
+}
+
+// externalAuthEnabled reports whether an external IdP (Clerk or Zitadel) is
+// configured and ready. When false, Quill falls back to local username/password
+// auth (register/login/password routes are registered).
+func (s *Server) externalAuthEnabled() bool {
+	return s.verifier != nil && s.verifier.Enabled()
 }
 
 // New constructs a Server with middleware and routes configured. store may be
@@ -44,12 +51,20 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
 	}
 
-	var clerkVerifier *auth.ClerkVerifier
-	if cfg.Clerk.FrontendAPI != "" {
-		clerkVerifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).
-			WithForgejo(fj)
-		// Personal project creation is now handled during onboarding so the user
-		// can choose between an individual or org workspace on first login.
+	// Select the external IdP by QUILL_AUTH_PROVIDER. Clerk is the default; both
+	// providers verify a bearer JWT, provision the user on first login, and map
+	// the org claim to a Quill tenant. Personal project creation happens during
+	// onboarding, so neither path creates one here.
+	var verifier auth.TokenVerifier
+	switch cfg.AuthProvider {
+	case auth.ProviderZitadel:
+		if cfg.Zitadel.Issuer != "" {
+			verifier = auth.NewZitadelVerifier(cfg.Zitadel, st, logger).WithForgejo(fj)
+		}
+	default: // clerk
+		if cfg.Clerk.FrontendAPI != "" {
+			verifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).WithForgejo(fj)
+		}
 	}
 
 	s := &Server{
@@ -57,7 +72,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		logger:      logger,
 		store:       st,
 		auth:        auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
-		clerk:       clerkVerifier,
+		verifier:    verifier,
 		forgejo:     fj,
 		platform:    platformSvc,
 		router:      chi.NewRouter(),
@@ -68,11 +83,12 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	return s
 }
 
-// StartClerk begins background JWKS refresh for Clerk JWT verification.
-// It must be called once the server's context is available (i.e. after New).
-func (s *Server) StartClerk(ctx context.Context) {
-	if s.clerk != nil {
-		s.clerk.Start(ctx)
+// StartAuth begins background JWKS refresh for the configured external IdP's
+// JWT verification. It must be called once the server's context is available
+// (i.e. after New). No-op when only local auth is configured.
+func (s *Server) StartAuth(ctx context.Context) {
+	if s.verifier != nil {
+		s.verifier.Start(ctx)
 	}
 }
 
@@ -115,7 +131,7 @@ func (s *Server) setupRoutes() {
 		// Clerk on the frontend; local auth routes are available as a fallback when
 		// QUILL_CLERK_FRONTEND_API is not set (development / self-hosted without Clerk).
 		r.Route("/auth", func(r chi.Router) {
-			if s.clerk == nil || !s.clerk.Enabled() {
+			if !s.externalAuthEnabled() {
 				authLimiter := newIPRateLimiter(10, time.Minute)
 				r.With(authLimiter.middleware()).Post("/register", s.handleRegister)
 				r.With(authLimiter.middleware()).Post("/login", s.handleLogin)
@@ -131,7 +147,7 @@ func (s *Server) setupRoutes() {
 				r.Patch("/me/email", s.handleUpdateEmail)
 				r.Delete("/me", s.handleDeleteAccount)
 				r.Post("/logout", s.handleLogout)
-				if s.clerk == nil || !s.clerk.Enabled() {
+				if !s.externalAuthEnabled() {
 					r.Patch("/me/password", s.handleChangePassword)
 				}
 			})
@@ -143,7 +159,7 @@ func (s *Server) setupRoutes() {
 			r.Use(s.requireAdmin)
 			r.Get("/admin/users", s.handleListUsers)
 			r.Patch("/admin/users/{username}/active", s.handleSetUserActive)
-			if s.clerk == nil || !s.clerk.Enabled() {
+			if !s.externalAuthEnabled() {
 				r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 			}
 			r.Get("/admin/audit-log", s.handleListAuditLog)

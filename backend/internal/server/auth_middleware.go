@@ -44,9 +44,10 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			err error
 		)
 
-		// Clerk path: verify the RS256 JWT and provision user/tenant on first login.
-		if s.clerk != nil && s.clerk.Enabled() {
-			id, err = s.clerk.Verify(r.Context(), token)
+		// External IdP path (Clerk/Zitadel): verify the RS256 JWT and provision
+		// user/tenant on first login.
+		if s.externalAuthEnabled() {
+			id, err = s.verifier.Verify(r.Context(), token)
 			if err != nil {
 				httpx.Error(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 				return
