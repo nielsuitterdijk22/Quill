@@ -328,11 +328,38 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+
+	// Capture the Clerk subject before deletion: the cascade removes the
+	// auth_identities rows, so we must read it first. Deleting the Clerk-side
+	// user is what invalidates the session and prevents the deleted account from
+	// being re-provisioned on the next request (which otherwise loops /sign-in).
+	clerkSubject := ""
+	if s.clerk != nil && s.clerk.Enabled() {
+		if idents, err := s.store.ListAuthIdentitiesForUser(r.Context(), id.UserID); err == nil {
+			for _, ai := range idents {
+				if ai.Provider == auth.ProviderClerk {
+					clerkSubject = ai.Subject
+					break
+				}
+			}
+		}
+	}
+
 	if err := s.auth.DeleteAccount(r.Context(), id); err != nil {
 		s.logger.Error("delete account failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete account")
 		return
 	}
+
+	if clerkSubject != "" {
+		if err := s.clerk.DeleteUser(r.Context(), clerkSubject); err != nil {
+			// Non-fatal: the Quill account is already gone. Log so an orphaned
+			// Clerk user can be cleaned up, but still report success to the client.
+			s.logger.Warn("could not delete Clerk user on account deletion",
+				"username", id.Username, "error", err)
+		}
+	}
+
 	s.logger.Info("account deleted", "username", id.Username)
 	w.WriteHeader(http.StatusNoContent)
 }

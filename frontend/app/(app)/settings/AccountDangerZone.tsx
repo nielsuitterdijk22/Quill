@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { useClerk } from "@clerk/nextjs";
 
@@ -19,16 +19,23 @@ function DeleteButton() {
 
 export function AccountDangerZone() {
   const [state, formAction] = useFormState(deleteAccountAction, initial);
-  const { signOut } = useClerk();
+  const clerk = useClerk();
+  const signedOut = useRef(false);
 
   // Once the backend has purged the account, sign out of Clerk before leaving.
   // Without this the Clerk session stays live and the next request would
   // re-provision a fresh Quill user, trapping the browser in a redirect loop.
+  //
+  // The ref guard is essential: useClerk()'s signOut identity is not stable, so
+  // depending on it (or re-running while state.ok stays true) would fire signOut
+  // on every render — each triggering a navigation/re-render and hammering
+  // /sign-in forever. Fire exactly once.
   useEffect(() => {
-    if (state.ok) {
-      void signOut({ redirectUrl: "/sign-in" });
+    if (state.ok && !signedOut.current) {
+      signedOut.current = true;
+      void clerk.signOut({ redirectUrl: "/sign-in" });
     }
-  }, [state.ok, signOut]);
+  }, [state.ok, clerk]);
 
   return (
     <div className="panel danger-zone">

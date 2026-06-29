@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider appearance={{ baseTheme: dark }}>
+    <ClerkProvider appearance={{ baseTheme: dark }} afterSignOutUrl="/sign-in">
       <html lang="en">
         <body>{children}</body>
       </html>

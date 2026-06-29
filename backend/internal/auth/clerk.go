@@ -227,6 +227,36 @@ type clerkUserProfile struct {
 	} `json:"email_addresses"`
 }
 
+// DeleteUser removes the Clerk-side user via the Backend API. This is what
+// actually invalidates the user's Clerk session on account deletion — without
+// it the session JWT keeps verifying and the next request would re-provision a
+// fresh Quill user (account "resurrection"), trapping the browser in a
+// /sign-in redirect loop. A 404 is treated as success (already gone).
+func (v *ClerkVerifier) DeleteUser(ctx context.Context, clerkUserID string) error {
+	if v.secretKey == "" {
+		return fmt.Errorf("QUILL_CLERK_SECRET_KEY not set")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		"https://api.clerk.com/v1/users/"+clerkUserID, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+v.secretKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("clerk delete user returned %d for user %s", resp.StatusCode, clerkUserID)
+	}
+	return nil
+}
+
 func (v *ClerkVerifier) fetchClerkUser(ctx context.Context, clerkUserID string) (clerkUserProfile, error) {
 	if v.secretKey == "" {
 		return clerkUserProfile{}, fmt.Errorf("QUILL_CLERK_SECRET_KEY not set")
