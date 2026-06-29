@@ -140,9 +140,23 @@ func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, u
 	if err != nil {
 		return err
 	}
-	// Fast idempotency check.
-	if _, err := s.store.GetProjectBySlug(ctx, slug); err == nil {
+	// Idempotency: a personal project's slug equals the (globally unique) username,
+	// so an existing project with this slug is unambiguously this user's namespace.
+	// Ensure the caller is a member rather than returning early — otherwise a project
+	// that exists without the membership row (e.g. a partially-completed earlier run)
+	// would leave the user unable to see or import into their own workspace, surfacing
+	// later as a 404 on import.
+	if existing, err := s.store.GetProjectBySlug(ctx, slug); err == nil {
+		if aerr := s.store.AddProjectMember(ctx, db.AddProjectMemberParams{
+			ProjectID: existing.ID,
+			UserID:    userID,
+			Role:      "owner",
+		}); aerr != nil {
+			return fmt.Errorf("ensure personal project membership: %w", aerr)
+		}
 		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("lookup personal project: %w", err)
 	}
 	return s.store.InTx(ctx, func(q *db.Queries) error {
 		project, err := q.CreateProject(ctx, db.CreateProjectParams{

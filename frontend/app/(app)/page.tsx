@@ -1,11 +1,13 @@
-import { getMeta, getOpenPullRequestCount, listProjects, listReposByProject, type Repo } from "../lib/api";
+import { getMeta, getOpenPullRequestCount, getMyProjects, listReposByProject, type Repo } from "../lib/api";
 import { getToken } from "../lib/session";
 
 export default async function DashboardPage() {
   const token = await getToken();
+  // Use the membership-scoped list — never the admin-wide listProjects, which
+  // would leak every tenant's projects to the instance admin (first user).
   const [meta, projects] = await Promise.all([
     getMeta(),
-    token ? listProjects(token) : Promise.resolve([]),
+    token ? getMyProjects(token) : Promise.resolve([]),
   ]);
   const online = meta !== null;
   const forgejo = meta?.forgejo;

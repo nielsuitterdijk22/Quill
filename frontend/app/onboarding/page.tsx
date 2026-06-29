@@ -207,19 +207,38 @@ export default function OnboardingPage() {
     else setSelected(new Set(ghRepos.map((r) => r.id)));
   }
 
+  // resolveProjectSlug returns the already-known slug, or fetches the user's
+  // projects to recover it. After the GitHub OAuth round-trip the page reloads
+  // and React state is reset, so projectSlug can be momentarily null — rather
+  // than erroring, re-derive it (personal project first, else the first one).
+  async function resolveProjectSlug(token: string | null): Promise<string | null> {
+    if (projectSlug) return projectSlug;
+    const res = await fetch("/api/backend/me/projects", {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
+    const existing = body.projects ?? [];
+    if (existing.length === 0) return null;
+    const chosen = (existing.find((p) => p.isPersonal) ?? existing[0]).slug;
+    setProjectSlug(chosen);
+    return chosen;
+  }
+
   function doImport() {
     const toImport = ghRepos.filter((r) => selected.has(r.id));
     if (toImport.length === 0) {
       window.location.href = "/repositories";
       return;
     }
-    const slug = projectSlug;
-    if (!slug) {
-      setError("Could not determine your project. Please refresh.");
-      return;
-    }
     setStep("importing");
     getToken().then(async (token) => {
+      const slug = await resolveProjectSlug(token);
+      if (!slug) {
+        setError("Could not determine your project. Please refresh and try again.");
+        setStep("import");
+        return;
+      }
       const res = await fetch("/api/backend/import/github", {
         method: "POST",
         headers: {
