@@ -29,6 +29,46 @@ jobs:
           script: |
             set -euo pipefail
             cd /home/quill/quill
-            git fetch origin ${{ github.head_ref || 'main' }}
-            git reset --hard origin/${{ github.head_ref || 'main' }}
-            docker compose -f deploy/compose/docker-compose.yml --profile production up -d --build --remove-orphans
+
+            REF="${{ github.head_ref || 'main' }}"
+            git fetch origin "$REF"
+            git reset --hard "origin/$REF"
+
+            COMPOSE="docker compose -f deploy/compose/docker-compose.yml --profile production"
+
+            # Build first, bounded by a hard timeout: a build failure (or a hung
+            # builder) fails fast without touching the running stack.
+            timeout 600 $COMPOSE build
+
+            # Recreate containers, bounded so a wedged daemon can't hang the
+            # pipeline. Docker Compose occasionally hits a stale-container race
+            # ("No such container") when a previous deploy left state half-applied;
+            # on any failure we tear the stack down to clear it and retry once.
+            deploy_up() { timeout 300 $COMPOSE up -d --remove-orphans; }
+            if ! deploy_up; then
+              echo "::warning::compose up failed/timed out — clearing stack state and retrying"
+              timeout 120 $COMPOSE down --remove-orphans \
+                || docker rm -f $($COMPOSE ps -aq) 2>/dev/null \
+                || true
+              deploy_up
+            fi
+
+            # Verify the app actually serves before reporting success. Both the API
+            # (:8080) and web (:3001) publish to the host, so a green deploy now
+            # means "reachable", not just "compose exited 0" — this is what would
+            # have caught the earlier 502.
+            healthy=""
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 \
+                 && curl -fsS -o /dev/null http://localhost:3001/ 2>/dev/null; then
+                healthy=1; break
+              fi
+              sleep 3
+            done
+            if [ -z "$healthy" ]; then
+              echo "::error::deploy unhealthy — api/web not reachable after ~90s"
+              $COMPOSE ps || true
+              docker compose -f deploy/compose/docker-compose.yml logs --tail=40 web api || true
+              exit 1
+            fi
+            echo "deploy healthy"
