@@ -173,10 +173,14 @@ services:
   zitadel:
     image: ghcr.io/zitadel/zitadel:v2.65.1
     profiles: [zitadel]
+    # FirstInstance bootstrap (admin login + machine PAT) comes from steps.yaml,
+    # mounted below; the PAT is written to the ./zitadel/out bind mount for
+    # bootstrap.sh. Set ZITADEL_MASTERKEY (exactly 32 chars) in production.
     command: >
       start-from-init
       --masterkey "${ZITADEL_MASTERKEY:-MasterkeyNeedsToHave32Characters}"
       --tlsMode ${ZITADEL_TLS_MODE:-external}
+      --steps /steps.yaml
     environment:
       ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
       ZITADEL_DATABASE_POSTGRES_PORT: "5432"
@@ -187,16 +191,20 @@ services:
       ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
       ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${ZITADEL_DB_PASSWORD:-postgres}
       ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
-      # External exposure. In production set ZITADEL_EXTERNALDOMAIN to the public
-      # host (e.g. auth.example.com) fronted by Caddy; ExternalSecure stays true.
+      # External exposure. ZITADEL_EXTERNALDOMAIN MUST be set to the public host
+      # (e.g. auth.example.com) BEFORE first boot — the instance domain is baked
+      # in at init and cannot be changed later without re-initialising. Caddy
+      # terminates TLS, so ExternalSecure stays true and ZITADEL serves h2c.
       ZITADEL_EXTERNALSECURE: ${ZITADEL_EXTERNALSECURE:-true}
       ZITADEL_EXTERNALDOMAIN: ${ZITADEL_EXTERNALDOMAIN:-localhost}
       ZITADEL_EXTERNALPORT: ${ZITADEL_EXTERNALPORT:-443}
-      # Seed an admin login on first boot (override in production).
-      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${ZITADEL_ADMIN_USERNAME:-admin@quill.local}
-      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ZITADEL_ADMIN_PASSWORD:-Password1!}
+    volumes:
+      - ./zitadel/steps.yaml:/steps.yaml:ro
+      - ./zitadel/out:/output
+    # Bound to localhost only: external traffic reaches Zitadel through Caddy
+    # (auth.<domain>); the local port is for bootstrap.sh / debugging on the host.
     ports:
-      - "${ZITADEL_PORT:-8081}:8080"
+      - "127.0.0.1:${ZITADEL_PORT:-8081}:8080"
     depends_on:
       zitadel-db:
         condition: service_healthy

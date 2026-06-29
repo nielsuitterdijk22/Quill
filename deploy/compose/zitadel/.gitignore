@@ -1,0 +1,4 @@
+# The PAT/machine key Zitadel writes here are secrets — never commit them, but
+# keep the directory so the compose bind mount (./zitadel/out:/output) exists.
+out/*
+!out/.gitkeep

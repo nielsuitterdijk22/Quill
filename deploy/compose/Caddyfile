@@ -5,3 +5,10 @@
 git.{$QUILL_DOMAIN} {
 	reverse_proxy forgejo:3000
 }
+
+# Zitadel (auth provider). Only serves once the `zitadel` compose profile is
+# enabled; until then this vhost 502s and is simply unused (Quill stays on Clerk).
+# h2c:// is required — Zitadel speaks HTTP/2 cleartext (gRPC) behind the proxy.
+auth.{$QUILL_DOMAIN} {
+	reverse_proxy h2c://zitadel:8080
+}

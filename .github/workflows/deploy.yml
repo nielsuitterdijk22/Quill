@@ -36,6 +36,17 @@ jobs:
 
             COMPOSE="docker compose -f deploy/compose/docker-compose.yml --profile production"
 
+            # Opt-in extra compose profiles (e.g. "zitadel") via the VM's .env:
+            #   DEPLOY_EXTRA_PROFILES=zitadel
+            # This keeps the default production stack unchanged while letting the
+            # operator enable Zitadel so it's managed by the deploy (and not
+            # orphan-removed by --remove-orphans below).
+            EXTRA_PROFILES=""
+            if [ -f .env ]; then
+              EXTRA_PROFILES="$(grep -E '^DEPLOY_EXTRA_PROFILES=' .env | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+            fi
+            for p in $EXTRA_PROFILES; do COMPOSE="$COMPOSE --profile $p"; done
+
             # Build first, bounded by a hard timeout: a build failure (or a hung
             # builder) fails fast without touching the running stack.
             timeout 600 $COMPOSE build
