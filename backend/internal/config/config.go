@@ -27,6 +27,7 @@ type Config struct {
 
 	JWT      JWTConfig
 	Clerk    ClerkConfig
+	GitHub   GitHubConfig
 	Forgejo  ForgejoConfig
 	Pipeline PipelineConfig
 
@@ -64,6 +65,13 @@ type ClerkConfig struct {
 	SecretKey string
 }
 
+// GitHubConfig holds credentials for the GitHub OAuth integration used during
+// onboarding to import existing repositories.
+type GitHubConfig struct {
+	ClientID     string
+	ClientSecret string
+}
+
 // PipelineConfig controls how workflow runs are dispatched.
 type PipelineConfig struct {
 	// DispatchURL points at the standalone pipeline dispatcher. When empty, the
@@ -92,6 +100,10 @@ func Load() (*Config, error) {
 		Clerk: ClerkConfig{
 			FrontendAPI: getenv("QUILL_CLERK_FRONTEND_API", ""),
 			SecretKey:   getenv("QUILL_CLERK_SECRET_KEY", ""),
+		},
+		GitHub: GitHubConfig{
+			ClientID:     getenv("QUILL_GITHUB_CLIENT_ID", ""),
+			ClientSecret: getenv("QUILL_GITHUB_CLIENT_SECRET", ""),
 		},
 		Forgejo: ForgejoConfig{
 			BaseURL:    getenv("QUILL_FORGEJO_BASE_URL", "http://localhost:3000"),

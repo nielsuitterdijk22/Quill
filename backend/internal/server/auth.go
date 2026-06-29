@@ -149,6 +149,37 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
+// handleMyContributions proxies the signed-in user's Forgejo contribution
+// heatmap (the GitHub-style commit calendar). Returns an empty series rather
+// than an error when Forgejo is disabled or the user isn't linked yet, so the
+// profile renders an empty graph instead of failing.
+func (s *Server) handleMyContributions(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	empty := map[string]any{"contributions": []any{}}
+	if s.forgejo == nil || !s.forgejo.Enabled() {
+		httpx.JSON(w, http.StatusOK, empty)
+		return
+	}
+	user, err := s.store.GetUserByID(r.Context(), id.UserID)
+	if err != nil || !user.ForgejoUsername.Valid || user.ForgejoUsername.String == "" {
+		httpx.JSON(w, http.StatusOK, empty)
+		return
+	}
+
+	entries, err := s.forgejo.UserHeatmap(r.Context(), user.ForgejoUsername.String)
+	if err != nil {
+		s.logger.Warn("fetch contribution heatmap failed", "user", user.ForgejoUsername.String, "error", err)
+		httpx.JSON(w, http.StatusOK, empty)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"contributions": entries})
+}
+
 type updateProfileRequest struct {
 	DisplayName string `json:"displayName"`
 }
@@ -312,7 +343,7 @@ func (s *Server) handleExportMyData(w http.ResponseWriter, r *http.Request) {
 			"displayName": user.DisplayName,
 			"createdAt":   user.CreatedAt,
 		},
-		"gitTokens":   tokenExports,
+		"gitTokens":          tokenExports,
 		"projectMemberships": projectExports,
 	}
 
@@ -328,11 +359,48 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+
+	// Capture the Clerk subject before deletion: the cascade removes the
+	// auth_identities rows, so we must read it first. Deleting the Clerk-side
+	// user is what invalidates the session and prevents the deleted account from
+	// being re-provisioned on the next request (which otherwise loops /sign-in).
+	clerkSubject := ""
+	if s.clerk != nil && s.clerk.Enabled() {
+		if idents, err := s.store.ListAuthIdentitiesForUser(r.Context(), id.UserID); err == nil {
+			for _, ai := range idents {
+				if ai.Provider == auth.ProviderClerk {
+					clerkSubject = ai.Subject
+					break
+				}
+			}
+		}
+	}
+
+	// Purge the user's solely-owned projects (repos, pipelines, Forgejo orgs)
+	// BEFORE deleting the user, while their memberships still resolve the project
+	// list. Otherwise the project/repo rows survive the cascade and a later
+	// re-signup hits "repository already exists" on import. Best-effort: failures
+	// are logged inside the purge and must not block account deletion.
+	if err := s.platform.PurgeOwnedProjects(r.Context(), id.UserID); err != nil {
+		s.logger.Warn("purge owned projects failed during account deletion",
+			"username", id.Username, "error", err)
+	}
+
 	if err := s.auth.DeleteAccount(r.Context(), id); err != nil {
 		s.logger.Error("delete account failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete account")
 		return
 	}
+
+	if clerkSubject != "" {
+		if err := s.clerk.DeleteUser(r.Context(), clerkSubject); err != nil {
+			// Non-fatal: the Quill account is already gone. Log so an orphaned
+			// Clerk user can be cleaned up, but still report success to the client.
+			s.logger.Warn("could not delete Clerk user on account deletion",
+				"username", id.Username, "error", err)
+		}
+	}
+
 	s.logger.Info("account deleted", "username", id.Username)
 	w.WriteHeader(http.StatusNoContent)
 }

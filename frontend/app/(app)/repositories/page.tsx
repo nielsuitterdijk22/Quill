@@ -1,44 +1,42 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
 import { getToken } from "../../lib/session";
-import { listReposByProject } from "../../lib/api";
-import { resolveCurrentProject } from "../../lib/projects";
+import { getMyProjects, listReposByProject } from "../../lib/api";
+import type { Repo, MyProject } from "../../lib/api";
 
-// ReposPage lists the repositories of the current project (chosen via the
-// sidebar project switcher). The current project is resolved from the cookie,
-// falling back to the user's first project.
+// ReposPage lists all repositories across the user's projects.
+// For individual users (only a personal project) repos are shown flat.
+// For org users each repo shows its project badge.
 export default async function ReposPage() {
   const token = await getToken();
-  if (!token) notFound();
+  const projects = token ? await getMyProjects(token) : [];
+  const hasOrgProjects = projects.some((p) => !p.isPersonal);
 
-  const resolved = await resolveCurrentProject(token);
-  if (!resolved) {
-    return (
-      <>
-        <div className="top">
-          <h1>Repositories</h1>
-        </div>
-        <div className="panel">
-          <div className="empty">
-            Create a project to start adding repositories.
-          </div>
-        </div>
-      </>
-    );
-  }
+  type RepoWithProject = { repo: Repo; project: MyProject };
 
-  const project = resolved.current;
-  const repos = await listReposByProject(token, project.slug);
+  const perProject = token
+    ? await Promise.all(
+        projects.map(async (p) => {
+          const repos = await listReposByProject(token, p.slug);
+          return repos.map<RepoWithProject>((r) => ({ repo: r, project: p }));
+        }),
+      )
+    : [];
+
+  const rows = perProject.flat();
+
+  const personalProject = projects.find((p) => p.isPersonal);
+  const newRepoHref = hasOrgProjects
+    ? "/projects"
+    : personalProject
+      ? `/projects/${personalProject.slug}/repos/new`
+      : "/repositories/new";
 
   return (
     <>
       <div className="top">
-        <h1>Repositories in {project.name}</h1>
-        <Link
-          className="btn primary"
-          href={`/projects/${project.slug}/repos/new`}
-        >
+        <h1>Repositories</h1>
+        <Link className="btn primary" href={newRepoHref}>
           + New Repository
         </Link>
       </div>
@@ -46,21 +44,28 @@ export default async function ReposPage() {
       <div className="panel">
         <h2>
           All Repositories
-          <span className="tag">{repos.length}</span>
+          <span className="tag">{rows.length}</span>
         </h2>
-        {repos.length === 0 ? (
-          <div className="empty">No repositories yet. Create one :D</div>
+        {rows.length === 0 ? (
+          <div className="empty">No repositories yet. Create one above.</div>
         ) : (
-          repos.map((o) => (
+          rows.map(({ repo, project }) => (
             <Link
               className="row-item"
-              key={o.id}
-              href={`/projects/${project.slug}/repos/${o.slug}`}
+              key={repo.id}
+              href={`/${encodeURIComponent(project.slug)}/${encodeURIComponent(repo.slug)}`}
             >
               <span className="tree-icon dir">◆</span>
-              <span className="nm">{o.name}</span>
-              <span className="sub">· {o.slug}</span>
+              <div className="pr-main">
+                <span className="nm">{repo.name}</span>
+                {hasOrgProjects && (
+                  <span className="sub">{project.name}</span>
+                )}
+              </div>
               <span className="spacer" />
+              {repo.visibility !== "public" && (
+                <span className="tag">{repo.visibility}</span>
+              )}
             </Link>
           ))
         )}

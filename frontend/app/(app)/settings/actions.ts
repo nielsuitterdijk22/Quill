@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 import {
   changePassword,
@@ -75,7 +74,7 @@ export async function changePasswordAction(
   return { ok: true };
 }
 
-export type DeleteAccountState = { error?: string };
+export type DeleteAccountState = { error?: string; ok?: boolean };
 
 // deleteAccountAction permanently purges the signed-in user's account and clears
 // the session cookie so the browser returns to the login page.
@@ -94,5 +93,10 @@ export async function deleteAccountAction(
   const res = await deleteMyAccount(token);
   if (!res.ok) return { error: res.error };
 
-  redirect("/sign-in");
+  // Do NOT redirect server-side here: the Clerk session is still live, so a
+  // bare redirect to /sign-in would let the next request re-provision a brand
+  // new Quill user (account "resurrection") and bounce between /sign-in and
+  // /onboarding forever. Return success so the client can sign out of Clerk
+  // first, which clears the session before navigating away.
+  return { ok: true };
 }

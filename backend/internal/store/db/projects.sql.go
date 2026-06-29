@@ -24,6 +24,15 @@ func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const deleteProject = `-- name: DeleteProject :exec
+DELETE FROM projects WHERE id = $1
+`
+
+func (q *Queries) DeleteProject(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProject, id)
+	return err
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (tenant_id, slug, name, description, is_personal)
 VALUES ($1, $2, $3, $4, $5)

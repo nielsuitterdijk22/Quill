@@ -20,6 +20,7 @@ export type Project = {
   name: string;
   description: string;
   forgejoOrg?: string;
+  isPersonal: boolean;
   createdAt: string;
 };
 

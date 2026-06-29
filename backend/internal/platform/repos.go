@@ -15,12 +15,22 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
+// CloneSource instructs CreateRepo to migrate an existing remote repository
+// into Forgejo instead of creating an empty one.
+type CloneSource struct {
+	URL       string
+	AuthToken string
+}
+
 // CreateRepoInput is the payload for creating a repository under a project.
 type CreateRepoInput struct {
 	Slug        string
 	Name        string
 	Description string
 	Visibility  string // public | internal | private (default private)
+	// CloneFrom, when set, migrates from an existing remote repo instead of
+	// creating an empty one.
+	CloneFrom *CloneSource
 }
 
 // CreateRepo provisions a repository under projectSlug for an authorized actor.
@@ -83,19 +93,45 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 		fjCreated       bool
 	)
 	if s.forgejoEnabled() {
-		repoOpts := forgejo.CreateRepoOptions{
-			Name:          slug,
-			Description:   strings.TrimSpace(in.Description),
-			Private:       forgejoPrivate(visibility),
-			AutoInit:      true,
-			DefaultBranch: defaultBranch,
-		}
 		var fjRepo forgejo.Repo
 		var err error
-		if useUserNamespace {
-			fjRepo, err = s.forgejo.CreateUserRepo(ctx, owner, repoOpts)
+		if in.CloneFrom != nil {
+			// Resolve the Forgejo user/org UID for the migration target.
+			var uid int64
+			if useUserNamespace {
+				u, uerr := s.forgejo.GetUser(ctx, owner)
+				if uerr != nil {
+					return db.Repository{}, fmt.Errorf("forgejo get user for migrate: %w", uerr)
+				}
+				uid = u.ID
+			} else {
+				o, oerr := s.forgejo.GetOrg(ctx, owner)
+				if oerr != nil {
+					return db.Repository{}, fmt.Errorf("forgejo get org for migrate: %w", oerr)
+				}
+				uid = o.ID
+			}
+			fjRepo, err = s.forgejo.MigrateRepo(ctx, forgejo.MigrateRepoOptions{
+				CloneURL:    in.CloneFrom.URL,
+				AuthToken:   in.CloneFrom.AuthToken,
+				UID:         uid,
+				RepoName:    slug,
+				Description: strings.TrimSpace(in.Description),
+				Private:     forgejoPrivate(visibility),
+			})
 		} else {
-			fjRepo, err = s.forgejo.CreateOrgRepo(ctx, owner, repoOpts)
+			repoOpts := forgejo.CreateRepoOptions{
+				Name:          slug,
+				Description:   strings.TrimSpace(in.Description),
+				Private:       forgejoPrivate(visibility),
+				AutoInit:      true,
+				DefaultBranch: defaultBranch,
+			}
+			if useUserNamespace {
+				fjRepo, err = s.forgejo.CreateUserRepo(ctx, owner, repoOpts)
+			} else {
+				fjRepo, err = s.forgejo.CreateOrgRepo(ctx, owner, repoOpts)
+			}
 		}
 		if err != nil {
 			return db.Repository{}, fmt.Errorf("forgejo create repo: %w", err)
@@ -454,10 +490,10 @@ func (s *Service) ForkRepo(ctx context.Context, actor Actor, sourceProjectSlug, 
 	}
 
 	var (
-		fjID      pgtype.Int8
-		fjOwner   pgtype.Text
+		fjID       pgtype.Int8
+		fjOwner    pgtype.Text
 		fjForkName pgtype.Text
-		fjCreated bool
+		fjCreated  bool
 	)
 	if s.forgejoEnabled() {
 		fork, err := s.forgejo.ForkRepo(ctx, srcOwner, srcName, forgejo.ForkRepoOptions{

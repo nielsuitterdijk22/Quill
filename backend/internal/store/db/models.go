@@ -153,12 +153,12 @@ type Repository struct {
 }
 
 type Tenant struct {
-	ID          uuid.UUID   `json:"id"`
-	Slug        string      `json:"slug"`
-	Name        string      `json:"name"`
-	ClerkOrgID  pgtype.Text `json:"clerkOrgId"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	UpdatedAt   time.Time   `json:"updatedAt"`
+	ID         uuid.UUID   `json:"id"`
+	Slug       string      `json:"slug"`
+	Name       string      `json:"name"`
+	ClerkOrgID pgtype.Text `json:"clerkOrgId"`
+	CreatedAt  time.Time   `json:"createdAt"`
+	UpdatedAt  time.Time   `json:"updatedAt"`
 }
 
 type User struct {

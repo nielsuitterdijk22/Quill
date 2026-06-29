@@ -10,7 +10,7 @@ import (
 // right job/step buckets, keeps raw_output as logs, and records final outcomes —
 // the logic that turns act's stream into a structured result, without Docker.
 func TestLogCaptureRoutesEntries(t *testing.T) {
-	c := newLogCapture()
+	c := newLogCapture(nil)
 	log := c.WithJobLogger()
 
 	je := log.WithField("jobID", "build")
@@ -46,7 +46,7 @@ func TestLogCaptureRoutesEntries(t *testing.T) {
 // TestLogCaptureIgnoresEntriesWithoutJob ensures stray entries (no jobID) don't
 // create phantom jobs.
 func TestLogCaptureIgnoresEntriesWithoutJob(t *testing.T) {
-	c := newLogCapture()
+	c := newLogCapture(nil)
 	c.WithJobLogger().WithField("note", "x").Info("ignored")
 	if len(c.jobs) != 0 {
 		t.Fatalf("captured %d jobs, want 0", len(c.jobs))

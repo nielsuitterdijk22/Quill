@@ -66,11 +66,11 @@ LIMIT $4 OFFSET $5
 `
 
 type ListAuditLogFilteredParams struct {
-	ActionPrefix string              `json:"actionPrefix"`
-	Since        pgtype.Timestamptz  `json:"since"`
-	Until        pgtype.Timestamptz  `json:"until"`
-	Limit        int32               `json:"limit"`
-	Offset       int32               `json:"offset"`
+	ActionPrefix string             `json:"actionPrefix"`
+	Since        pgtype.Timestamptz `json:"since"`
+	Until        pgtype.Timestamptz `json:"until"`
+	Limit        int32              `json:"limit"`
+	Offset       int32              `json:"offset"`
 }
 
 func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilteredParams) ([]AuditLog, error) {

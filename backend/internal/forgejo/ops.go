@@ -104,6 +104,22 @@ func (c *Client) GetUser(ctx context.Context, username string) (User, error) {
 	return out, err
 }
 
+// HeatmapEntry is one day's contribution bucket from Forgejo's user heatmap.
+// Timestamp is Unix seconds within the day.
+type HeatmapEntry struct {
+	Timestamp     int64 `json:"timestamp"`
+	Contributions int   `json:"contributions"`
+}
+
+// UserHeatmap returns the contribution heatmap for a Forgejo user — the same
+// data that powers the GitHub-style commit calendar. Returns the raw daily
+// buckets; aggregating them into a calendar is the caller's job.
+func (c *Client) UserHeatmap(ctx context.Context, username string) ([]HeatmapEntry, error) {
+	var out []HeatmapEntry
+	err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(username)+"/heatmap", nil, &out)
+	return out, err
+}
+
 // DeleteUser removes a Forgejo user (admin). purge also deletes their content.
 func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) error {
 	path := "/admin/users/" + url.PathEscape(username)
@@ -216,6 +232,26 @@ func (c *Client) ForkRepo(ctx context.Context, owner, repo string, opts ForkRepo
 	var out Repo
 	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/forks"
 	err := c.do(ctx, http.MethodPost, p, opts, &out)
+	return out, err
+}
+
+// MigrateRepoOptions describes a repository migration from an external source.
+type MigrateRepoOptions struct {
+	CloneURL    string `json:"clone_addr"`
+	AuthToken   string `json:"auth_token,omitempty"`
+	UID         int64  `json:"uid"`
+	RepoName    string `json:"repo_name"`
+	Description string `json:"description,omitempty"`
+	Private     bool   `json:"private"`
+	Mirror      bool   `json:"mirror"`
+}
+
+// MigrateRepo clones an external repository into Forgejo under the given user
+// or org (identified by UID). Forgejo handles the git clone; no local disk I/O
+// is needed on the Quill side.
+func (c *Client) MigrateRepo(ctx context.Context, opts MigrateRepoOptions) (Repo, error) {
+	var out Repo
+	err := c.do(ctx, http.MethodPost, "/repos/migrate", opts, &out)
 	return out, err
 }
 

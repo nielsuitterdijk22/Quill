@@ -24,6 +24,9 @@ ORDER BY p.slug;
 -- name: CountProjects :one
 SELECT count(*) FROM projects;
 
+-- name: DeleteProject :exec
+DELETE FROM projects WHERE id = $1;
+
 -- name: SetProjectForgejoName :one
 UPDATE projects
 SET forgejo_org_name = $2
