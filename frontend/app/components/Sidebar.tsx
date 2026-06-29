@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
-import { useClerk, useOrganization } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+
+import { useQuillAuth } from "./auth/context";
 
 import { setCurrentProjectAction } from "../lib/actions";
 import type { MyProject, User } from "../lib/api";
@@ -289,8 +290,7 @@ export function Sidebar({
   currentProject: string | null;
 }) {
   const pathname = usePathname() || "/";
-  const { signOut } = useClerk();
-  const { organization } = useOrganization();
+  const { signOut } = useQuillAuth();
   const repoCtx = parseRepoCtx(pathname);
 
   const hasOrgProjects = projects.some((p) => !p.isPersonal);
@@ -309,7 +309,6 @@ export function Sidebar({
       <div className="project">
         <span className="who">Signed in as</span>
         <b>{user.displayName || user.username}</b>
-        {organization && <span className="who">{organization.name}</span>}
         {hasOrgProjects && (
           <ProjectSwitcher projects={projects} currentProject={currentProject} />
         )}
@@ -363,7 +362,7 @@ export function Sidebar({
         <ThemeToggle />
         <button
           className="logout-btn"
-          onClick={() => signOut({ redirectUrl: "/sign-in" })}
+          onClick={() => signOut()}
         >
           Sign out
         </button>

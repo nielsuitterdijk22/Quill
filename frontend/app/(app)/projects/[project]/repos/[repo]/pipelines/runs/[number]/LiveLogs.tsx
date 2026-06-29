@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useQuillAuth } from "@/components/auth/context";
 
 interface LogLine {
   jobKey: string;
@@ -45,7 +45,7 @@ export function LiveLogs({
   const [error, setError] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const { getToken } = useAuth();
+  const { getToken } = useQuillAuth();
 
   const logsUrl =
     `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}` +

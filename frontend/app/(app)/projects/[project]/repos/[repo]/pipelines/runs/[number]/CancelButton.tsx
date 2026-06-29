@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useQuillAuth } from "@/components/auth/context";
 
 type CancelButtonProps = {
   project: string;
@@ -14,7 +14,7 @@ export function CancelButton({ project, repo, number }: CancelButtonProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const { getToken } = useAuth();
+  const { getToken } = useQuillAuth();
 
   function cancel() {
     setError(null);

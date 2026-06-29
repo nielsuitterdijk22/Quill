@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+
+import { useQuillAuth } from "@/components/auth/context";
 
 type GitHubRepo = {
   id: number;
@@ -61,7 +62,7 @@ function IconSpinner() {
 
 export default function OnboardingPage() {
   const searchParams = useSearchParams();
-  const { getToken } = useAuth();
+  const { getToken } = useQuillAuth();
 
   const [step, setStep] = useState<Step>(
     searchParams.get("step") === "import" ? "import" : "choose",

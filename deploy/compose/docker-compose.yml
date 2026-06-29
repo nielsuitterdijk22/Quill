@@ -125,17 +125,86 @@ services:
     build:
       context: ../../frontend
       args:
+        # NEXT_PUBLIC_* must be build args — Next.js inlines them at build time.
+        NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER:-clerk}
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_ZITADEL_ISSUER: ${NEXT_PUBLIC_ZITADEL_ISSUER:-}
+        NEXT_PUBLIC_ZITADEL_CLIENT_ID: ${NEXT_PUBLIC_ZITADEL_CLIENT_ID:-}
+        NEXT_PUBLIC_ZITADEL_PROJECT_ID: ${NEXT_PUBLIC_ZITADEL_PROJECT_ID:-}
         QUILL_API_BASE_URL: ${QUILL_API_BASE_URL:-http://api:8080}
     environment:
       NODE_ENV: production
       QUILL_API_BASE_URL: http://api:8080
+      # Auth provider: "clerk" (default) or "zitadel".
+      NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER:-clerk}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      # Zitadel (Auth.js). Client is a public PKCE app — no secret.
+      NEXT_PUBLIC_ZITADEL_ISSUER: ${NEXT_PUBLIC_ZITADEL_ISSUER:-}
+      NEXT_PUBLIC_ZITADEL_CLIENT_ID: ${NEXT_PUBLIC_ZITADEL_CLIENT_ID:-}
+      NEXT_PUBLIC_ZITADEL_PROJECT_ID: ${NEXT_PUBLIC_ZITADEL_PROJECT_ID:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_URL: ${AUTH_URL:-}
     ports:
       - "3001:3001"
     depends_on:
       - api
+
+  # Zitadel: self-hosted OIDC IdP, an alternative to Clerk for org management +
+  # SSO/SCIM. Behind the "zitadel" profile so the default stack is unchanged:
+  #   docker compose --profile zitadel up -d
+  # Then set QUILL_AUTH_PROVIDER=zitadel (api) and NEXT_PUBLIC_AUTH_PROVIDER=zitadel
+  # (web), plus the Zitadel issuer/client env above. See deploy/compose/README.md.
+  zitadel-db:
+    image: postgres:16-alpine
+    profiles: [zitadel]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${ZITADEL_DB_PASSWORD:-postgres}
+      POSTGRES_DB: zitadel
+    volumes:
+      - zitadel-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zitadel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v2.65.1
+    profiles: [zitadel]
+    command: >
+      start-from-init
+      --masterkey "${ZITADEL_MASTERKEY:-MasterkeyNeedsToHave32Characters}"
+      --tlsMode ${ZITADEL_TLS_MODE:-external}
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${ZITADEL_DB_USER_PASSWORD:-zitadel}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${ZITADEL_DB_PASSWORD:-postgres}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      # External exposure. In production set ZITADEL_EXTERNALDOMAIN to the public
+      # host (e.g. auth.example.com) fronted by Caddy; ExternalSecure stays true.
+      ZITADEL_EXTERNALSECURE: ${ZITADEL_EXTERNALSECURE:-true}
+      ZITADEL_EXTERNALDOMAIN: ${ZITADEL_EXTERNALDOMAIN:-localhost}
+      ZITADEL_EXTERNALPORT: ${ZITADEL_EXTERNALPORT:-443}
+      # Seed an admin login on first boot (override in production).
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: ${ZITADEL_ADMIN_USERNAME:-admin@quill.local}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ZITADEL_ADMIN_PASSWORD:-Password1!}
+    ports:
+      - "${ZITADEL_PORT:-8081}:8080"
+    depends_on:
+      zitadel-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
 
   caddy:
     image: caddy:2-alpine
@@ -160,3 +229,4 @@ volumes:
   forgejo-data:
   caddy-data:
   caddy-config:
+  zitadel-pgdata:
