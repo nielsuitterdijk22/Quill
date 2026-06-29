@@ -3167,3 +3167,178 @@ h2.section {
   height: 16px;
   color: var(--accent-soft);
 }
+
+/* ── Profile dashboard ─────────────────────────────────────────────────────── */
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  flex: none;
+}
+.profile-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  color: var(--accent-soft);
+  font-weight: 700;
+  font-size: 22px;
+}
+.profile-id {
+  min-width: 0;
+}
+.profile-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 22px;
+}
+.profile-meta {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 14px;
+  display: flex;
+  gap: 6px;
+}
+.profile-handle {
+  color: var(--accent-soft);
+}
+.profile-stats {
+  display: flex;
+  gap: 22px;
+  flex: none;
+}
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+.profile-stat b {
+  font-size: 20px;
+}
+.profile-stat span {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.profile-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.profile-cols .panel {
+  margin-bottom: 0;
+}
+.panel h2 .spacer {
+  flex: 1 1 auto;
+}
+@media (max-width: 820px) {
+  .profile-cols {
+    grid-template-columns: 1fr;
+  }
+  .profile-head {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Contribution graph ────────────────────────────────────────────────────── */
+
+.contrib {
+  padding: 16px;
+}
+.contrib-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.contrib-total {
+  font-size: 13px;
+  color: var(--muted);
+}
+.contrib-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.contrib-grid-wrap {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.contrib-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 16px; /* clears the month-label row */
+  font-size: 9px;
+  color: var(--muted);
+}
+.contrib-weekdays span {
+  height: 11px;
+  line-height: 11px;
+}
+.contrib-body {
+  min-width: 0;
+}
+.contrib-months {
+  display: grid;
+  grid-template-columns: repeat(53, 11px);
+  gap: 3px;
+  height: 13px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.contrib-months span {
+  white-space: nowrap;
+  grid-row: 1;
+}
+.contrib-grid {
+  display: flex;
+  gap: 3px;
+}
+.contrib-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.contrib-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  display: block;
+  background: var(--line);
+}
+.contrib-cell.lvl-empty {
+  background: transparent;
+}
+.contrib-cell.lvl-0 {
+  background: color-mix(in srgb, var(--line) 70%, var(--panel));
+}
+.contrib-cell.lvl-1 {
+  background: color-mix(in srgb, var(--accent) 28%, var(--panel));
+}
+.contrib-cell.lvl-2 {
+  background: color-mix(in srgb, var(--accent) 50%, var(--panel));
+}
+.contrib-cell.lvl-3 {
+  background: color-mix(in srgb, var(--accent) 72%, var(--panel));
+}
+.contrib-cell.lvl-4 {
+  background: var(--accent);
+}

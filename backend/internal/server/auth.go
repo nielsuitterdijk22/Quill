@@ -149,6 +149,37 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
+// handleMyContributions proxies the signed-in user's Forgejo contribution
+// heatmap (the GitHub-style commit calendar). Returns an empty series rather
+// than an error when Forgejo is disabled or the user isn't linked yet, so the
+// profile renders an empty graph instead of failing.
+func (s *Server) handleMyContributions(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	empty := map[string]any{"contributions": []any{}}
+	if s.forgejo == nil || !s.forgejo.Enabled() {
+		httpx.JSON(w, http.StatusOK, empty)
+		return
+	}
+	user, err := s.store.GetUserByID(r.Context(), id.UserID)
+	if err != nil || !user.ForgejoUsername.Valid || user.ForgejoUsername.String == "" {
+		httpx.JSON(w, http.StatusOK, empty)
+		return
+	}
+
+	entries, err := s.forgejo.UserHeatmap(r.Context(), user.ForgejoUsername.String)
+	if err != nil {
+		s.logger.Warn("fetch contribution heatmap failed", "user", user.ForgejoUsername.String, "error", err)
+		httpx.JSON(w, http.StatusOK, empty)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"contributions": entries})
+}
+
 type updateProfileRequest struct {
 	DisplayName string `json:"displayName"`
 }

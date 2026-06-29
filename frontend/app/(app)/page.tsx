@@ -1,53 +1,69 @@
-import { getMeta, getOpenPullRequestCount, getMyProjects, listReposByProject, type Repo } from "../lib/api";
-import { getToken } from "../lib/session";
+import Link from "next/link";
+import { currentUser } from "@clerk/nextjs/server";
 
+import {
+  getMeta,
+  getMyProjects,
+  getMyContributions,
+  getMyPulls,
+  listReposByProject,
+  type Repo,
+  type MyProject,
+} from "../lib/api";
+import { getToken, requireSession } from "../lib/session";
+import { ContributionGraph } from "../components/ContributionGraph";
+import { VisibilityBadge } from "../components/repo";
+
+function joinedLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+// DashboardPage is the signed-in user's profile: identity header, a GitHub-style
+// contribution graph, their repositories, and recent pull-request activity.
 export default async function DashboardPage() {
-  const token = await getToken();
-  // Use the membership-scoped list — never the admin-wide listProjects, which
-  // would leak every tenant's projects to the instance admin (first user).
-  const [meta, projects] = await Promise.all([
+  const [user, clerkUser, token, meta] = await Promise.all([
+    requireSession(),
+    currentUser(),
+    getToken(),
     getMeta(),
-    token ? getMyProjects(token) : Promise.resolve([]),
   ]);
-  const online = meta !== null;
-  const forgejo = meta?.forgejo;
 
-  // Repo counts per project (and the total) drive the dashboard cards.
-  const repoLists = token
-    ? await Promise.all(projects.map((o) => listReposByProject(token, o.slug)))
+  const projects = token ? await getMyProjects(token) : [];
+  const hasOrgProjects = projects.some((p) => !p.isPersonal);
+
+  type RepoWithProject = { repo: Repo; project: MyProject };
+  const perProject = token
+    ? await Promise.all(
+        projects.map(async (p) => {
+          const repos = await listReposByProject(token, p.slug);
+          return repos.map<RepoWithProject>((r) => ({ repo: r, project: p }));
+        }),
+      )
     : [];
-  const reposByProject = new Map<string, Repo[]>();
-  projects.forEach((o, i) => reposByProject.set(o.slug, repoLists[i] ?? []));
-  const totalRepos = repoLists.reduce((sum, list) => sum + list.length, 0);
+  const repos = perProject.flat();
 
-  // Open PR count across all repos, aggregated server-side (best-effort; 0 on failure).
-  const totalOpenPRs = token ? await getOpenPullRequestCount(token) : 0;
+  const [contributions, myPulls] = token
+    ? await Promise.all([
+        getMyContributions(token),
+        getMyPulls(token, { state: "all" }),
+      ])
+    : [[], { ok: false as const, status: 0, message: "" }];
+
+  const recentPulls = myPulls.ok ? myPulls.data.pulls.slice(0, 6) : [];
+  const openPRs = myPulls.ok ? myPulls.data.pulls.filter((p) => p.pull.state === "open").length : 0;
+  const avatarUrl = clerkUser?.imageUrl ?? null;
 
   return (
     <>
-      <div className="top">
-        <h1>Dashboard</h1>
-        <span className="pill">
-          backend{" "}
-          {online ? (
-            <b className="ok">{meta?.version}</b>
-          ) : (
-            <b className="danger">offline</b>
-          )}
-        </span>
-        <span className="pill">
-          forgejo{" "}
-          {forgejo?.reachable ? (
-            <b className="ok">{forgejo.version ?? "connected"}</b>
-          ) : forgejo?.configured ? (
-            <b className="danger">unreachable</b>
-          ) : (
-            <b className="muted">not configured</b>
-          )}
-        </span>
-      </div>
-
-      {!online && (
+      {meta === null && (
         <div className="banner">
           Can&apos;t reach the Quill backend. Start it with{" "}
           <span className="mono">make be-run</span> or{" "}
@@ -55,73 +71,107 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <div className="cards">
-        <div className="card">
-          <div className="k">Projects</div>
-          <div className="v">
-            {projects.length} <small>total</small>
-          </div>
-        </div>
-        <div className="card">
-          <div className="k">Repositories</div>
-          <div className="v">
-            {totalRepos} <small>tracked</small>
-          </div>
-        </div>
-        <div className="card">
-          <div className="k">Open pull requests</div>
-          <div className="v">
-            {totalOpenPRs} <small>across projects</small>
-          </div>
-        </div>
-        <div className="card">
-          <div className="k">Pipelines</div>
-          <div className="v">
-            — <small className="muted">coming soon</small>
-          </div>
-        </div>
-      </div>
-
-      <div className="panel">
-        <h2>Projects</h2>
-        {projects.length === 0 ? (
-          <div className="empty">
-            No projects yet. Create one from{" "}
-            <a href="/projects">Projects</a> — each is mirrored into Forgejo,
-            then you can add repositories and browse their code.
-          </div>
+      {/* Profile header */}
+      <div className="profile-head">
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="profile-avatar" src={avatarUrl} alt={user.displayName} />
         ) : (
-          projects.map((o) => (
-            <a className="row-item" key={o.id} href={`/projects/${o.slug}`}>
-              <span className="nm">{o.name}</span>
-              <span className="sub">
-                · {reposByProject.get(o.slug)?.length ?? 0} repos
-              </span>
-              <span className="spacer" />
-              {o.forgejoOrg ? (
-                <span className="tag">forgejo</span>
-              ) : (
-                <span className="tag">local</span>
-              )}
-            </a>
-          ))
+          <div className="profile-avatar profile-avatar--fallback">{initials(user.displayName)}</div>
         )}
+        <div className="profile-id">
+          <h1 className="profile-name">
+            {user.displayName}
+            {user.isAdmin && <span className="tag">admin</span>}
+          </h1>
+          <div className="profile-meta">
+            <span className="profile-handle">@{user.username}</span>
+            {user.createdAt && <span className="profile-joined">· joined {joinedLabel(user.createdAt)}</span>}
+          </div>
+        </div>
+        <span className="spacer" />
+        <div className="profile-stats">
+          <div className="profile-stat">
+            <b>{repos.length}</b>
+            <span>repos</span>
+          </div>
+          <div className="profile-stat">
+            <b>{projects.length}</b>
+            <span>projects</span>
+          </div>
+          <div className="profile-stat">
+            <b>{openPRs}</b>
+            <span>open PRs</span>
+          </div>
+        </div>
       </div>
 
+      {/* Contribution graph */}
       <div className="panel">
-        <h2>Platform services</h2>
-        <a className="row-item" href="#">
-          <span className="nm">Forge</span>
-          <span className="sub">· confidential CI runners</span>
-          <span className="spacer" />
-          <span className="tag">soon</span>
-        </a>
-        <a className="row-item" href="#">
-          <span className="nm">Yaly</span>
-          <span className="sub">· software catalog &amp; self-service</span>
-          <span className="spacer" />
-          <span className="tag">soon</span>
-        </a>
+        <ContributionGraph data={contributions} />
+      </div>
+
+      <div className="profile-cols">
+        {/* Repositories */}
+        <div className="panel">
+          <h2>
+            Repositories
+            <span className="tag">{repos.length}</span>
+            <span className="spacer" />
+            <Link className="btn ghost small" href="/repositories">
+              View all
+            </Link>
+          </h2>
+          {repos.length === 0 ? (
+            <div className="empty">
+              No repositories yet.{" "}
+              <Link href="/repositories">Create or import one</Link> to get started.
+            </div>
+          ) : (
+            repos.slice(0, 8).map(({ repo, project }) => (
+              <Link
+                className="row-item"
+                key={repo.id}
+                href={`/${encodeURIComponent(project.slug)}/${encodeURIComponent(repo.slug)}`}
+              >
+                <span className="tree-icon dir">◆</span>
+                <div className="pr-main">
+                  <span className="nm">{repo.name}</span>
+                  {hasOrgProjects && <span className="sub">{project.name}</span>}
+                </div>
+                <span className="spacer" />
+                {repo.starCount > 0 && <span className="sub">★ {repo.starCount}</span>}
+                <VisibilityBadge visibility={repo.visibility} />
+              </Link>
+            ))
+          )}
+        </div>
+
+        {/* Recent activity */}
+        <div className="panel">
+          <h2>Recent activity</h2>
+          {recentPulls.length === 0 ? (
+            <div className="empty">No pull request activity yet.</div>
+          ) : (
+            recentPulls.map(({ projectSlug, repoSlug, repoName, pull }) => (
+              <Link
+                className="row-item"
+                key={`${projectSlug}/${repoSlug}#${pull.number}`}
+                href={`/${encodeURIComponent(projectSlug)}/${encodeURIComponent(repoSlug)}/pulls/${pull.number}`}
+              >
+                <span className="tree-icon">
+                  {pull.merged ? "⬡" : pull.state === "open" ? "↳" : "✕"}
+                </span>
+                <div className="pr-main">
+                  <span className="nm">{pull.title}</span>
+                  <span className="sub">
+                    {repoName} · #{pull.number} · {pull.merged ? "merged" : pull.state}
+                  </span>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
       </div>
     </>
   );

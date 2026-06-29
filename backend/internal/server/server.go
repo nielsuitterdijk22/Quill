@@ -170,6 +170,7 @@ func (s *Server) setupRoutes() {
 			r.Post("/me/ssh-keys", s.handleAddSSHKey)
 			r.Delete("/me/ssh-keys/{id}", s.handleDeleteSSHKey)
 			r.Get("/me/projects", s.handleListMyProjects)
+			r.Get("/me/contributions", s.handleMyContributions)
 			r.Route("/tenants", func(r chi.Router) {
 				r.Route("/{tenant}", func(r chi.Router) {
 					r.Route("/policies", func(r chi.Router) {

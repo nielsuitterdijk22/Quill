@@ -104,6 +104,22 @@ func (c *Client) GetUser(ctx context.Context, username string) (User, error) {
 	return out, err
 }
 
+// HeatmapEntry is one day's contribution bucket from Forgejo's user heatmap.
+// Timestamp is Unix seconds within the day.
+type HeatmapEntry struct {
+	Timestamp     int64 `json:"timestamp"`
+	Contributions int   `json:"contributions"`
+}
+
+// UserHeatmap returns the contribution heatmap for a Forgejo user — the same
+// data that powers the GitHub-style commit calendar. Returns the raw daily
+// buckets; aggregating them into a calendar is the caller's job.
+func (c *Client) UserHeatmap(ctx context.Context, username string) ([]HeatmapEntry, error) {
+	var out []HeatmapEntry
+	err := c.do(ctx, http.MethodGet, "/users/"+url.PathEscape(username)+"/heatmap", nil, &out)
+	return out, err
+}
+
 // DeleteUser removes a Forgejo user (admin). purge also deletes their content.
 func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) error {
 	path := "/admin/users/" + url.PathEscape(username)
