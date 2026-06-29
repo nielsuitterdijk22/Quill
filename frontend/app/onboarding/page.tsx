@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 
 type GitHubRepo = {
@@ -60,7 +60,6 @@ function IconSpinner() {
 }
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { getToken } = useAuth();
 
@@ -211,7 +210,7 @@ export default function OnboardingPage() {
   function doImport() {
     const toImport = ghRepos.filter((r) => selected.has(r.id));
     if (toImport.length === 0) {
-      router.push("/repositories");
+      window.location.href = "/repositories";
       return;
     }
     const slug = projectSlug;
@@ -428,7 +427,7 @@ export default function OnboardingPage() {
                 <IconGitHub />
                 Continue with GitHub
               </button>
-              <button className="ob-btn-skip" onClick={() => router.push("/repositories")}>
+              <button className="ob-btn-skip" onClick={() => window.location.href = "/repositories"}>
                 Skip for now →
               </button>
             </div>
@@ -481,7 +480,7 @@ export default function OnboardingPage() {
                 <button className="ob-btn-primary" onClick={doImport}>
                   Import {selected.size > 0 ? `${selected.size} repo${selected.size !== 1 ? "s" : ""}` : "selected"}
                 </button>
-                <button className="ob-btn-ghost" onClick={() => router.push("/repositories")}>
+                <button className="ob-btn-ghost" onClick={() => window.location.href = "/repositories"}>
                   Skip
                 </button>
               </div>
@@ -550,7 +549,7 @@ export default function OnboardingPage() {
               </ul>
             </div>
           )}
-          <button className="ob-btn-primary" onClick={() => router.push("/repositories")}>
+          <button className="ob-btn-primary" onClick={() => window.location.href = "/repositories"}>
             Go to repositories →
           </button>
         </div>

@@ -238,7 +238,7 @@ func fetchGitHubRepos(ctx context.Context, token string) ([]githubRepo, error) {
 	var all []githubRepo
 	page := 1
 	for {
-		u := fmt.Sprintf("https://api.github.com/user/repos?per_page=100&page=%d&sort=updated", page)
+		u := fmt.Sprintf("https://api.github.com/user/repos?per_page=100&page=%d&sort=updated&type=all", page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			return nil, err
