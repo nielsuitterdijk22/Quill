@@ -14,10 +14,11 @@ import (
 // deleting the deploy-gate rules Quill stores for an environment (name or glob).
 // Like branch policies they live at three scopes — repo, project, and tenant —
 // and a repo inherits its project's and tenant's rules (composed by the policy
-// engine). Reads are open to project members (tenant reads require a platform
-// admin); writes require a project owner at repo/project scope and a platform
-// admin at tenant scope, enforced in the platform service. The selector travels
-// as ?pattern on delete, matching the branch-policy convention.
+// engine). Reads are open to project members at repo/project scope and to any
+// tenant member at tenant scope; writes require a project owner at repo/project
+// scope and a platform admin at tenant scope, enforced in the platform service.
+// The selector travels as ?pattern on delete, matching the branch-policy
+// convention.
 
 // environmentPolicyResponse is the public JSON shape for an environment policy.
 // scope tells the client which level declared it; locked marks a floor that
@@ -207,7 +208,7 @@ func (s *Server) handleDeleteProjectEnvironmentPolicy(w http.ResponseWriter, r *
 // ---- tenant scope ---------------------------------------------------------
 
 // handleListTenantEnvironmentPolicies returns a tenant's own environment
-// policies (platform admins only).
+// policies (readable by any tenant member; only admins may change them).
 func (s *Server) handleListTenantEnvironmentPolicies(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {

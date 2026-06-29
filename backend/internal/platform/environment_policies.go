@@ -196,14 +196,15 @@ func (s *Service) DeleteProjectEnvironmentPolicy(ctx context.Context, actor Acto
 
 // ---- tenant scope ---------------------------------------------------------
 
-// ListTenantEnvironmentPolicies returns a tenant's own environment policies
-// (platform admins only).
+// ListTenantEnvironmentPolicies returns a tenant's own environment policies. Any
+// member of the tenant may read them — they gate everyone's deploys — but only
+// platform admins may change them (SetTenantEnvironmentPolicy).
 func (s *Service) ListTenantEnvironmentPolicies(ctx context.Context, actor Actor, tenantSlug string) (db.Tenant, EnvironmentPolicySet, error) {
-	if err := s.authorizePlatformAdmin(actor); err != nil {
-		return db.Tenant{}, EnvironmentPolicySet{}, err
-	}
 	tenant, err := s.getTenant(ctx, tenantSlug)
 	if err != nil {
+		return db.Tenant{}, EnvironmentPolicySet{}, err
+	}
+	if err := s.authorizeTenantMember(actor, tenant.ID); err != nil {
 		return db.Tenant{}, EnvironmentPolicySet{}, err
 	}
 	own, err := s.listEnvironmentPoliciesAt(ctx, policyScope{policy.ScopeTenant, tenant.ID})

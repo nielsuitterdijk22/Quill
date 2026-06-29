@@ -110,11 +110,13 @@ export function EnvironmentPolicyManager({
   policies,
   inherited = [],
   canLock = false,
+  canEdit = false,
 }: {
   target: PolicyTarget;
   policies: EnvironmentPolicy[];
   inherited?: EnvironmentPolicy[];
   canLock?: boolean;
+  canEdit?: boolean;
 }) {
   const action = saveEnvironmentPolicyAction.bind(null, target);
   const [state, formAction] = useFormState(action, initial);
@@ -173,11 +175,13 @@ export function EnvironmentPolicyManager({
         </div>
       )}
 
-      <div className="policy-list-header">
-        <button type="button" className="btn ghost small" onClick={openNew}>
-          + New policy
-        </button>
-      </div>
+      {canEdit && (
+        <div className="policy-list-header">
+          <button type="button" className="btn ghost small" onClick={openNew}>
+            + New policy
+          </button>
+        </div>
+      )}
 
       {policies.length > 0 ? (
         <table className="policy-table">
@@ -185,7 +189,7 @@ export function EnvironmentPolicyManager({
             <tr>
               <th>Environment</th>
               <th>Gate</th>
-              <th />
+              {canEdit && <th />}
             </tr>
           </thead>
           <tbody>
@@ -200,27 +204,31 @@ export function EnvironmentPolicyManager({
                 <td>
                   <FlagTags policy={p} />
                 </td>
-                <td className="policy-row-actions">
-                  <button
-                    type="button"
-                    className="btn ghost small"
-                    onClick={() => openEdit(p)}
-                  >
-                    Edit
-                  </button>
-                  <DeletePolicyForm target={target} pattern={p.pattern} />
-                </td>
+                {canEdit && (
+                  <td className="policy-row-actions">
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      onClick={() => openEdit(p)}
+                    >
+                      Edit
+                    </button>
+                    <DeletePolicyForm target={target} pattern={p.pattern} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
         <div className="empty">
-          No environment policies yet. Add one to gate deploys with approvals,
-          source branches, or a wait window.
+          {canEdit
+            ? "No environment policies yet. Add one to gate deploys with approvals, source branches, or a wait window."
+            : "No environment policies set at this scope."}
         </div>
       )}
 
+      {canEdit && (
       <dialog
         ref={dialogRef}
         className="policy-modal"
@@ -318,6 +326,7 @@ export function EnvironmentPolicyManager({
           </div>
         </form>
       </dialog>
+      )}
     </div>
   );
 }

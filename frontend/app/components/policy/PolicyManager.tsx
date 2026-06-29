@@ -110,6 +110,7 @@ export function PolicyManager({
   branchNames = [],
   defaultBranch = "main",
   canLock = false,
+  canEdit = false,
 }: {
   target: PolicyTarget;
   policies: BranchPolicy[];
@@ -117,6 +118,7 @@ export function PolicyManager({
   branchNames?: string[];
   defaultBranch?: string;
   canLock?: boolean;
+  canEdit?: boolean;
 }) {
   const action = savePolicyAction.bind(null, target);
   const [state, formAction] = useFormState(action, initial);
@@ -176,11 +178,13 @@ export function PolicyManager({
         </div>
       )}
 
-      <div className="policy-list-header">
-        <button type="button" className="btn ghost small" onClick={openNew}>
-          + New policy
-        </button>
-      </div>
+      {canEdit && (
+        <div className="policy-list-header">
+          <button type="button" className="btn ghost small" onClick={openNew}>
+            + New policy
+          </button>
+        </div>
+      )}
 
       {policies.length > 0 ? (
         <table className="policy-table">
@@ -188,7 +192,7 @@ export function PolicyManager({
             <tr>
               <th>Branch pattern</th>
               <th>Protections</th>
-              <th />
+              {canEdit && <th />}
             </tr>
           </thead>
           <tbody>
@@ -203,26 +207,31 @@ export function PolicyManager({
                 <td>
                   <FlagTags policy={p} />
                 </td>
-                <td className="policy-row-actions">
-                  <button
-                    type="button"
-                    className="btn ghost small"
-                    onClick={() => openEdit(p)}
-                  >
-                    Edit
-                  </button>
-                  <DeletePolicyForm target={target} pattern={p.pattern} />
-                </td>
+                {canEdit && (
+                  <td className="policy-row-actions">
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      onClick={() => openEdit(p)}
+                    >
+                      Edit
+                    </button>
+                    <DeletePolicyForm target={target} pattern={p.pattern} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
         <div className="empty">
-          No branch policies yet. Add one to require reviews before merging.
+          {canEdit
+            ? "No branch policies yet. Add one to require reviews before merging."
+            : "No branch policies set at this scope."}
         </div>
       )}
 
+      {canEdit && (
       <dialog
         ref={dialogRef}
         className="policy-modal"
@@ -331,6 +340,7 @@ export function PolicyManager({
           </div>
         </form>
       </dialog>
+      )}
     </div>
   );
 }

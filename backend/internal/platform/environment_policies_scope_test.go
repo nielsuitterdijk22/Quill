@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 // These white-box integration tests cover environment-policy scoping across
@@ -28,6 +30,21 @@ func TestTenantEnvironmentPolicyRequiresPlatformAdmin(t *testing.T) {
 	admin := Actor{UserID: owner.UserID, IsAdmin: true}
 	if _, err := svc.SetTenantEnvironmentPolicy(ctx, admin, "default", EnvironmentPolicyInput{Selector: "production", RequiredApprovals: 2, Locked: true}); err != nil {
 		t.Fatalf("admin tenant write: %v", err)
+	}
+
+	// Reads are open to any member of the tenant (the gates govern their
+	// deploys), but closed to users outside it.
+	tenant, err := st.GetTenantBySlug(ctx, "default")
+	if err != nil {
+		t.Fatalf("get default tenant: %v", err)
+	}
+	member := Actor{UserID: owner.UserID, TenantID: tenant.ID}
+	if _, _, err := svc.ListTenantEnvironmentPolicies(ctx, member, "default"); err != nil {
+		t.Fatalf("tenant member read: %v", err)
+	}
+	stranger := Actor{UserID: scopeMakeUser(t, st, "env-stranger"), TenantID: uuid.New()}
+	if _, _, err := svc.ListTenantEnvironmentPolicies(ctx, stranger, "default"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-member tenant read: want ErrForbidden, got %v", err)
 	}
 }
 

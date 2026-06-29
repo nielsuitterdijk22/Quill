@@ -8,12 +8,13 @@ import { PolicyManager } from "../../../components/policy/PolicyManager";
 // The MVP runs a single tenant; tenant-wide governance is managed under its slug.
 const DEFAULT_TENANT = "default";
 
-// AdminPoliciesPage manages tenant-scoped governance — the broadest scope. Rules
-// here apply to every project and repository in the tenant. Platform admins only;
-// non-admins get a 404 so the page's existence isn't leaked.
+// AdminPoliciesPage surfaces tenant-scoped governance — the broadest scope. Rules
+// here apply to every project and repository in the tenant. They are visible to
+// every member of the tenant (these rules govern everyone's work), but only
+// platform admins may edit them — the managers render read-only otherwise, and
+// the backend rejects non-admin writes.
 export default async function AdminPoliciesPage() {
   const user = await requireSession();
-  if (!user.isAdmin) notFound();
 
   const token = await getToken();
   if (!token) notFound();
@@ -51,6 +52,7 @@ export default async function AdminPoliciesPage() {
         apply to every project and repository. Projects and repositories may add
         stricter rules but never weaken these — lock a rule to forbid loosening
         it entirely.
+        {!user.isAdmin && " You can view these rules; only an admin can change them."}
       </p>
 
       <section className="settings-section">
@@ -65,6 +67,7 @@ export default async function AdminPoliciesPage() {
           target={{ scope: "tenant", tenant: tenant.slug }}
           policies={policies}
           canLock
+          canEdit={user.isAdmin}
         />
       </section>
 
@@ -80,6 +83,7 @@ export default async function AdminPoliciesPage() {
           target={{ scope: "tenant", tenant: tenant.slug }}
           policies={envPolicies}
           canLock
+          canEdit={user.isAdmin}
         />
       </section>
     </>
