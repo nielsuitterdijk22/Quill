@@ -73,6 +73,10 @@ func (v *ClerkVerifier) WithPostProvision(fn PostProvisionFunc) *ClerkVerifier {
 // Enabled reports whether Clerk authentication is configured.
 func (v *ClerkVerifier) Enabled() bool { return v.frontendAPI != "" }
 
+// Provider returns the auth_identities.provider key for Clerk. Implements
+// TokenVerifier.
+func (v *ClerkVerifier) Provider() string { return ProviderClerk }
+
 // Start fetches the initial JWKS synchronously and begins a background refresh
 // every 15 minutes. ctx is used for the refresh goroutine's lifetime.
 func (v *ClerkVerifier) Start(ctx context.Context) {

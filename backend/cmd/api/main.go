@@ -61,7 +61,7 @@ func run() error {
 	defer stop()
 
 	srv := server.New(cfg, logger, st)
-	srv.StartClerk(ctx)
+	srv.StartAuth(ctx)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

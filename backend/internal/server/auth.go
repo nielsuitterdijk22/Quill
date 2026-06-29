@@ -360,16 +360,16 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Capture the Clerk subject before deletion: the cascade removes the
-	// auth_identities rows, so we must read it first. Deleting the Clerk-side
-	// user is what invalidates the session and prevents the deleted account from
-	// being re-provisioned on the next request (which otherwise loops /sign-in).
-	clerkSubject := ""
-	if s.clerk != nil && s.clerk.Enabled() {
+	// Capture the IdP subject before deletion: the cascade removes the
+	// auth_identities rows, so we must read it first. Deleting the IdP-side user
+	// is what invalidates the session and prevents the deleted account from being
+	// re-provisioned on the next request (which otherwise loops /sign-in).
+	idpSubject := ""
+	if s.externalAuthEnabled() {
 		if idents, err := s.store.ListAuthIdentitiesForUser(r.Context(), id.UserID); err == nil {
 			for _, ai := range idents {
-				if ai.Provider == auth.ProviderClerk {
-					clerkSubject = ai.Subject
+				if ai.Provider == s.verifier.Provider() {
+					idpSubject = ai.Subject
 					break
 				}
 			}
@@ -392,12 +392,12 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if clerkSubject != "" {
-		if err := s.clerk.DeleteUser(r.Context(), clerkSubject); err != nil {
+	if idpSubject != "" {
+		if err := s.verifier.DeleteUser(r.Context(), idpSubject); err != nil {
 			// Non-fatal: the Quill account is already gone. Log so an orphaned
-			// Clerk user can be cleaned up, but still report success to the client.
-			s.logger.Warn("could not delete Clerk user on account deletion",
-				"username", id.Username, "error", err)
+			// IdP-side user can be cleaned up, but still report success to the client.
+			s.logger.Warn("could not delete IdP user on account deletion",
+				"provider", s.verifier.Provider(), "username", id.Username, "error", err)
 		}
 	}
 
