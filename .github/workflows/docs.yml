@@ -1,0 +1,29 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "*.md"
+      - "**/README.md"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "*.md"
+      - "**/README.md"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: |
+            docs/**/*.md
+            *.md
