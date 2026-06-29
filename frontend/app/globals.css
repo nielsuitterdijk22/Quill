@@ -3046,6 +3046,7 @@ h2.section {
 .ob-repo-row input {
   accent-color: var(--accent);
   flex: none;
+  width: auto;
 }
 
 .ob-repo-info {

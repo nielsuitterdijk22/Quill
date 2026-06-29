@@ -13,7 +13,7 @@ type GitHubRepo = {
   cloneUrl: string;
 };
 
-type Step = "choose" | "import" | "importing" | "done";
+type Step = "choose" | "org-setup" | "import" | "importing" | "done";
 
 function IconUser() {
   return (
@@ -77,7 +77,30 @@ export default function OnboardingPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [importResults, setImportResults] = useState<{ name: string; ok: boolean; error?: string }[]>([]);
-  const [personalProjectSlug, setPersonalProjectSlug] = useState<string | null>(null);
+  const [projectSlug, setProjectSlug] = useState<string | null>(null);
+
+  // On mount: if we were redirected back to /onboarding (e.g. layout saw no
+  // projects during an auth hiccup), detect an existing project and skip past
+  // the choose step so the user doesn't have to start over.
+  useEffect(() => {
+    getToken().then(async (token) => {
+      if (!token) return;
+      try {
+        const res = await fetch("/api/backend/me/projects", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
+        const existing = body.projects ?? [];
+        if (existing.length === 0) return;
+        const personal = existing.find((p) => p.isPersonal) ?? existing[0];
+        setProjectSlug(personal.slug);
+        setAccountType(personal.isPersonal ? "individual" : "org");
+        setStep("import");
+      } catch { /* stay on current step */ }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run once on mount
 
   useEffect(() => {
     if (step !== "import") return;
@@ -106,7 +129,7 @@ export default function OnboardingPage() {
       if (!res.ok) return;
       const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
       const personal = body.projects?.find((p) => p.isPersonal);
-      if (personal) setPersonalProjectSlug(personal.slug);
+      if (personal) setProjectSlug(personal.slug);
     });
   }, [step, getToken]);
 
@@ -114,6 +137,7 @@ export default function OnboardingPage() {
     setError(null);
     if (type === "org") {
       setAccountType("org");
+      setStep("org-setup");
       return;
     }
     setAccountType("individual");
@@ -132,7 +156,7 @@ export default function OnboardingPage() {
         return;
       }
       const body = (await res.json()) as { slug?: string };
-      setPersonalProjectSlug(body.slug ?? null);
+      setProjectSlug(body.slug ?? null);
       setStep("import");
     });
   }
@@ -161,6 +185,7 @@ export default function OnboardingPage() {
         setError(body?.message ?? "Could not create organization.");
         return;
       }
+      setProjectSlug(orgSlug.trim());
       setStep("import");
     });
   }
@@ -189,7 +214,7 @@ export default function OnboardingPage() {
       router.push("/repositories");
       return;
     }
-    const slug = personalProjectSlug;
+    const slug = projectSlug;
     if (!slug) {
       setError("Could not determine your project. Please refresh.");
       return;
@@ -298,41 +323,72 @@ export default function OnboardingPage() {
               </div>
             </button>
           </div>
+        </main>
+      </div>
+    );
+  }
 
-          {accountType === "org" && (
-            <div className="ob-org-form">
-              <h2 className="ob-org-form-title">Set up your organization</h2>
-              <div className="ob-field">
-                <label className="ob-label">Slug <span className="ob-label-hint">— becomes part of every URL</span></label>
-                <input
-                  className="ob-input"
-                  value={orgSlug}
-                  onChange={(e) => setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                  placeholder="acme"
-                  autoFocus
-                  onKeyDown={(e) => e.key === "Enter" && createOrgProject()}
-                />
-                {orgSlug && (
-                  <span className="ob-preview">
-                    Repos will live at <code>{orgSlug}/repo-name</code>
-                  </span>
-                )}
-              </div>
-              <div className="ob-field">
-                <label className="ob-label">Display name <span className="ob-label-hint">— optional</span></label>
-                <input
-                  className="ob-input"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="Acme Inc."
-                  onKeyDown={(e) => e.key === "Enter" && createOrgProject()}
-                />
-              </div>
+  // ── org-setup ────────────────────────────────────────────────────────────────
+
+  if (step === "org-setup") {
+    return (
+      <div className="ob-shell">
+        <header className="ob-header">
+          <div className="ob-brand">
+            <span className="dot" />
+            Quill
+          </div>
+          <span className="ob-step-label">Step 2 of 3</span>
+        </header>
+
+        <main className="ob-main ob-main--narrow">
+          <div className="ob-headline">
+            <h1 className="ob-title">Set up your organization</h1>
+            <p className="ob-sub">Choose a unique slug — it becomes part of every repository URL.</p>
+          </div>
+
+          {error && <div className="ob-error">{error}</div>}
+
+          <div className="ob-org-form">
+            <div className="ob-field">
+              <label className="ob-label">Slug <span className="ob-label-hint">— becomes part of every URL</span></label>
+              <input
+                className="ob-input"
+                value={orgSlug}
+                onChange={(e) => setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                placeholder="acme"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && createOrgProject()}
+              />
+              {orgSlug && (
+                <span className="ob-preview">
+                  Repos will live at <code>{orgSlug}/repo-name</code>
+                </span>
+              )}
+            </div>
+            <div className="ob-field">
+              <label className="ob-label">Display name <span className="ob-label-hint">— optional</span></label>
+              <input
+                className="ob-input"
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                placeholder="Acme Inc."
+                onKeyDown={(e) => e.key === "Enter" && createOrgProject()}
+              />
+            </div>
+            <div className="ob-import-actions">
+              <button
+                className="ob-btn-ghost"
+                onClick={() => { setStep("choose"); setError(null); }}
+                disabled={pending}
+              >
+                ← Back
+              </button>
               <button className="ob-btn-primary" onClick={createOrgProject} disabled={pending}>
                 {pending ? <><IconSpinner /> Creating…</> : "Create workspace →"}
               </button>
             </div>
-          )}
+          </div>
         </main>
       </div>
     );
@@ -348,7 +404,7 @@ export default function OnboardingPage() {
             <span className="dot" />
             Quill
           </div>
-          <span className="ob-step-label">Step 2 of 2</span>
+          <span className="ob-step-label">{accountType === "org" ? "Step 3 of 3" : "Step 2 of 2"}</span>
         </header>
 
         <main className="ob-main ob-main--narrow">
