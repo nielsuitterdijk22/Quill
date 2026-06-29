@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useQuillAuth } from "@/components/auth/context";
 
 type ReRunButtonProps = {
   project: string;
@@ -13,7 +13,7 @@ type ReRunButtonProps = {
 export function ReRunButton({ project, repo, workflowPath, gitRef }: ReRunButtonProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const { getToken } = useAuth();
+  const { getToken } = useQuillAuth();
 
   function reRun() {
     setError(null);

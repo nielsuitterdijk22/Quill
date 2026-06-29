@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useQuillAuth } from "@/components/auth/context";
 
 export function StarButton({
   project,
@@ -17,7 +17,7 @@ export function StarButton({
   const [starred, setStarred] = useState(initialStarred);
   const [count, setCount] = useState(initialCount);
   const [pending, startTransition] = useTransition();
-  const { getToken } = useAuth();
+  const { getToken } = useQuillAuth();
 
   function toggle() {
     const next = !starred;

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { currentUser } from "@clerk/nextjs/server";
 
 import {
   getMeta,
@@ -10,7 +9,7 @@ import {
   type Repo,
   type MyProject,
 } from "../lib/api";
-import { getToken, requireSession } from "../lib/session";
+import { getProfileAvatar, getToken, requireSession } from "../lib/session";
 import { ContributionGraph } from "../components/ContributionGraph";
 import { VisibilityBadge } from "../components/repo";
 
@@ -29,9 +28,9 @@ function initials(name: string): string {
 // DashboardPage is the signed-in user's profile: identity header, a GitHub-style
 // contribution graph, their repositories, and recent pull-request activity.
 export default async function DashboardPage() {
-  const [user, clerkUser, token, meta] = await Promise.all([
+  const [user, avatarFromIdp, token, meta] = await Promise.all([
     requireSession(),
-    currentUser(),
+    getProfileAvatar(),
     getToken(),
     getMeta(),
   ]);
@@ -59,7 +58,7 @@ export default async function DashboardPage() {
 
   const recentPulls = myPulls.ok ? myPulls.data.pulls.slice(0, 6) : [];
   const openPRs = myPulls.ok ? myPulls.data.pulls.filter((p) => p.pull.state === "open").length : 0;
-  const avatarUrl = clerkUser?.imageUrl ?? null;
+  const avatarUrl = avatarFromIdp;
 
   return (
     <>

@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { useClerk } from "@clerk/nextjs";
 
+import { useQuillAuth } from "@/components/auth/context";
 import { deleteAccountAction, type DeleteAccountState } from "./actions";
 
 const initial: DeleteAccountState = {};
@@ -19,23 +19,21 @@ function DeleteButton() {
 
 export function AccountDangerZone() {
   const [state, formAction] = useFormState(deleteAccountAction, initial);
-  const clerk = useClerk();
+  const { signOut } = useQuillAuth();
   const signedOut = useRef(false);
 
-  // Once the backend has purged the account, sign out of Clerk before leaving.
-  // Without this the Clerk session stays live and the next request would
-  // re-provision a fresh Quill user, trapping the browser in a redirect loop.
+  // Once the backend has purged the account, sign out of the IdP before leaving.
+  // Without this the session stays live and the next request would re-provision a
+  // fresh Quill user, trapping the browser in a redirect loop.
   //
-  // The ref guard is essential: useClerk()'s signOut identity is not stable, so
-  // depending on it (or re-running while state.ok stays true) would fire signOut
-  // on every render — each triggering a navigation/re-render and hammering
-  // /sign-in forever. Fire exactly once.
+  // The ref guard fires signOut exactly once: re-running while state.ok stays
+  // true would hammer /sign-in forever.
   useEffect(() => {
     if (state.ok && !signedOut.current) {
       signedOut.current = true;
-      void clerk.signOut({ redirectUrl: "/sign-in" });
+      signOut();
     }
-  }, [state.ok, clerk]);
+  }, [state.ok, signOut]);
 
   return (
     <div className="panel danger-zone">
