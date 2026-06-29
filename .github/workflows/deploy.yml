@@ -72,3 +72,13 @@ jobs:
               exit 1
             fi
             echo "deploy healthy"
+
+            # Reclaim disk now that the new stack is up and verified. Each rebuild
+            # leaves the previous web/api images dangling (untagged) once the new
+            # build takes their tag, so they accumulate on the VM. Prune only
+            # dangling images + stale build cache — never tagged or in-use images.
+            # Best-effort: a cleanup failure must not fail an otherwise-good deploy.
+            docker image prune -f >/dev/null 2>&1 || true
+            docker builder prune -f --keep-storage 5GB >/dev/null 2>&1 \
+              || docker builder prune -f >/dev/null 2>&1 || true
+            echo "pruned dangling images and stale build cache"
