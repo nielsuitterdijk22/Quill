@@ -30,7 +30,16 @@ Caddy issues the TLS cert automatically once this resolves.
 
 `ZITADEL_EXTERNALDOMAIN` is baked into the instance at init and **cannot be
 changed later** without wiping the `zitadel-pgdata` volume — set it correctly the
-first time. In `/home/quill/quill/.env`:
+first time.
+
+> **Put `.env` at the repo root** (`/home/quill/quill/.env`), i.e. the directory
+> the deploy runs `docker compose` from. Compose reads `.env` from the **working
+> directory**, not the compose file's folder — a `.env` under `deploy/compose/`
+> is silently ignored and every `ZITADEL_*` var falls back to its default
+> (`ExternalDomain=localhost` → `Instance not found` 404s). The deploy reads
+> `DEPLOY_EXTRA_PROFILES` from the same path.
+
+In `/home/quill/quill/.env`:
 
 ```dotenv
 # Enable the zitadel profile in the CI deploy (so it's managed + not orphan-removed)
@@ -114,17 +123,22 @@ Redeploy. `NEXT_PUBLIC_*` are inlined at build time, so the deploy's
 
 ## Troubleshooting
 
-**`Instance not found … (ExternalDomain is localhost)` / discovery 404.** Zitadel
-was first initialised with a different external domain than the one you're now
-requesting — it's baked in at init and can't be changed by the env afterwards.
-Re-init with the correct `ZITADEL_EXTERNALDOMAIN` set first:
+**`Instance not found … (ExternalDomain is localhost)` / discovery 404, or
+`Errors.Instance.Domain.AlreadyExists` during the `03_default_instance`
+migration.** Zitadel was first initialised with a different external domain than
+the one you're now requesting (often `localhost`, because `.env` wasn't read —
+see §2). It's baked in at init, so re-init with the correct
+`ZITADEL_EXTERNALDOMAIN` set first. **You must remove `zitadel-db` too** — while
+it's running it holds the volume, so `docker volume rm` fails silently ("in use")
+and the old instance survives:
 
 ```bash
 C="docker compose -f deploy/compose/docker-compose.yml --profile production --profile zitadel"
-$C rm -sf zitadel
-docker volume ls | grep zitadel            # find the pgdata volume name
-docker volume rm quill_zitadel-pgdata      # wipe so FirstInstance re-runs
-$C up -d zitadel-db zitadel
+$C config | grep -i externaldomain         # sanity: must show your domain, NOT localhost
+$C rm -sf zitadel zitadel-init zitadel-db  # zitadel-db included — that's the trap
+docker volume rm quill_zitadel-pgdata
+docker volume ls | grep zitadel            # should now print nothing
+$C up -d zitadel-db zitadel-init zitadel
 ```
 
 **Zitadel container exits during init with `migration failed … permission denied`.**
