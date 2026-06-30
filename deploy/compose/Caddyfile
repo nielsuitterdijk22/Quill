@@ -5,3 +5,13 @@
 git.{$QUILL_DOMAIN} {
 	reverse_proxy forgejo:3000
 }
+
+# Zitadel (auth provider). The host follows ZITADEL_EXTERNALDOMAIN so Caddy and
+# Zitadel agree on the public name (set it to a host with a DNS record pointing
+# at this VM, e.g. auth.example.com). Defaults to auth.localhost (internal cert,
+# no ACME) when unset, so the main site is never affected. Only serves once the
+# `zitadel` compose profile is enabled; until then this vhost 502s and is unused.
+# h2c:// is required — Zitadel speaks HTTP/2 cleartext (gRPC) behind the proxy.
+{$ZITADEL_EXTERNALDOMAIN:auth.localhost} {
+	reverse_proxy h2c://zitadel:8080
+}
