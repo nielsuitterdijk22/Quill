@@ -209,6 +209,33 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newUserResponse(user))
 }
 
+type updateUsernameRequest struct {
+	Username string `json:"username"`
+}
+
+// handleUpdateUsername lets the signed-in user choose their handle during
+// onboarding (allowed only before any project exists). It renames the backing
+// Forgejo account too so the Quill username and git identity stay in sync
+// (requireAuth must run first).
+func (s *Server) handleUpdateUsername(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req updateUsernameRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	user, err := s.platform.SetUsername(r.Context(), id.UserID, req.Username)
+	if err != nil {
+		s.writePlatformError(w, err, "could not update username")
+		return
+	}
+	s.logAudit(r, "auth.username_changed", "user", id.UserID.String(), map[string]any{"username": user.Username})
+	httpx.JSON(w, http.StatusOK, newUserResponse(user))
+}
+
 type adminResetPasswordRequest struct {
 	NewPassword string `json:"newPassword"`
 }
