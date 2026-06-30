@@ -7,7 +7,10 @@ deploy VM and switches Quill onto it. Everything below is done in
 
 The pieces:
 - `zitadel` + `zitadel-db` services (compose profile `zitadel`).
-- Caddy vhost `auth.<your-domain>` → `h2c://zitadel:8080` (already in the Caddyfile).
+- A Caddy vhost whose host **follows `ZITADEL_EXTERNALDOMAIN`** → `h2c://zitadel:8080`
+  (already in the Caddyfile). It can be any host with a DNS record pointing at the
+  VM — e.g. `auth.example.com` or a bare `auth.example.com` sibling — it does not
+  have to sit under the main Quill domain.
 - `zitadel/steps.yaml` — first-boot seed (admin login + a machine PAT).
 - `zitadel/bootstrap.sh` — creates the Quill OIDC app and prints the `.env` lines.
 

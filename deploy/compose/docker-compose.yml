@@ -227,6 +227,8 @@ services:
       - caddy-config:/config
     environment:
       QUILL_DOMAIN: ${QUILL_DOMAIN}
+      # Public host for the Zitadel vhost — same value Zitadel is initialised with.
+      ZITADEL_EXTERNALDOMAIN: ${ZITADEL_EXTERNALDOMAIN:-auth.localhost}
     depends_on:
       - web
       - forgejo
