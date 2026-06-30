@@ -5,7 +5,7 @@ import { isZitadel } from "../../lib/auth-provider";
 
 export default function SignInPage() {
   if (isZitadel) {
-    return <ZitadelSignInButton label="Continue with Zitadel" />;
+    return <ZitadelSignInButton label="Sign in" />;
   }
   return (
     <div className="auth-page">
