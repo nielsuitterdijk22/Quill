@@ -181,6 +181,70 @@ func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, u
 	})
 }
 
+// SetUsername changes the caller's handle during onboarding. It is allowed only
+// before the user belongs to any project — the safe window in which no personal
+// namespace, repos, or org memberships exist yet — and keeps the Forgejo git
+// identity in sync by renaming the Forgejo account, so Quill's username and the
+// Forgejo login never diverge. Format/reserved rules match project slugs.
+func (s *Service) SetUsername(ctx context.Context, userID uuid.UUID, desired string) (db.User, error) {
+	clean := normalizeSlug(desired)
+	if !validSlug(clean) {
+		return db.User{}, fmt.Errorf("%w: username must be 1–63 characters of a–z, 0–9, '.', '_' or '-', start alphanumeric, and not a reserved word", ErrInvalidInput)
+	}
+
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return db.User{}, err
+	}
+	if clean == user.Username {
+		return user, nil // no-op
+	}
+
+	// Onboarding-only: refuse once the user has any project (repos/namespace exist).
+	projects, err := s.store.ListProjectsByUser(ctx, userID)
+	if err != nil {
+		return db.User{}, fmt.Errorf("check projects: %w", err)
+	}
+	if len(projects) > 0 {
+		return db.User{}, fmt.Errorf("%w: your username can only be set during onboarding", ErrConflict)
+	}
+
+	// Uniqueness (case-insensitive via GetUserByUsername).
+	if _, err := s.store.GetUserByUsername(ctx, clean); err == nil {
+		return db.User{}, fmt.Errorf("%w: that username is taken", ErrConflict)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return db.User{}, fmt.Errorf("check username: %w", err)
+	}
+
+	// Keep Forgejo in sync first; if the rename fails, abort without touching the
+	// Quill username so the two identities never diverge.
+	renamedForgejo := false
+	if s.forgejoEnabled() && user.ForgejoUsername.Valid && user.ForgejoUsername.String != "" && user.ForgejoUsername.String != clean {
+		if err := s.forgejo.RenameUser(ctx, user.ForgejoUsername.String, clean); err != nil {
+			return db.User{}, fmt.Errorf("rename forgejo user: %w", err)
+		}
+		renamedForgejo = true
+	}
+
+	updated, err := s.store.UpdateUsername(ctx, db.UpdateUsernameParams{ID: userID, Username: clean})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return db.User{}, fmt.Errorf("%w: that username is taken", ErrConflict)
+		}
+		return db.User{}, err
+	}
+	if renamedForgejo {
+		if _, err := s.store.SetUserForgejoLink(ctx, db.SetUserForgejoLinkParams{
+			ID:              userID,
+			ForgejoUserID:   updated.ForgejoUserID,
+			ForgejoUsername: pgtype.Text{String: clean, Valid: true},
+		}); err != nil {
+			s.logger.Warn("username set: updated forgejo login but failed to persist link", "user", clean, "error", err)
+		}
+	}
+	return updated, nil
+}
+
 // PurgeOwnedProjects deletes every project the user solely owns — its repos
 // (in Forgejo and the DB), policies, Forgejo org and the project row — so that
 // account deletion is a true erasure and a later re-signup can re-import the
