@@ -74,8 +74,16 @@ email in the console too.
 ## 4. Provision the Quill OIDC app
 
 `steps.yaml` wrote a machine PAT to `deploy/compose/zitadel/out/quill-api.pat`
-(bind-mounted from the container). Run the bootstrap against the **public issuer**
-(so Zitadel's host check passes):
+(bind-mounted from the container). Run the bootstrap — it talks to the **public
+issuer** (so Zitadel's host check passes). It auto-derives the URLs from
+`ZITADEL_EXTERNALDOMAIN` + `QUILL_DOMAIN` in your `.env`, so from the repo root:
+
+```bash
+deploy/compose/zitadel/bootstrap.sh >> .env
+```
+
+`.env` is read by Compose, not by your shell — so if you'd rather be explicit (or
+the values aren't in `.env`), pass them on the command line instead:
 
 ```bash
 ZITADEL_PUBLIC_URL=https://auth.example.com \

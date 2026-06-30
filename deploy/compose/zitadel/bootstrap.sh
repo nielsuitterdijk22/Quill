@@ -15,8 +15,26 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-: "${ZITADEL_PUBLIC_URL:?set ZITADEL_PUBLIC_URL, e.g. https://auth.example.com}"
-: "${QUILL_BASE_URL:?set QUILL_BASE_URL, e.g. https://quill.example.com}"
+# Convenience: if the public URLs aren't passed in the environment, derive them
+# from ZITADEL_EXTERNALDOMAIN / QUILL_DOMAIN found in the deployment's .env
+# (repo root, or deploy/compose/.env). A plain shell script can't see compose's
+# .env on its own, so read the keys we need here.
+read_env_key() { # read_env_key KEY -> first value found across the .env files
+  local key="$1" f v
+  for f in ../../../.env ../.env; do
+    [ -f "$f" ] || continue
+    v="$(grep -E "^${key}=" "$f" | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' | tr -d '"'\''\r' | xargs 2>/dev/null || true)"
+    if [ -n "$v" ]; then printf '%s' "$v"; return; fi
+  done
+}
+: "${ZITADEL_EXTERNALDOMAIN:=$(read_env_key ZITADEL_EXTERNALDOMAIN)}"
+: "${QUILL_DOMAIN:=$(read_env_key QUILL_DOMAIN)}"
+: "${ZITADEL_PUBLIC_URL:=${ZITADEL_EXTERNALDOMAIN:+https://$ZITADEL_EXTERNALDOMAIN}}"
+: "${QUILL_BASE_URL:=${QUILL_DOMAIN:+https://$QUILL_DOMAIN}}"
+
+: "${ZITADEL_PUBLIC_URL:?set ZITADEL_PUBLIC_URL (or ZITADEL_EXTERNALDOMAIN in .env), e.g. https://auth.example.com}"
+: "${QUILL_BASE_URL:?set QUILL_BASE_URL (or QUILL_DOMAIN in .env), e.g. https://quill.example.com}"
+echo "using issuer=$ZITADEL_PUBLIC_URL app-base=$QUILL_BASE_URL" >&2
 
 if [ ! -f out/quill-api.pat ]; then
   echo "out/quill-api.pat not found — is Zitadel up and the ./out volume mounted?" >&2
