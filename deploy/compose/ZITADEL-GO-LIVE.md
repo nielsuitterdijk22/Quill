@@ -112,6 +112,29 @@ Redeploy. `NEXT_PUBLIC_*` are inlined at build time, so the deploy's
 - Delete a test account → the Zitadel user is removed (Management API), so the
   session can't resurrect it.
 
+## Troubleshooting
+
+**`Instance not found … (ExternalDomain is localhost)` / discovery 404.** Zitadel
+was first initialised with a different external domain than the one you're now
+requesting — it's baked in at init and can't be changed by the env afterwards.
+Re-init with the correct `ZITADEL_EXTERNALDOMAIN` set first:
+
+```bash
+C="docker compose -f deploy/compose/docker-compose.yml --profile production --profile zitadel"
+$C rm -sf zitadel
+docker volume ls | grep zitadel            # find the pgdata volume name
+docker volume rm quill_zitadel-pgdata      # wipe so FirstInstance re-runs
+$C up -d zitadel-db zitadel
+```
+
+**Zitadel container exits during init with `migration failed … permission denied`.**
+The `zitadel-init` service makes `./zitadel/out` world-writable before boot, so a
+full `up` (not just `up -d zitadel`) must run it. Bring up the whole profile:
+`… --profile zitadel up -d`. (One-off manual fix: `chmod 0777 deploy/compose/zitadel/out`.)
+
+**`ZITADEL_MASTERKEY` errors.** The master key must be exactly 32 characters
+(`openssl rand -hex 16`). Changing it after init requires a `zitadel-pgdata` wipe.
+
 ## Rollback (instant)
 
 Set `QUILL_AUTH_PROVIDER=clerk` and `NEXT_PUBLIC_AUTH_PROVIDER=clerk` (or remove

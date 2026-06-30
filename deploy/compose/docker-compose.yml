@@ -170,6 +170,17 @@ services:
       timeout: 5s
       retries: 20
 
+  # The Zitadel image runs as a non-root user that can't write to the bind-mounted
+  # ./zitadel/out (owned by the host user), so FirstInstance's PatPath write fails.
+  # This init step makes it world-writable before Zitadel boots — runs to
+  # completion, then Zitadel starts (depends_on: service_completed_successfully).
+  zitadel-init:
+    image: alpine:3
+    profiles: [zitadel]
+    command: ["sh", "-c", "chmod 0777 /output"]
+    volumes:
+      - ./zitadel/out:/output
+
   zitadel:
     image: ghcr.io/zitadel/zitadel:v2.65.1
     profiles: [zitadel]
@@ -208,6 +219,8 @@ services:
     depends_on:
       zitadel-db:
         condition: service_healthy
+      zitadel-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/app/zitadel", "ready"]
       interval: 5s
