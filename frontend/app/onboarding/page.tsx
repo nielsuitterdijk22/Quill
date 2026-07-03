@@ -67,6 +67,9 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(
     searchParams.get("step") === "import" ? "import" : "choose",
   );
+  // Project explicitly requested via ?project=<slug> (e.g. from the project
+  // picker on the repositories page for users with more than one project).
+  const requestedProject = searchParams.get("project");
   const [accountType, setAccountType] = useState<"individual" | "org" | null>(null);
   const [orgSlug, setOrgSlug] = useState("");
   const [orgName, setOrgName] = useState("");
@@ -80,8 +83,11 @@ export default function OnboardingPage() {
   const [projectSlug, setProjectSlug] = useState<string | null>(null);
 
   // On mount: if we were redirected back to /onboarding (e.g. layout saw no
-  // projects during an auth hiccup), detect an existing project and skip past
-  // the choose step so the user doesn't have to start over.
+  // projects during an auth hiccup, or after the GitHub OAuth round-trip),
+  // detect the target project and skip past the choose step so the user
+  // doesn't have to start over. A ?project=<slug> param (set when the user
+  // picked a project before starting the GitHub connection) takes priority
+  // over the default personal-project guess.
   useEffect(() => {
     getToken().then(async (token) => {
       if (!token) return;
@@ -93,9 +99,12 @@ export default function OnboardingPage() {
         const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
         const existing = body.projects ?? [];
         if (existing.length === 0) return;
-        const personal = existing.find((p) => p.isPersonal) ?? existing[0];
-        setProjectSlug(personal.slug);
-        setAccountType(personal.isPersonal ? "individual" : "org");
+        const requested = requestedProject
+          ? existing.find((p) => p.slug === requestedProject)
+          : undefined;
+        const chosen = requested ?? existing.find((p) => p.isPersonal) ?? existing[0];
+        setProjectSlug(chosen.slug);
+        setAccountType(chosen.isPersonal ? "individual" : "org");
         setStep("import");
       } catch { /* stay on current step */ }
     });
@@ -117,19 +126,6 @@ export default function OnboardingPage() {
         })
         .catch(() => setError("Could not load your GitHub repositories."))
         .finally(() => setLoadingRepos(false));
-    });
-  }, [step, getToken]);
-
-  useEffect(() => {
-    if (step !== "import") return;
-    getToken().then(async (token) => {
-      const res = await fetch("/api/backend/me/projects", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return;
-      const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
-      const personal = body.projects?.find((p) => p.isPersonal);
-      if (personal) setProjectSlug(personal.slug);
     });
   }, [step, getToken]);
 
@@ -191,7 +187,9 @@ export default function OnboardingPage() {
   }
 
   function connectGitHub() {
-    window.location.href = "/api/backend/auth/github";
+    const slug = projectSlug ?? requestedProject;
+    const query = slug ? `?project=${encodeURIComponent(slug)}` : "";
+    window.location.href = `/api/backend/auth/github${query}`;
   }
 
   function toggleRepo(id: number) {
@@ -221,7 +219,10 @@ export default function OnboardingPage() {
     const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
     const existing = body.projects ?? [];
     if (existing.length === 0) return null;
-    const chosen = (existing.find((p) => p.isPersonal) ?? existing[0]).slug;
+    const requested = requestedProject
+      ? existing.find((p) => p.slug === requestedProject)
+      : undefined;
+    const chosen = (requested ?? existing.find((p) => p.isPersonal) ?? existing[0]).slug;
     setProjectSlug(chosen);
     return chosen;
   }
