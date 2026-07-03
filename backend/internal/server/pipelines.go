@@ -254,6 +254,13 @@ func (s *Server) handleTriggerRun(w http.ResponseWriter, r *http.Request) {
 // and sends a "done" event. The handler bypasses the 60-second chi request
 // timeout by using a detached context for the streaming loop.
 func (s *Server) handleStreamRunLogs(w http.ResponseWriter, r *http.Request) {
+	// This response can stay open for as long as the pipeline run takes
+	// (up to QUILL_PIPELINE_TIMEOUT, default 30m), far past the server's
+	// WriteTimeout (default 30s, see cmd/api/main.go). That timeout exists to
+	// bound slow/stuck writes on ordinary endpoints; clear it here so it can't
+	// sever a healthy long-lived SSE stream out from under an in-progress run.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
 	actor, ok := actorFrom(r.Context())
 	if !ok {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
