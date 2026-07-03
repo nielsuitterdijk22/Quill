@@ -27,6 +27,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           authorization: {
             params: {
               scope: `openid profile email offline_access urn:zitadel:iam:org:project:id:${process.env.NEXT_PUBLIC_ZITADEL_PROJECT_ID ?? "zitadel"}:aud`,
+              // Sign-out only ends Quill's own session, not Zitadel's IdP
+              // session (see zitadel-bridge.tsx) — without this, a live
+              // Zitadel session silently re-authenticates on sign-in with no
+              // UI at all. select_account forces Zitadel's account chooser
+              // every time instead.
+              prompt: "select_account",
             },
           },
         }),
@@ -43,10 +49,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return token;
     },
-    // Expose the access token on the session for client + server reads.
+    // Expose the access + id tokens on the session for client + server reads.
+    // idToken is needed as the id_token_hint on Zitadel's RP-initiated logout
+    // (see zitadel-bridge.tsx) so signing out of Quill also ends the Zitadel
+    // IdP session instead of just the local app session.
     async session({ session, token }) {
-      (session as { accessToken?: string }).accessToken =
+      (session as { accessToken?: string; idToken?: string }).accessToken =
         token.accessToken as string | undefined;
+      (session as { accessToken?: string; idToken?: string }).idToken =
+        token.idToken as string | undefined;
       return session;
     },
     // Used by the NextAuth middleware: a signed-in user is authorized.
