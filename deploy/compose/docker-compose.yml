@@ -132,6 +132,10 @@ services:
         NEXT_PUBLIC_ZITADEL_CLIENT_ID: ${NEXT_PUBLIC_ZITADEL_CLIENT_ID:-}
         NEXT_PUBLIC_ZITADEL_PROJECT_ID: ${NEXT_PUBLIC_ZITADEL_PROJECT_ID:-}
         QUILL_API_BASE_URL: ${QUILL_API_BASE_URL:-http://api:8080}
+        # Sibling app URLs for the top-left app switcher (client-inlined, so build args).
+        NEXT_PUBLIC_ATLAS_URL: ${NEXT_PUBLIC_ATLAS_URL:-}
+        NEXT_PUBLIC_TEMPO_URL: ${NEXT_PUBLIC_TEMPO_URL:-}
+        NEXT_PUBLIC_FORGE_URL: ${NEXT_PUBLIC_FORGE_URL:-}
     environment:
       NODE_ENV: production
       QUILL_API_BASE_URL: http://api:8080

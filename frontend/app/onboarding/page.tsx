@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { useQuillAuth } from "@/components/auth/context";
+import { AppTile } from "@/components/icons/AppMarks";
 
 type GitHubRepo = {
   id: number;
@@ -272,7 +273,7 @@ export default function OnboardingPage() {
       <div className="ob-shell">
         <header className="ob-header">
           <div className="ob-brand">
-            <span className="dot" />
+            <AppTile app="quill" size={24} />
             Quill
           </div>
           <span className="ob-step-label">Step 1 of 2</span>
@@ -355,7 +356,7 @@ export default function OnboardingPage() {
       <div className="ob-shell">
         <header className="ob-header">
           <div className="ob-brand">
-            <span className="dot" />
+            <AppTile app="quill" size={24} />
             Quill
           </div>
           <span className="ob-step-label">Step 2 of 3</span>
@@ -421,7 +422,7 @@ export default function OnboardingPage() {
       <div className="ob-shell">
         <header className="ob-header">
           <div className="ob-brand">
-            <span className="dot" />
+            <AppTile app="quill" size={24} />
             Quill
           </div>
           <span className="ob-step-label">{accountType === "org" ? "Step 3 of 3" : "Step 2 of 2"}</span>
@@ -519,7 +520,7 @@ export default function OnboardingPage() {
       <div className="ob-shell">
         <header className="ob-header">
           <div className="ob-brand">
-            <span className="dot" />
+            <AppTile app="quill" size={24} />
             Quill
           </div>
         </header>
@@ -545,7 +546,7 @@ export default function OnboardingPage() {
     <div className="ob-shell">
       <header className="ob-header">
         <div className="ob-brand">
-          <span className="dot" />
+          <AppTile app="quill" size={24} />
           Quill
         </div>
       </header>

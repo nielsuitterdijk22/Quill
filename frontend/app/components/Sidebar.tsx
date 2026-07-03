@@ -10,6 +10,8 @@ import { useQuillAuth } from "./auth/context";
 
 import { setCurrentProjectAction } from "../lib/actions";
 import type { MyProject, User } from "../lib/api";
+import { AppSwitcher } from "./AppSwitcher";
+import { AppTile } from "./icons/AppMarks";
 import { ThemeToggle } from "./ThemeToggle";
 
 export type NavItem = {
@@ -303,7 +305,9 @@ export function Sidebar({
   return (
     <aside className="side">
       <div className="brand">
-        <span className="dot" /> Quill
+        <AppSwitcher current="quill" />
+        <AppTile app="quill" size={32} />
+        Quill
       </div>
 
       <div className="project">

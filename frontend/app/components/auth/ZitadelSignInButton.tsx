@@ -6,6 +6,8 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 
+import { AppTile } from "../icons/AppMarks";
+
 export function ZitadelSignInButton({ label }: { label: string }) {
   const [pending, setPending] = useState(false);
 
@@ -13,7 +15,7 @@ export function ZitadelSignInButton({ label }: { label: string }) {
     <div className="auth-page">
       <div className="signin-card">
         <div className="auth-brand">
-          <span className="dot" /> Quill
+          <AppTile app="quill" size={28} /> Quill
         </div>
         <h1 className="signin-title">Welcome to Quill</h1>
         <p className="signin-sub">
