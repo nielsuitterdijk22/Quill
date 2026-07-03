@@ -294,59 +294,72 @@ func (s *Server) handleStreamRunLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeLog := func(ll platform.LogLine) bool {
+	// Every log event carries an id: its 1-based position in the run's full
+	// log. A reconnecting client sends the last id it saw (SSE Last-Event-ID)
+	// and the replay resumes right after it instead of starting over.
+	written := 0
+	if v := strings.TrimSpace(r.Header.Get("Last-Event-ID")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			written = n
+		}
+	}
+
+	writeLog := func(id int, ll platform.LogLine) bool {
 		data, _ := json.Marshal(map[string]string{
 			"jobKey":   ll.JobKey,
 			"stepName": ll.StepName,
 			"line":     ll.Line,
 		})
-		_, err := fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
+		_, err := fmt.Fprintf(w, "id: %d\nevent: log\ndata: %s\n\n", id, data)
 		return err == nil
 	}
 
 	subID := uuid.New().String()
-	ch, buffered, alreadyDone := stream.Subscribe(subID)
-	if !alreadyDone {
-		defer stream.Unsubscribe(subID)
-	}
-
-	for _, ll := range buffered {
-		if !writeLog(ll) {
-			return
-		}
-	}
-
-	if alreadyDone {
-		data, _ := json.Marshal(map[string]string{"status": stream.Status()})
-		fmt.Fprintf(w, "event: done\ndata: %s\n\n", data) //nolint:errcheck
-		flush()
-		return
-	}
-
-	flush()
+	defer stream.Unsubscribe(subID)
 
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
+	// Subscribe/backfill loop. The subscriber channel closes when the run
+	// finishes or when this connection lagged and was kicked by the
+	// broadcaster; both cases re-subscribe, backfill buffered[written:], and
+	// either continue live or emit the done event. Log capture is therefore
+	// never blocked by a slow client, and the client never has a gap.
 	for {
-		select {
-		case ll, ok := <-ch:
-			if !ok {
-				// Channel closed: run finished.
-				data, _ := json.Marshal(map[string]string{"status": stream.Status()})
-				fmt.Fprintf(w, "event: done\ndata: %s\n\n", data) //nolint:errcheck
+		ch, buffered, alreadyDone := stream.Subscribe(subID)
+		for written < len(buffered) {
+			if !writeLog(written+1, buffered[written]) {
+				return
+			}
+			written++
+		}
+		flush()
+
+		if alreadyDone {
+			data, _ := json.Marshal(map[string]string{"status": stream.Status()})
+			fmt.Fprintf(w, "event: done\ndata: %s\n\n", data) //nolint:errcheck
+			flush()
+			return
+		}
+
+	live:
+		for {
+			select {
+			case ll, ok := <-ch:
+				if !ok {
+					break live // run finished or this subscriber lagged — re-subscribe
+				}
+				written++
+				if !writeLog(written, ll) {
+					return
+				}
 				flush()
-				return
+			case <-ticker.C:
+				if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+					return
+				}
+				flush()
 			}
-			if !writeLog(ll) {
-				return
-			}
-			flush()
-		case <-ticker.C:
-			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
-				return
-			}
-			flush()
 		}
 	}
 }

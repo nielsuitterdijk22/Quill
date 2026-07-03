@@ -53,6 +53,11 @@ type activeJob struct {
 	subs     map[string]chan rawSSEEvent
 	buffered []rawSSEEvent
 	done     bool
+	// doneEv is the terminal event, stored so stream handlers can emit it even
+	// when a subscriber's channel was full at finish time (events are dropped
+	// for slow subscribers, and the done event must never be lost — a stream
+	// that ends without it is reported as a failed run by the HTTPRunner).
+	doneEv rawSSEEvent
 }
 
 func newActiveJob() *activeJob {
@@ -73,7 +78,9 @@ func (a *activeJob) publish(ev rawSSEEvent) {
 }
 
 // finish marks the job as done and closes all subscriber channels. It is
-// idempotent — safe to call multiple times.
+// idempotent — safe to call multiple times. The done event is not sent through
+// the subscriber channels (a full channel would silently drop it); instead it
+// is stored on the job and handlers emit it when they observe the close.
 func (a *activeJob) finish(ev rawSSEEvent) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -82,14 +89,19 @@ func (a *activeJob) finish(ev rawSSEEvent) {
 	}
 	a.buffered = append(a.buffered, ev)
 	a.done = true
+	a.doneEv = ev
 	for id, ch := range a.subs {
-		select {
-		case ch <- ev:
-		default:
-		}
 		close(ch)
 		delete(a.subs, id)
 	}
+}
+
+// doneEvent returns the stored terminal event. Valid only once the job has
+// finished (subscriber channels closed or subscribe reported alreadyDone).
+func (a *activeJob) doneEvent() rawSSEEvent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.doneEv
 }
 
 // subscribe returns (channel, buffered-snapshot, alreadyDone).
@@ -261,7 +273,13 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case ev, ok := <-ch:
 			if !ok {
-				return // channel closed unexpectedly
+				// Channels close only via finish, so the job is done — emit the
+				// stored terminal event (log events dropped for a slow subscriber
+				// are lost, but the done event must always reach the client).
+				if writeEv(aj.doneEvent()) {
+					flush()
+				}
+				return
 			}
 			if !writeEv(ev) {
 				return // client disconnected
