@@ -204,6 +204,13 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 // handleStream serves an SSE stream for a dispatched job. It replays all
 // buffered events so late subscribers get the full log history.
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
+	// This response can legitimately stay open for as long as the pipeline
+	// timeout allows (default 30m, see pipeline.pipelineTimeout), far past the
+	// server's WriteTimeout. That timeout exists to bound slow/stuck writes on
+	// ordinary endpoints; clear it here so it can't sever a healthy long-lived
+	// SSE stream out from under an in-progress job.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
 	jobID := chi.URLParam(r, "jobID")
 	val, ok := s.activeJobs.Load(jobID)
 	if !ok {
