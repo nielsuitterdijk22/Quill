@@ -88,6 +88,12 @@ type Querier interface {
 	UnstarRepo(ctx context.Context, arg UnstarRepoParams) error
 	GetRepoStar(ctx context.Context, arg GetRepoStarParams) (RepoStar, error)
 	CountRepoStars(ctx context.Context, repoID uuid.UUID) (int64, error)
+	InsertProjectSyncEvent(ctx context.Context, arg InsertProjectSyncEventParams) (ProjectSyncOutbox, error)
+	ListPendingProjectSyncEvents(ctx context.Context, limit int32) ([]ProjectSyncOutbox, error)
+	MarkProjectSyncEventDelivered(ctx context.Context, id uuid.UUID) error
+	MarkProjectSyncEventFailed(ctx context.Context, arg MarkProjectSyncEventFailedParams) error
+	CountProjectSyncEventsByProject(ctx context.Context, projectID uuid.UUID) (int64, error)
+	ListProjectsWithTenant(ctx context.Context) ([]ListProjectsWithTenantRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

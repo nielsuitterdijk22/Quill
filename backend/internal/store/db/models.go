@@ -136,6 +136,17 @@ type ProjectMember struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type ProjectSyncOutbox struct {
+	ID            uuid.UUID          `json:"id"`
+	ProjectID     uuid.UUID          `json:"projectId"`
+	EventType     string             `json:"eventType"`
+	Payload       []byte             `json:"payload"`
+	OccurredAt    time.Time          `json:"occurredAt"`
+	Attempts      int32              `json:"attempts"`
+	NextAttemptAt time.Time          `json:"nextAttemptAt"`
+	DeliveredAt   pgtype.Timestamptz `json:"deliveredAt"`
+}
+
 type Repository struct {
 	ID            uuid.UUID   `json:"id"`
 	ProjectID     uuid.UUID   `json:"projectId"`
