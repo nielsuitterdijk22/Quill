@@ -94,6 +94,10 @@ type Querier interface {
 	MarkProjectSyncEventFailed(ctx context.Context, arg MarkProjectSyncEventFailedParams) error
 	CountProjectSyncEventsByProject(ctx context.Context, projectID uuid.UUID) (int64, error)
 	ListProjectsWithTenant(ctx context.Context) ([]ListProjectsWithTenantRow, error)
+	InsertWorkItemRefEvent(ctx context.Context, arg InsertWorkItemRefEventParams) (WorkItemRefOutbox, error)
+	ListPendingWorkItemRefEvents(ctx context.Context, limit int32) ([]WorkItemRefOutbox, error)
+	MarkWorkItemRefEventDelivered(ctx context.Context, id uuid.UUID) error
+	MarkWorkItemRefEventFailed(ctx context.Context, arg MarkWorkItemRefEventFailedParams) error
 }
 
 var _ Querier = (*Queries)(nil)

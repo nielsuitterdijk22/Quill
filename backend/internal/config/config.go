@@ -91,16 +91,20 @@ type GitHubConfig struct {
 	ClientSecret string
 }
 
-// TempoSyncConfig controls the project-mirror push to Tempo (see the tight
-// Quill/Tempo integration design). When URL is empty, sync is disabled and the
-// background dispatcher stays idle.
+// TempoSyncConfig controls the outbound pushes to Tempo (see the tight
+// Quill/Tempo integration design). When a URL is empty, that push is disabled and
+// its background dispatcher stays idle.
 type TempoSyncConfig struct {
-	// URL is Tempo's project-mirror intake endpoint. Empty disables sync.
+	// URL is Tempo's project-mirror intake endpoint. Empty disables project sync.
 	URL string
-	// Token is the static bearer token presented to Tempo. It is a temporary seam:
-	// the dispatcher acquires its token through an interface, so the Zitadel
-	// client-credentials machine token (PR 8.1) can replace this without code
-	// changes. Empty sends requests unauthenticated (local dev only).
+	// RefsURL is Tempo's work-item-refs endpoint (PR 8.4), which the Forgejo
+	// webhook handler pushes commit/PR cross-links to (PR 8.5). Empty disables the
+	// feature entirely: the webhook path is completely unaffected.
+	RefsURL string
+	// Token is the static bearer token presented to Tempo for both pushes. It is a
+	// temporary seam: the dispatchers acquire their token through an interface, so
+	// the Zitadel client-credentials machine token (PR 8.1) can replace this
+	// without code changes. Empty sends requests unauthenticated (local dev only).
 	Token string
 }
 
@@ -152,8 +156,9 @@ func Load() (*Config, error) {
 			DispatchSecret: getenv("QUILL_PIPELINE_DISPATCH_SECRET", ""),
 		},
 		TempoSync: TempoSyncConfig{
-			URL:   getenv("QUILL_TEMPO_SYNC_URL", ""),
-			Token: getenv("QUILL_TEMPO_SYNC_TOKEN", ""),
+			URL:     getenv("QUILL_TEMPO_SYNC_URL", ""),
+			RefsURL: getenv("QUILL_TEMPO_SYNC_REFS_URL", ""),
+			Token:   getenv("QUILL_TEMPO_SYNC_TOKEN", ""),
 		},
 		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
