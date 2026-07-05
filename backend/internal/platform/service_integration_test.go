@@ -35,8 +35,10 @@ func newService(t *testing.T) (*platform.Service, *store.Store) {
 	reset := func() {
 		// TRUNCATE ... CASCADE clears dependent repos/members too; a plain DELETE
 		// on projects would be blocked by repositories (ON DELETE RESTRICT). The
-		// seeded default tenant is intentionally left in place.
-		_, _ = st.Pool().Exec(context.Background(), "TRUNCATE projects, users CASCADE")
+		// seeded default tenant is intentionally left in place. The sync outbox has
+		// no FK to projects (delete events must outlive their project), so it is
+		// truncated explicitly.
+		_, _ = st.Pool().Exec(context.Background(), "TRUNCATE projects, users, project_sync_outbox CASCADE")
 	}
 	reset()
 	t.Cleanup(reset)
