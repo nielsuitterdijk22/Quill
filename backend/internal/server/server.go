@@ -89,6 +89,15 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 			projectsync.Config{URL: cfg.TempoSync.URL},
 			st,
 			tempoTokens,
+<<<<<<< HEAD
+			logger,
+		)
+		workItemRefs = workitemrefs.NewDispatcher(
+			workitemrefs.Config{URL: cfg.TempoSync.RefsURL},
+			st,
+			tempoTokens,
+=======
+>>>>>>> 83fa197 (tempo sync: authenticate to Tempo as a Zitadel machine user (client_credentials) (#32))
 			logger,
 		)
 		workItemRefs = workitemrefs.NewDispatcher(
