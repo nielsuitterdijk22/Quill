@@ -56,6 +56,13 @@ Quill UI  ◄── reads run state + streams logs from Forgejo API (cursor-base
 
 ### Forge's side
 
+- **The runner always runs in Forge.** The engine and the runner code are
+  Forgejo's, but the runtime is Forge's hardened template — default-deny
+  network, dependency-proxy, attestor sidecar. That is not an implementation
+  detail: the SBOM is an *observation* of what crossed the proxy, so a runner
+  outside Forge's network boundary cannot produce a truthful one. There is no
+  non-Forge runner tier in the end state; labels select the tier
+  (`forge` standard pool vs `forge-tee` confidential), not opt-in vs opt-out.
 - New tenant type next to the GitHub App: a **Forgejo instance** (URL +
   registration credential, provisioned per Quill install).
 - A small per-tenant poller claims queued tasks and launches the same hardened
