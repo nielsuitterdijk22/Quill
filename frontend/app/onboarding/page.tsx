@@ -15,7 +15,7 @@ type GitHubRepo = {
   cloneUrl: string;
 };
 
-type Step = "choose" | "org-setup" | "import" | "importing" | "done";
+type Step = "username" | "choose" | "org-setup" | "import" | "importing" | "done";
 
 function IconUser() {
   return (
@@ -66,7 +66,7 @@ export default function OnboardingPage() {
   const { getToken } = useQuillAuth();
 
   const [step, setStep] = useState<Step>(
-    searchParams.get("step") === "import" ? "import" : "choose",
+    searchParams.get("step") === "import" ? "import" : "username",
   );
   // Project explicitly requested via ?project=<slug> (e.g. from the project
   // picker on the repositories page for users with more than one project).
@@ -74,6 +74,8 @@ export default function OnboardingPage() {
   const [accountType, setAccountType] = useState<"individual" | "org" | null>(null);
   const [orgSlug, setOrgSlug] = useState("");
   const [orgName, setOrgName] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameSaving, setUsernameSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -112,6 +114,22 @@ export default function OnboardingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run once on mount
 
+  // Pre-fill the username step with the handle the backend derived from the IdP
+  // profile, so the user confirms or tweaks rather than typing from scratch.
+  useEffect(() => {
+    getToken().then(async (token) => {
+      if (!token) return;
+      try {
+        const res = await fetch("/api/backend/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const me = (await res.json()) as { username?: string };
+        if (me.username) setUsername((cur) => cur || me.username!);
+      } catch { /* leave blank */ }
+    });
+  }, [getToken]);
+
   useEffect(() => {
     if (step !== "import") return;
     setLoadingRepos(true);
@@ -129,6 +147,46 @@ export default function OnboardingPage() {
         .finally(() => setLoadingRepos(false));
     });
   }, [step, getToken]);
+
+  useEffect(() => {
+    if (step !== "import") return;
+    getToken().then(async (token) => {
+      const res = await fetch("/api/backend/me/projects", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return;
+      const body = (await res.json()) as { projects?: { slug: string; isPersonal: boolean }[] };
+      const personal = body.projects?.find((p) => p.isPersonal);
+      if (personal) setProjectSlug(personal.slug);
+    });
+  }, [step, getToken]);
+
+  function saveUsername() {
+    const u = username.trim().toLowerCase();
+    if (!u) {
+      setError("Username is required.");
+      return;
+    }
+    setError(null);
+    setUsernameSaving(true);
+    getToken().then(async (token) => {
+      const res = await fetch("/api/backend/auth/me/username", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ username: u }),
+      });
+      setUsernameSaving(false);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        setError(body?.message ?? "That username isn't available — try another.");
+        return;
+      }
+      setStep("choose");
+    });
+  }
 
   function handleChoose(type: "individual" | "org") {
     setError(null);
@@ -264,6 +322,57 @@ export default function OnboardingPage() {
       setImportResults(body?.results ?? []);
       setStep("done");
     });
+  }
+
+  // ── username ──────────────────────────────────────────────────────────────────
+
+  if (step === "username") {
+    return (
+      <div className="ob-shell">
+        <header className="ob-header">
+          <div className="ob-brand">
+            <span className="dot" />
+            Quill
+          </div>
+          <span className="ob-step-label">Set up your account</span>
+        </header>
+
+        <main className="ob-main ob-main--narrow">
+          <div className="ob-headline">
+            <h1 className="ob-title">Pick your username</h1>
+            <p className="ob-sub">
+              It&apos;s your handle and personal namespace — your repos live under it. You can keep the suggestion or change it now.
+            </p>
+          </div>
+
+          {error && <div className="ob-error">{error}</div>}
+
+          <div className="ob-org-form">
+            <div className="ob-field">
+              <label className="ob-label">Username</label>
+              <input
+                className="ob-input"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))}
+                placeholder="yourname"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && saveUsername()}
+              />
+              {username && (
+                <span className="ob-preview">
+                  Your namespace will be <code>@{username}</code>
+                </span>
+              )}
+            </div>
+            <div className="ob-import-actions">
+              <button className="ob-btn-primary" onClick={saveUsername} disabled={usernameSaving || !username}>
+                {usernameSaving ? <><IconSpinner /> Saving…</> : "Continue →"}
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   // ── choose ──────────────────────────────────────────────────────────────────

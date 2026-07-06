@@ -170,6 +170,7 @@ func (s *Server) setupRoutes() {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
 				r.Patch("/me", s.handleUpdateProfile)
+				r.Patch("/me/username", s.handleUpdateUsername)
 				r.Patch("/me/email", s.handleUpdateEmail)
 				r.Delete("/me", s.handleDeleteAccount)
 				r.Post("/logout", s.handleLogout)

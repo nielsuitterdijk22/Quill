@@ -82,6 +82,7 @@ type Querier interface {
 	UpdatePipelineRunStatus(ctx context.Context, arg UpdatePipelineRunStatusParams) (PipelineRun, error)
 	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
+	UpdateUsername(ctx context.Context, arg UpdateUsernameParams) (User, error)
 	UpsertPipeline(ctx context.Context, arg UpsertPipelineParams) (Pipeline, error)
 	UpsertPolicy(ctx context.Context, arg UpsertPolicyParams) (Policy, error)
 	StarRepo(ctx context.Context, arg StarRepoParams) error

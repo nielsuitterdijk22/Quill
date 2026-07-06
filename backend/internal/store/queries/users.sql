@@ -26,6 +26,12 @@ SET display_name = $2
 WHERE id = $1
 RETURNING *;
 
+-- name: UpdateUsername :one
+UPDATE users
+SET username = $2
+WHERE id = $1
+RETURNING *;
+
 -- name: SetUserForgejoLink :one
 UPDATE users
 SET forgejo_user_id = $2, forgejo_username = $3
