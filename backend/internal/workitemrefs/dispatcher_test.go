@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -15,32 +14,15 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
-// clock is a manually-advanced time source shared by the dispatcher and the fake
-// outbox so backoff scheduling can be exercised deterministically.
-type clock struct {
-	mu sync.Mutex
-	t  time.Time
-}
+// The dispatcher's poll/backoff/retry/disabled behavior is exercised once, over
+// the shared engine, in internal/outbox. Here we assert the work-item-ref
+// adapter delivers the exact wire-contract JSON, and that Enqueue writes or skips
+// outbox rows correctly.
 
-func newClock() *clock { return &clock{t: time.Unix(1_700_000_000, 0).UTC()} }
-
-func (c *clock) now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.t
-}
-
-func (c *clock) advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.t = c.t.Add(d)
-}
-
-// fakeOutbox is an in-memory Outbox so dispatcher tests need no database.
+// fakeOutbox is a minimal in-memory work_item_ref_outbox.
 type fakeOutbox struct {
-	mu    sync.Mutex
-	rows  []*db.WorkItemRefOutbox
-	clock *clock
+	mu   sync.Mutex
+	rows []*db.WorkItemRefOutbox
 }
 
 func (f *fakeOutbox) enqueue(push RefPush) uuid.UUID {
@@ -48,23 +30,16 @@ func (f *fakeOutbox) enqueue(push RefPush) uuid.UUID {
 	id := uuid.New()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rows = append(f.rows, &db.WorkItemRefOutbox{
-		ID:            id,
-		ProjectID:     push.QuillProjectID,
-		Payload:       payload,
-		OccurredAt:    f.clock.now(),
-		NextAttemptAt: f.clock.now(),
-	})
+	f.rows = append(f.rows, &db.WorkItemRefOutbox{ID: id, ProjectID: push.QuillProjectID, Payload: payload})
 	return id
 }
 
 func (f *fakeOutbox) ListPendingWorkItemRefEvents(_ context.Context, limit int32) ([]db.WorkItemRefOutbox, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	now := f.clock.now()
 	var out []db.WorkItemRefOutbox
 	for _, r := range f.rows {
-		if r.DeliveredAt.Valid || r.NextAttemptAt.After(now) {
+		if r.DeliveredAt.Valid {
 			continue
 		}
 		out = append(out, *r)
@@ -80,21 +55,13 @@ func (f *fakeOutbox) MarkWorkItemRefEventDelivered(_ context.Context, id uuid.UU
 	defer f.mu.Unlock()
 	for _, r := range f.rows {
 		if r.ID == id {
-			r.DeliveredAt = pgtype.Timestamptz{Time: f.clock.now(), Valid: true}
+			r.DeliveredAt = pgtype.Timestamptz{Valid: true}
 		}
 	}
 	return nil
 }
 
-func (f *fakeOutbox) MarkWorkItemRefEventFailed(_ context.Context, arg db.MarkWorkItemRefEventFailedParams) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, r := range f.rows {
-		if r.ID == arg.ID {
-			r.Attempts++
-			r.NextAttemptAt = arg.NextAttemptAt
-		}
-	}
+func (f *fakeOutbox) MarkWorkItemRefEventFailed(_ context.Context, _ db.MarkWorkItemRefEventFailedParams) error {
 	return nil
 }
 
@@ -108,17 +75,6 @@ func (f *fakeOutbox) get(id uuid.UUID) *db.WorkItemRefOutbox {
 		}
 	}
 	return nil
-}
-
-func testDispatcher(t *testing.T, url, token string, out *fakeOutbox) *Dispatcher {
-	t.Helper()
-	d := NewDispatcher(Config{
-		URL:         url,
-		BaseBackoff: time.Minute,
-		MaxBackoff:  time.Hour,
-	}, out, StaticTokenSource(token), nil)
-	d.now = out.clock.now
-	return d
 }
 
 func samplePush() RefPush {
@@ -151,7 +107,7 @@ func samplePush() RefPush {
 
 // TestDispatcherDeliversContractJSON asserts the exact wire contract body reaches
 // Tempo: quillProjectId, the refs array, and per-ref workItemKeys, with the
-// bearer token attached via the TokenSource seam.
+// bearer token attached via the shared TokenSource seam.
 func TestDispatcherDeliversContractJSON(t *testing.T) {
 	var (
 		mu      sync.Mutex
@@ -169,16 +125,13 @@ func TestDispatcherDeliversContractJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	out := &fakeOutbox{clock: newClock()}
+	out := &fakeOutbox{}
 	id := out.enqueue(samplePush())
-	d := testDispatcher(t, srv.URL, "machine-token", out)
+	d := NewDispatcher(Config{URL: srv.URL}, out, StaticTokenSource("machine-token"), nil)
 
 	n, err := d.ProcessBatch(context.Background())
-	if err != nil {
-		t.Fatalf("ProcessBatch: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("expected 1 delivered, got %d", n)
+	if err != nil || n != 1 {
+		t.Fatalf("ProcessBatch: n=%d err=%v (want 1, nil)", n, err)
 	}
 	if row := out.get(id); row == nil || !row.DeliveredAt.Valid {
 		t.Fatalf("row should be marked delivered, got %+v", row)
@@ -216,106 +169,6 @@ func TestDispatcherDeliversContractJSON(t *testing.T) {
 	}
 	if keys, _ := pr["workItemKeys"].([]any); len(keys) != 2 || keys[0] != "DEF-9" || keys[1] != "XY-7" {
 		t.Fatalf("pr workItemKeys = %v, want [DEF-9 XY-7]", pr["workItemKeys"])
-	}
-}
-
-// TestDispatcher500ThenSuccess exercises retry/durability: a 5xx reschedules the
-// row with backoff (never dropped), and a later pass delivers it once Tempo is up.
-func TestDispatcher500ThenSuccess(t *testing.T) {
-	var (
-		mu   sync.Mutex
-		fail = true
-		hits int
-	)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		mu.Lock()
-		hits++
-		shouldFail := fail
-		mu.Unlock()
-		if shouldFail {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	out := &fakeOutbox{clock: newClock()}
-	id := out.enqueue(samplePush())
-	d := testDispatcher(t, srv.URL, "", out)
-
-	if n, err := d.ProcessBatch(context.Background()); err != nil || n != 0 {
-		t.Fatalf("first pass: n=%d err=%v (want 0, nil)", n, err)
-	}
-	row := out.get(id)
-	if row.DeliveredAt.Valid {
-		t.Fatal("row must not be delivered after a 500")
-	}
-	if row.Attempts != 1 {
-		t.Fatalf("expected attempts=1, got %d", row.Attempts)
-	}
-	// Not yet due: another pass at the same instant delivers nothing.
-	if n, _ := d.ProcessBatch(context.Background()); n != 0 {
-		t.Fatalf("row should not be due yet, delivered %d", n)
-	}
-
-	out.clock.advance(2 * time.Minute)
-	mu.Lock()
-	fail = false
-	mu.Unlock()
-
-	if n, err := d.ProcessBatch(context.Background()); err != nil || n != 1 {
-		t.Fatalf("retry pass: n=%d err=%v (want 1, nil)", n, err)
-	}
-	if row := out.get(id); !row.DeliveredAt.Valid {
-		t.Fatal("row should be delivered after Tempo recovered")
-	}
-}
-
-func TestDispatcherSurvivesTempoDown(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	url := srv.URL
-	srv.Close() // unreachable
-
-	out := &fakeOutbox{clock: newClock()}
-	id := out.enqueue(samplePush())
-	d := testDispatcher(t, url, "", out)
-
-	n, err := d.ProcessBatch(context.Background())
-	if err != nil {
-		t.Fatalf("ProcessBatch should not error on transport failure: %v", err)
-	}
-	if n != 0 {
-		t.Fatalf("expected 0 delivered while Tempo is down, got %d", n)
-	}
-	row := out.get(id)
-	if row == nil || row.DeliveredAt.Valid {
-		t.Fatal("row must survive and stay undelivered while Tempo is down")
-	}
-	if row.Attempts != 1 || !row.NextAttemptAt.After(out.clock.now()) {
-		t.Fatalf("a retry should be scheduled in the future: %+v", row)
-	}
-}
-
-func TestDispatcherDisabledWhenURLEmpty(t *testing.T) {
-	out := &fakeOutbox{clock: newClock()}
-	out.enqueue(samplePush())
-	d := NewDispatcher(Config{URL: ""}, out, nil, nil)
-
-	if d.Enabled() {
-		t.Fatal("dispatcher must be disabled when URL is empty")
-	}
-	done := make(chan struct{})
-	go func() { d.Run(context.Background()); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("Run should return immediately when the feature is disabled")
-	}
-	for _, r := range out.rows {
-		if r.DeliveredAt.Valid {
-			t.Fatal("disabled dispatcher must not deliver")
-		}
 	}
 }
 
