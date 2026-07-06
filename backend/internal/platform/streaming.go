@@ -46,10 +46,16 @@ func (b *logBroadcaster) publish(ll LogLine) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.buffered = append(b.buffered, ll)
-	for _, ch := range b.subs {
+	for id, ch := range b.subs {
 		select {
 		case ch <- ll:
-		default: // slow subscriber; drop rather than block log capture
+		default:
+			// Slow subscriber: kick it rather than silently dropping lines.
+			// Closing wakes its handler, which re-subscribes and backfills the
+			// missed range from the buffer — capture never blocks, and no
+			// subscriber ends up with a permanent gap in its log view.
+			close(ch)
+			delete(b.subs, id)
 		}
 	}
 }

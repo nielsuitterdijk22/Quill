@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getToken } from "../../lib/session";
 import { getMyProjects, listReposByProject } from "../../lib/api";
 import type { Repo, MyProject } from "../../lib/api";
+import { ImportGitHubButton } from "./ImportGitHubButton";
 
 // ReposPage lists all repositories across the user's projects.
 // For individual users (only a personal project) repos are shown flat.
@@ -36,9 +37,12 @@ export default async function ReposPage() {
     <>
       <div className="top">
         <h1>Repositories</h1>
-        <Link className="btn primary" href={newRepoHref}>
-          + New Repository
-        </Link>
+        <div className="top-actions">
+          <ImportGitHubButton projects={projects} />
+          <Link className="btn primary" href={newRepoHref}>
+            + New Repository
+          </Link>
+        </div>
       </div>
 
       <div className="panel">

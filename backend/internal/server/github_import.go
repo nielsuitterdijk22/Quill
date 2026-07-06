@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	githubTokenCookie = "quill_gh_token"
-	githubStateCookie = "quill_gh_state"
-	tokenCookieTTL    = 15 * time.Minute
+	githubTokenCookie   = "quill_gh_token"
+	githubStateCookie   = "quill_gh_state"
+	githubProjectCookie = "quill_gh_project"
+	tokenCookieTTL      = 15 * time.Minute
 )
 
 // ---- token cookie encryption ------------------------------------------------
@@ -108,6 +109,21 @@ func (s *Server) handleGitHubOAuthRedirect(w http.ResponseWriter, r *http.Reques
 		Secure:   s.cfg.IsProduction(),
 	})
 
+	// Remember which project the user chose to import into (if any) so the
+	// callback can send them back to the same target after the OAuth
+	// round-trip, which otherwise drops all query params.
+	if project := r.URL.Query().Get("project"); project != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     githubProjectCookie,
+			Value:    project,
+			Path:     "/",
+			MaxAge:   int(tokenCookieTTL.Seconds()),
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   s.cfg.IsProduction(),
+		})
+	}
+
 	q := url.Values{}
 	q.Set("client_id", s.cfg.GitHub.ClientID)
 	q.Set("scope", "repo")
@@ -156,9 +172,16 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 		Secure:   s.cfg.IsProduction(),
 	})
 
-	// Redirect back to the frontend onboarding flow.
+	// Redirect back to the frontend onboarding flow, preserving the target
+	// project chosen before the OAuth round-trip, if any.
+	redirectQuery := url.Values{"step": {"import"}}
+	if projectCookie, err := r.Cookie(githubProjectCookie); err == nil && projectCookie.Value != "" {
+		redirectQuery.Set("project", projectCookie.Value)
+		http.SetCookie(w, &http.Cookie{Name: githubProjectCookie, MaxAge: -1, Path: "/"})
+	}
+
 	origin := s.cfg.CORSAllowedOrigins[0]
-	http.Redirect(w, r, origin+"/onboarding?step=import", http.StatusFound)
+	http.Redirect(w, r, origin+"/onboarding?"+redirectQuery.Encode(), http.StatusFound)
 }
 
 func (s *Server) exchangeGitHubCode(ctx context.Context, code string) (string, error) {

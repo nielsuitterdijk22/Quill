@@ -20,6 +20,7 @@ name: quill
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-quill}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quill}
@@ -37,6 +38,7 @@ services:
 
   forgejo:
     image: codeberg.org/forgejo/forgejo:15
+    restart: unless-stopped
     environment:
       USER_UID: "1000"
       USER_GID: "1000"
@@ -71,6 +73,7 @@ services:
   api:
     build:
       context: ../../backend
+    restart: unless-stopped
     environment:
       QUILL_ENV: ${QUILL_ENV:-development}
       QUILL_HTTP_ADDR: ":8080"
@@ -106,6 +109,7 @@ services:
     build:
       context: ../../backend
     command: ["/quill-dispatch"]
+    restart: unless-stopped
     # The dispatcher runs nektos/act and is the only Quill service that needs
     # Docker daemon access for local job containers.
     user: "0:0"
@@ -122,6 +126,7 @@ services:
         condition: service_healthy
 
   web:
+    restart: unless-stopped
     build:
       context: ../../frontend
       args:
@@ -132,6 +137,10 @@ services:
         NEXT_PUBLIC_ZITADEL_CLIENT_ID: ${NEXT_PUBLIC_ZITADEL_CLIENT_ID:-}
         NEXT_PUBLIC_ZITADEL_PROJECT_ID: ${NEXT_PUBLIC_ZITADEL_PROJECT_ID:-}
         QUILL_API_BASE_URL: ${QUILL_API_BASE_URL:-http://api:8080}
+        # Sibling app URLs for the top-left app switcher (client-inlined, so build args).
+        NEXT_PUBLIC_ATLAS_URL: ${NEXT_PUBLIC_ATLAS_URL:-}
+        NEXT_PUBLIC_TEMPO_URL: ${NEXT_PUBLIC_TEMPO_URL:-}
+        NEXT_PUBLIC_FORGE_URL: ${NEXT_PUBLIC_FORGE_URL:-}
     environment:
       NODE_ENV: production
       QUILL_API_BASE_URL: http://api:8080
@@ -158,6 +167,7 @@ services:
   zitadel-db:
     image: postgres:16-alpine
     profiles: [zitadel]
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${ZITADEL_DB_PASSWORD:-postgres}
@@ -184,6 +194,7 @@ services:
   zitadel:
     image: ghcr.io/zitadel/zitadel:v2.65.1
     profiles: [zitadel]
+    restart: unless-stopped
     # FirstInstance bootstrap (admin login + machine PAT) comes from steps.yaml,
     # mounted below; the PAT is written to the ./zitadel/out bind mount for
     # bootstrap.sh. Set ZITADEL_MASTERKEY (exactly 32 chars) in production.

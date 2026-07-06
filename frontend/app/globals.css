@@ -90,11 +90,107 @@ a {
   font-size: 16px;
   margin: 2px 6px 16px;
 }
-.brand .dot {
-  width: 22px;
-  height: 22px;
+
+/* Top-left app switcher — jumps to sibling tools (Atlas, Tempo, Forge). */
+.app-switcher {
+  position: relative;
+}
+
+.app-switcher-btn {
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--accent), #4ad);
+  border: 1px solid transparent;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.app-switcher-btn:hover,
+.app-switcher-btn.open {
+  background: var(--panel2);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.app-switcher-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 264px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 14px;
+  z-index: 100;
+}
+
+.app-switcher-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 12px 4px;
+}
+
+.app-switcher-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.app-switcher-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 8px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+.app-switcher-item:hover {
+  background: var(--panel2);
+}
+
+.app-switcher-item.current {
+  cursor: default;
+}
+
+.app-switcher-item.current:hover {
+  background: none;
+}
+
+.app-switcher-item.current .label {
+  color: var(--accent-soft);
+}
+
+.app-switcher-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app-switcher-item .label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-switcher-item .tag {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .project {
@@ -567,13 +663,6 @@ select:focus {
   font-size: 20px;
   margin-bottom: 8px;
 }
-.auth-brand .dot {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), #4ad);
-  flex: none;
-}
 .auth-tagline {
   margin: 0 0 20px;
   color: var(--muted);
@@ -623,11 +712,6 @@ select:focus {
   justify-content: center;
   font-size: 26px;
   margin-bottom: 20px;
-}
-.landing-brand .dot {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
 }
 .landing-desc {
   font-size: 15px;
@@ -2585,14 +2669,6 @@ h2.section {
   gap: 9px;
   font-weight: 700;
   font-size: 17px;
-}
-
-.ob-brand .dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--accent), #4ad);
-  flex: none;
 }
 
 .ob-step-label {

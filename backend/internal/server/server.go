@@ -16,6 +16,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
+	"github.com/nielsuitterdijk22/quill/internal/projectsync"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
@@ -31,6 +32,7 @@ type Server struct {
 	verifier    auth.TokenVerifier
 	forgejo     *forgejo.Client
 	platform    *platform.Service
+	projectSync *projectsync.Dispatcher
 	router      chi.Router
 	markupCache *markupCache
 }
@@ -67,6 +69,19 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		}
 	}
 
+	// Project-mirror dispatcher: pushes project create/delete events to Tempo.
+	// Idle unless QUILL_TEMPO_SYNC_URL is set. The token is acquired through a
+	// TokenSource so the Zitadel machine token (PR 8.1) can replace the static one.
+	var projectSync *projectsync.Dispatcher
+	if st != nil {
+		projectSync = projectsync.NewDispatcher(
+			projectsync.Config{URL: cfg.TempoSync.URL},
+			st,
+			projectsync.StaticTokenSource(cfg.TempoSync.Token),
+			logger,
+		)
+	}
+
 	s := &Server{
 		cfg:         cfg,
 		logger:      logger,
@@ -75,6 +90,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		verifier:    verifier,
 		forgejo:     fj,
 		platform:    platformSvc,
+		projectSync: projectSync,
 		router:      chi.NewRouter(),
 		markupCache: newMarkupCache(),
 	}
@@ -90,6 +106,16 @@ func (s *Server) StartAuth(ctx context.Context) {
 	if s.verifier != nil {
 		s.verifier.Start(ctx)
 	}
+}
+
+// StartProjectSync launches the background project-mirror dispatcher. It runs
+// until ctx is cancelled and is a no-op when sync is disabled
+// (QUILL_TEMPO_SYNC_URL empty). Call once after New.
+func (s *Server) StartProjectSync(ctx context.Context) {
+	if s.projectSync == nil {
+		return
+	}
+	go s.projectSync.Run(ctx)
 }
 
 // ServeHTTP implements http.Handler.

@@ -30,12 +30,13 @@ type Config struct {
 	// username/password auth is always available regardless of this setting.
 	AuthProvider string
 
-	JWT      JWTConfig
-	Clerk    ClerkConfig
-	Zitadel  ZitadelConfig
-	GitHub   GitHubConfig
-	Forgejo  ForgejoConfig
-	Pipeline PipelineConfig
+	JWT       JWTConfig
+	Clerk     ClerkConfig
+	Zitadel   ZitadelConfig
+	GitHub    GitHubConfig
+	Forgejo   ForgejoConfig
+	Pipeline  PipelineConfig
+	TempoSync TempoSyncConfig
 
 	// WebhookSecret authenticates inbound Forgejo webhooks that auto-trigger
 	// pipelines. When empty, signature verification is skipped (dev mode), so set
@@ -90,6 +91,19 @@ type GitHubConfig struct {
 	ClientSecret string
 }
 
+// TempoSyncConfig controls the project-mirror push to Tempo (see the tight
+// Quill/Tempo integration design). When URL is empty, sync is disabled and the
+// background dispatcher stays idle.
+type TempoSyncConfig struct {
+	// URL is Tempo's project-mirror intake endpoint. Empty disables sync.
+	URL string
+	// Token is the static bearer token presented to Tempo. It is a temporary seam:
+	// the dispatcher acquires its token through an interface, so the Zitadel
+	// client-credentials machine token (PR 8.1) can replace this without code
+	// changes. Empty sends requests unauthenticated (local dev only).
+	Token string
+}
+
 // PipelineConfig controls how workflow runs are dispatched.
 type PipelineConfig struct {
 	// DispatchURL points at the standalone pipeline dispatcher. When empty, the
@@ -136,6 +150,10 @@ func Load() (*Config, error) {
 		Pipeline: PipelineConfig{
 			DispatchURL:    getenv("QUILL_PIPELINE_DISPATCH_URL", ""),
 			DispatchSecret: getenv("QUILL_PIPELINE_DISPATCH_SECRET", ""),
+		},
+		TempoSync: TempoSyncConfig{
+			URL:   getenv("QUILL_TEMPO_SYNC_URL", ""),
+			Token: getenv("QUILL_TEMPO_SYNC_TOKEN", ""),
 		},
 		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),

@@ -119,25 +119,71 @@ func (r *HTTPRunner) submitJob(ctx context.Context, spec JobSpec) (string, error
 }
 
 // streamUntilDone reads the SSE stream for jobID, forwarding log events to sink
-// and returning the RunResult extracted from the "done" event.
+// and returning the RunResult extracted from the "done" event. A dropped
+// connection is retried with backoff: the dispatcher buffers every event (and
+// keeps finished jobs around for several minutes), so a reconnect replays the
+// full history — already-forwarded log events are skipped by count so the sink
+// never sees duplicates.
 func (r *HTTPRunner) streamUntilDone(ctx context.Context, jobID string, sink LogSink) (RunResult, error) {
+	const maxAttempts = 5
+	seenLogs := 0
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return RunResult{}, ctx.Err()
+			case <-time.After(time.Duration(1<<(attempt-1)) * time.Second):
+			}
+		}
+		result, outcome, err := r.streamOnce(ctx, jobID, sink, &seenLogs)
+		switch outcome {
+		case streamDone:
+			return result, err
+		case streamFatal:
+			return RunResult{}, err
+		}
+		lastErr = err
+	}
+	return RunResult{}, fmt.Errorf("log stream ended without done event after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// streamOnce outcomes.
+type streamOutcome int
+
+const (
+	streamDone  streamOutcome = iota // done event received; result/err are final
+	streamRetry                      // connection dropped mid-stream; reconnect
+	streamFatal                      // unrecoverable (e.g. job unknown); do not retry
+)
+
+// streamOnce opens one SSE connection and reads until the done event or the
+// stream drops. seenLogs counts log events forwarded to the sink across
+// attempts; replayed events below that count are skipped.
+func (r *HTTPRunner) streamOnce(ctx context.Context, jobID string, sink LogSink, seenLogs *int) (RunResult, streamOutcome, error) {
 	url := r.streamBase + "/" + jobID + "/stream"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("create stream request: %w", err)
+		return RunResult{}, streamFatal, fmt.Errorf("create stream request: %w", err)
 	}
 	resp, err := r.streamClient.Do(req)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("connect to log stream: %w", err)
+		return RunResult{}, streamRetry, fmt.Errorf("connect to log stream: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return RunResult{}, fmt.Errorf("log stream returned %s", resp.Status)
+		// A non-200 means the dispatcher doesn't know this job (expired or the
+		// process restarted and lost it) — reconnecting cannot recover that.
+		return RunResult{}, streamFatal, fmt.Errorf("log stream returned %s", resp.Status)
 	}
 
-	// Parse SSE line by line.
+	// Parse SSE line by line. The default 64KiB token limit is too small for
+	// verbose build output — one long line would error the whole stream — so
+	// allow lines up to 1MiB (the dispatcher caps stored logs anyway).
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	logEvents := 0
 	var eventName, dataLine string
 
 	for scanner.Scan() {
@@ -151,9 +197,18 @@ func (r *HTTPRunner) streamUntilDone(ctx context.Context, jobID string, sink Log
 		case line == "":
 			// Blank line: dispatch the accumulated event.
 			if eventName != "" && dataLine != "" {
-				result, done, err := r.handleSSEEvent(eventName, dataLine, sink)
+				forward := sink
+				if eventName == "log" {
+					logEvents++
+					if logEvents <= *seenLogs {
+						forward = nil // replayed event from a previous attempt
+					} else {
+						*seenLogs = logEvents
+					}
+				}
+				result, done, err := r.handleSSEEvent(eventName, dataLine, forward)
 				if done {
-					return result, err
+					return result, streamDone, err
 				}
 			}
 			eventName = ""
@@ -162,9 +217,9 @@ func (r *HTTPRunner) streamUntilDone(ctx context.Context, jobID string, sink Log
 	}
 
 	if err := scanner.Err(); err != nil {
-		return RunResult{}, fmt.Errorf("read log stream: %w", err)
+		return RunResult{}, streamRetry, fmt.Errorf("read log stream: %w", err)
 	}
-	return RunResult{}, fmt.Errorf("log stream ended without done event")
+	return RunResult{}, streamRetry, fmt.Errorf("log stream ended without done event")
 }
 
 // handleSSEEvent processes one dispatched SSE event. It returns (result, true, err)

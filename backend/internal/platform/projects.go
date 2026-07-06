@@ -12,6 +12,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
+	"github.com/nielsuitterdijk22/quill/internal/projectsync"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -108,6 +109,11 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 		}); err != nil {
 			return err
 		}
+		// Mirror the new project to Tempo. Enqueued in this same transaction, so
+		// the event exists if and only if the project commit succeeds.
+		if err := s.enqueueProjectEvent(ctx, q, projectsync.EventCreate, project); err != nil {
+			return err
+		}
 		created = project
 		return nil
 	})
@@ -173,11 +179,16 @@ func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, u
 			}
 			return err
 		}
-		return q.AddProjectMember(ctx, db.AddProjectMemberParams{
+		if err := q.AddProjectMember(ctx, db.AddProjectMemberParams{
 			ProjectID: project.ID,
 			UserID:    userID,
 			Role:      "owner",
-		})
+		}); err != nil {
+			return err
+		}
+		// Personal projects are projects too; mirror them like any other so the
+		// backfill and the live path agree on what Tempo sees.
+		return s.enqueueProjectEvent(ctx, q, projectsync.EventCreate, project)
 	})
 }
 
@@ -332,10 +343,32 @@ func (s *Service) purgeProject(ctx context.Context, project db.Project) error {
 		}
 	}
 
-	if derr := s.store.DeleteProject(ctx, project.ID); derr != nil {
+	// Delete the project row and enqueue the mirror delete event in one
+	// transaction: Tempo archives (never cascade-deletes) the mirrored project in
+	// response. The outbox row deliberately has no FK to projects, so it outlives
+	// the row it describes.
+	if derr := s.store.InTx(ctx, func(q *db.Queries) error {
+		if err := q.DeleteProject(ctx, project.ID); err != nil {
+			return err
+		}
+		return s.enqueueProjectEvent(ctx, q, projectsync.EventDelete, project)
+	}); derr != nil {
 		return fmt.Errorf("delete project %s: %w", project.Slug, derr)
 	}
 	return nil
+}
+
+// enqueueProjectEvent writes a project-mirror outbox row for project using the
+// transaction-scoped queries q, so the event is emitted atomically with the
+// project mutation. It resolves the tenant slug because the mirror event keys
+// the Tempo org by tenant slug, not by id.
+func (s *Service) enqueueProjectEvent(ctx context.Context, q *db.Queries, typ projectsync.EventType, project db.Project) error {
+	tenant, err := q.GetTenantByID(ctx, project.TenantID)
+	if err != nil {
+		return fmt.Errorf("resolve tenant for project sync: %w", err)
+	}
+	ev := projectsync.NewEvent(typ, project.ID, project.Slug, project.Name, tenant.Slug)
+	return projectsync.Enqueue(ctx, q, ev)
 }
 
 // ListProjects returns projects ordered by slug.

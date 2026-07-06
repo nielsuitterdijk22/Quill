@@ -14,6 +14,14 @@ const PUBLIC_ROUTES = [
   /^\/login(?:\/.*)?$/, // kept for backwards-compat redirects
   /^\/register(?:\/.*)?$/,
   /^\/api\/auth(?:\/.*)?$/, // NextAuth endpoints
+  // /api/backend/* proxies to the Go API (next.config.mjs rewrite → /api/v1/*)
+  // and carries its own Authorization: Bearer token — from the browser session
+  // via app/lib/api.ts, or from external service callers (e.g. Atlas) forwarding
+  // a caller's own token directly. Neither has a Quill session cookie, so this
+  // middleware must not gate it; the Go backend's requireAuth verifies the
+  // bearer itself (mirrors how Atlas's own middleware.ts treats its /api/*
+  // backend-proxied routes as public for the same reason).
+  /^\/api\/backend(?:\/.*)?$/,
 ];
 
 function isPublic(pathname: string): boolean {
@@ -27,6 +35,7 @@ const isClerkPublic = createRouteMatcher([
   "/login(.*)",
   "/register(.*)",
   "/api/auth(.*)",
+  "/api/backend(.*)",
 ]);
 
 function buildClerk() {
