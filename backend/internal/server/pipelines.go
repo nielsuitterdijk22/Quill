@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
+	"github.com/nielsuitterdijk22/quill/internal/workitemrefs"
 )
 
 // This file holds the pipelines (CI) endpoints added in PR 8: listing a
@@ -387,7 +389,7 @@ func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 // ---- webhook receiver ------------------------------------------------------
 
 // forgejoPushPayload is the subset of Forgejo's push/pull_request webhook bodies
-// Quill reads to auto-trigger pipelines.
+// Quill reads to auto-trigger pipelines and to scan for work-item cross-links.
 type forgejoPushPayload struct {
 	Ref        string `json:"ref"`
 	Repository struct {
@@ -397,7 +399,27 @@ type forgejoPushPayload struct {
 			Username string `json:"username"`
 		} `json:"owner"`
 	} `json:"repository"`
+	// Commits is populated on push events. Each carries its sha, message, web URL,
+	// and author, used to build "commit" refs.
+	Commits []struct {
+		ID      string `json:"id"`
+		Message string `json:"message"`
+		URL     string `json:"url"`
+		Author  struct {
+			Name     string `json:"name"`
+			Username string `json:"username"`
+		} `json:"author"`
+	} `json:"commits"`
 	PullRequest *struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+		State   string `json:"state"`
+		HTMLURL string `json:"html_url"`
+		User    struct {
+			Login    string `json:"login"`
+			Username string `json:"username"`
+		} `json:"user"`
 		Head struct {
 			Ref string `json:"ref"`
 		} `json:"head"`
@@ -452,6 +474,12 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	ref = strings.TrimPrefix(ref, "refs/heads/")
 
+	// Scan the payload for Tempo work-item keys and enqueue a cross-link push.
+	// This is best-effort and independent of pipeline triggering: it never blocks
+	// the webhook response (delivery is async via the outbox dispatcher) and its
+	// failures are logged, not surfaced. No-op when the feature is unconfigured.
+	s.enqueueWorkItemRefs(r.Context(), owner, name, ref, event, &payload)
+
 	runs, err := s.platform.HandleWebhookEvent(r.Context(), owner, name, event, ref)
 	if err != nil {
 		// A repository Quill doesn't track is not an error worth a 5xx; ack it.
@@ -460,6 +488,75 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"triggered": len(runs)})
+}
+
+// enqueueWorkItemRefs scans a push/pull_request payload for Tempo work-item keys
+// and enqueues a cross-link push to Tempo's refs endpoint, tagged with the repo's
+// Quill project id. It is intentionally forgiving: it returns early (a) when the
+// feature is unconfigured, (b) for an untracked repo, or (c) when nothing
+// mentions a work item, and it only logs — never fails — so the webhook response
+// is unaffected. Delivery itself is async via the outbox dispatcher.
+func (s *Server) enqueueWorkItemRefs(ctx context.Context, owner, name, branch, event string, payload *forgejoPushPayload) {
+	if s.workItemRefs == nil || !s.workItemRefs.Enabled() {
+		return
+	}
+
+	repo, err := s.platform.ResolveWebhookRepo(ctx, owner, name)
+	if err != nil {
+		// Untracked repo (or lookup error): nothing to link. Already logged by the
+		// trigger path when it hits the same resolution; keep this quiet at debug.
+		s.logger.Debug("work-item ref scan skipped; repo not resolved", "owner", owner, "repo", name, "error", err)
+		return
+	}
+
+	var refs []workitemrefs.Ref
+	switch event {
+	case "push":
+		commits := make([]workitemrefs.Commit, 0, len(payload.Commits))
+		for _, c := range payload.Commits {
+			author := c.Author.Username
+			if author == "" {
+				author = c.Author.Name
+			}
+			commits = append(commits, workitemrefs.Commit{
+				SHA:     c.ID,
+				Message: c.Message,
+				URL:     c.URL,
+				Author:  author,
+			})
+		}
+		refs = workitemrefs.PushRefs(repo.Slug, branch, commits)
+	case "pull_request":
+		if payload.PullRequest == nil {
+			return
+		}
+		author := payload.PullRequest.User.Username
+		if author == "" {
+			author = payload.PullRequest.User.Login
+		}
+		ref, ok := workitemrefs.PullRequestRef(repo.Slug, workitemrefs.PullRequest{
+			Number: payload.PullRequest.Number,
+			Title:  payload.PullRequest.Title,
+			Body:   payload.PullRequest.Body,
+			State:  payload.PullRequest.State,
+			URL:    payload.PullRequest.HTMLURL,
+			Branch: branch,
+			Author: author,
+		})
+		if ok {
+			refs = []workitemrefs.Ref{ref}
+		}
+	}
+
+	if len(refs) == 0 {
+		return
+	}
+	push := workitemrefs.RefPush{QuillProjectID: repo.ProjectID, Refs: refs}
+	if err := workitemrefs.Enqueue(ctx, s.store, push); err != nil {
+		s.logger.Warn("could not enqueue work-item ref push", "owner", owner, "repo", name, "event", event, "error", err)
+		return
+	}
+	s.logger.Info("enqueued work-item ref push", "project", repo.ProjectID, "repo", repo.Slug, "event", event, "refs", len(refs))
 }
 
 // verifyWebhookSignature checks the HMAC-SHA256 signature Forgejo sends in

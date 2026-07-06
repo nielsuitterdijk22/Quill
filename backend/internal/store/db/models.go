@@ -184,3 +184,13 @@ type User struct {
 	CreatedAt       time.Time   `json:"createdAt"`
 	UpdatedAt       time.Time   `json:"updatedAt"`
 }
+
+type WorkItemRefOutbox struct {
+	ID            uuid.UUID          `json:"id"`
+	ProjectID     uuid.UUID          `json:"projectId"`
+	Payload       []byte             `json:"payload"`
+	OccurredAt    time.Time          `json:"occurredAt"`
+	Attempts      int32              `json:"attempts"`
+	NextAttemptAt time.Time          `json:"nextAttemptAt"`
+	DeliveredAt   pgtype.Timestamptz `json:"deliveredAt"`
+}

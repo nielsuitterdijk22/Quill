@@ -18,6 +18,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/projectsync"
 	"github.com/nielsuitterdijk22/quill/internal/store"
+	"github.com/nielsuitterdijk22/quill/internal/workitemrefs"
 )
 
 // Version is the API version reported by the /api/v1/meta endpoint.
@@ -25,16 +26,17 @@ const Version = "0.1.0"
 
 // Server is the root HTTP handler for the Quill backend.
 type Server struct {
-	cfg         *config.Config
-	logger      *slog.Logger
-	store       *store.Store
-	auth        *auth.Service
-	verifier    auth.TokenVerifier
-	forgejo     *forgejo.Client
-	platform    *platform.Service
-	projectSync *projectsync.Dispatcher
-	router      chi.Router
-	markupCache *markupCache
+	cfg          *config.Config
+	logger       *slog.Logger
+	store        *store.Store
+	auth         *auth.Service
+	verifier     auth.TokenVerifier
+	forgejo      *forgejo.Client
+	platform     *platform.Service
+	projectSync  *projectsync.Dispatcher
+	workItemRefs *workitemrefs.Dispatcher
+	router       chi.Router
+	markupCache  *markupCache
 }
 
 // externalAuthEnabled reports whether an external IdP (Clerk or Zitadel) is
@@ -73,26 +75,42 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// Idle unless QUILL_TEMPO_SYNC_URL is set. The token is acquired through a
 	// TokenSource so the Zitadel machine token (PR 8.1) can replace the static one.
 	var projectSync *projectsync.Dispatcher
+	// Work-item ref dispatcher: pushes commit/PR cross-links scanned from Forgejo
+	// webhooks to Tempo's refs endpoint. Idle unless QUILL_TEMPO_SYNC_REFS_URL is
+	// set; shares the TempoSync token seam with the project-mirror dispatcher.
+	var workItemRefs *workitemrefs.Dispatcher
 	if st != nil {
+		// Select once and share: when the QUILL_TEMPO_SYNC_ZITADEL_* machine-user
+		// credentials are set, both dispatchers authenticate to Tempo with the same
+		// cached Zitadel client-credentials token; otherwise both fall back to the
+		// static QUILL_TEMPO_SYNC_TOKEN.
+		tempoTokens := projectsync.SelectTempoTokenSource(cfg.TempoSync)
 		projectSync = projectsync.NewDispatcher(
 			projectsync.Config{URL: cfg.TempoSync.URL},
 			st,
-			projectsync.StaticTokenSource(cfg.TempoSync.Token),
+			tempoTokens,
+			logger,
+		)
+		workItemRefs = workitemrefs.NewDispatcher(
+			workitemrefs.Config{URL: cfg.TempoSync.RefsURL},
+			st,
+			tempoTokens,
 			logger,
 		)
 	}
 
 	s := &Server{
-		cfg:         cfg,
-		logger:      logger,
-		store:       st,
-		auth:        auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
-		verifier:    verifier,
-		forgejo:     fj,
-		platform:    platformSvc,
-		projectSync: projectSync,
-		router:      chi.NewRouter(),
-		markupCache: newMarkupCache(),
+		cfg:          cfg,
+		logger:       logger,
+		store:        st,
+		auth:         auth.NewService(st, auth.NewLocalProvider(st), auth.NewTokenService(cfg.JWT)).WithForgejo(fj, logger),
+		verifier:     verifier,
+		forgejo:      fj,
+		platform:     platformSvc,
+		projectSync:  projectSync,
+		workItemRefs: workItemRefs,
+		router:       chi.NewRouter(),
+		markupCache:  newMarkupCache(),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -116,6 +134,16 @@ func (s *Server) StartProjectSync(ctx context.Context) {
 		return
 	}
 	go s.projectSync.Run(ctx)
+}
+
+// StartWorkItemRefs launches the background work-item-ref dispatcher. It runs
+// until ctx is cancelled and is a no-op when the feature is disabled
+// (QUILL_TEMPO_SYNC_REFS_URL empty). Call once after New.
+func (s *Server) StartWorkItemRefs(ctx context.Context) {
+	if s.workItemRefs == nil {
+		return
+	}
+	go s.workItemRefs.Run(ctx)
 }
 
 // ServeHTTP implements http.Handler.

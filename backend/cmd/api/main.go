@@ -63,6 +63,7 @@ func run() error {
 	srv := server.New(cfg, logger, st)
 	srv.StartAuth(ctx)
 	srv.StartProjectSync(ctx)
+	srv.StartWorkItemRefs(ctx)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

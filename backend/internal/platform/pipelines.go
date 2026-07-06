@@ -501,6 +501,15 @@ func (s *Service) resolveRepoForWebhook(ctx context.Context, owner, name string)
 	return db.Repository{}, "", "", ErrNotFound
 }
 
+// ResolveWebhookRepo resolves the Quill repository a Forgejo webhook targets by
+// its Forgejo owner/name, returning ErrNotFound for an untracked repo. The
+// webhook handler uses it to tag outbound work-item ref pushes with the repo's
+// Quill project id (repo.ProjectID) and slug.
+func (s *Service) ResolveWebhookRepo(ctx context.Context, owner, name string) (db.Repository, error) {
+	repo, _, _, err := s.resolveRepoForWebhook(ctx, owner, name)
+	return repo, err
+}
+
 // HandleWebhookEvent is the entry point for the webhook receiver: it maps a
 // Forgejo push/pull_request payload to a repository and triggers its workflows.
 func (s *Service) HandleWebhookEvent(ctx context.Context, owner, name, event, ref string) ([]db.PipelineRun, error) {
