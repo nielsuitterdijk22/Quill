@@ -101,11 +101,47 @@ type TempoSyncConfig struct {
 	// webhook handler pushes commit/PR cross-links to (PR 8.5). Empty disables the
 	// feature entirely: the webhook path is completely unaffected.
 	RefsURL string
-	// Token is the static bearer token presented to Tempo for both pushes. It is a
-	// temporary seam: the dispatchers acquire their token through an interface, so
-	// the Zitadel client-credentials machine token (PR 8.1) can replace this
-	// without code changes. Empty sends requests unauthenticated (local dev only).
+	// Token is the static bearer token presented to Tempo for both pushes. It is
+	// the escape hatch used when the Zitadel machine-user config below is not fully
+	// set: the dispatchers acquire their token through an interface, so the Zitadel
+	// client-credentials machine token can replace this without code changes. Empty
+	// sends requests unauthenticated (local dev only).
 	Token string
+
+	// The four fields below configure the outbound Zitadel client-credentials
+	// machine user Quill authenticates as when pushing to Tempo. When all are set,
+	// the dispatchers mint a short-lived Zitadel access token per delivery instead
+	// of using the static Token above. This is the outbound counterpart to
+	// ZitadelConfig (which governs inbound user login) — deliberately a separate
+	// concern with its own credentials, so machine-to-machine auth and user login
+	// rotate independently.
+
+	// ZitadelIssuer is the Zitadel instance base URL (e.g.
+	// "https://auth.example.com"). Its OIDC discovery document
+	// (<Issuer>/.well-known/openid-configuration) yields the token endpoint.
+	ZitadelIssuer string
+	// ZitadelClientID is the machine user's OAuth2 client id (client_secret_basic).
+	ZitadelClientID string
+	// ZitadelClientSecret is the machine user's OAuth2 client secret.
+	ZitadelClientSecret string
+	// ZitadelProjectID is the Zitadel project id whose apps include Tempo. It is
+	// used to build Zitadel's reserved audience scope
+	// urn:zitadel:iam:org:project:id:<ZitadelProjectID>:aud so the minted token is
+	// accepted by Tempo as its intended audience.
+	ZitadelProjectID string
+}
+
+// ZitadelEnabled reports whether the outbound Zitadel machine-user credentials
+// are fully configured. When true the dispatchers use a Zitadel
+// client-credentials TokenSource; when false they fall back to the static Token.
+// All four fields are required — a partial config is treated as unset so a
+// half-populated deployment fails closed onto the static escape hatch rather than
+// emitting broken token requests.
+func (c TempoSyncConfig) ZitadelEnabled() bool {
+	return c.ZitadelIssuer != "" &&
+		c.ZitadelClientID != "" &&
+		c.ZitadelClientSecret != "" &&
+		c.ZitadelProjectID != ""
 }
 
 // PipelineConfig controls how workflow runs are dispatched.
@@ -156,9 +192,13 @@ func Load() (*Config, error) {
 			DispatchSecret: getenv("QUILL_PIPELINE_DISPATCH_SECRET", ""),
 		},
 		TempoSync: TempoSyncConfig{
-			URL:     getenv("QUILL_TEMPO_SYNC_URL", ""),
-			RefsURL: getenv("QUILL_TEMPO_SYNC_REFS_URL", ""),
-			Token:   getenv("QUILL_TEMPO_SYNC_TOKEN", ""),
+			URL:                 getenv("QUILL_TEMPO_SYNC_URL", ""),
+			RefsURL:             getenv("QUILL_TEMPO_SYNC_REFS_URL", ""),
+			Token:               getenv("QUILL_TEMPO_SYNC_TOKEN", ""),
+			ZitadelIssuer:       strings.TrimSuffix(getenv("QUILL_TEMPO_SYNC_ZITADEL_ISSUER", ""), "/"),
+			ZitadelClientID:     getenv("QUILL_TEMPO_SYNC_ZITADEL_CLIENT_ID", ""),
+			ZitadelClientSecret: getenv("QUILL_TEMPO_SYNC_ZITADEL_CLIENT_SECRET", ""),
+			ZitadelProjectID:    getenv("QUILL_TEMPO_SYNC_ZITADEL_PROJECT_ID", ""),
 		},
 		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
 		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),

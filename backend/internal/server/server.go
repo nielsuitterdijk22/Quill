@@ -80,16 +80,21 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// set; shares the TempoSync token seam with the project-mirror dispatcher.
 	var workItemRefs *workitemrefs.Dispatcher
 	if st != nil {
+		// Select once and share: when the QUILL_TEMPO_SYNC_ZITADEL_* machine-user
+		// credentials are set, both dispatchers authenticate to Tempo with the same
+		// cached Zitadel client-credentials token; otherwise both fall back to the
+		// static QUILL_TEMPO_SYNC_TOKEN.
+		tempoTokens := projectsync.SelectTempoTokenSource(cfg.TempoSync)
 		projectSync = projectsync.NewDispatcher(
 			projectsync.Config{URL: cfg.TempoSync.URL},
 			st,
-			projectsync.StaticTokenSource(cfg.TempoSync.Token),
+			tempoTokens,
 			logger,
 		)
 		workItemRefs = workitemrefs.NewDispatcher(
 			workitemrefs.Config{URL: cfg.TempoSync.RefsURL},
 			st,
-			workitemrefs.StaticTokenSource(cfg.TempoSync.Token),
+			tempoTokens,
 			logger,
 		)
 	}
