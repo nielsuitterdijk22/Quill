@@ -24,10 +24,22 @@ export async function getToken(): Promise<string | undefined> {
 
 // getSession resolves the current Quill user via the backend, or null when
 // unauthenticated.
+//
+// fetchMe failing is treated as "not signed in", not an error. This is what
+// breaks the login loop: the NextAuth session cookie outlives the ~1h Zitadel
+// access token it carries, so once the token expires the middleware still sees a
+// session and lets the request through, but fetchMe gets a 401. Returning null
+// (rather than throwing) lets requireSession send the user cleanly to /sign-in
+// to re-authenticate, instead of erroring or bouncing indefinitely. A transient
+// backend outage degrades to the same signed-out state rather than a crash.
 export async function getSession(): Promise<User | null> {
   const token = await getToken();
   if (!token) return null;
-  return fetchMe(token);
+  try {
+    return await fetchMe(token);
+  } catch {
+    return null;
+  }
 }
 
 // requireSession returns the current Quill user, redirecting to /sign-in when
