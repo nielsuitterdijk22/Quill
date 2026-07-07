@@ -129,36 +129,36 @@ func (s *Store) CancelRun(ctx context.Context, repoID uuid.UUID, runNumber int64
 	return tag.RowsAffected() > 0, nil
 }
 
-// GetOrCreateTenantByClerkOrg atomically resolves the Quill tenant for a Clerk
-// organisation, creating it if this is the first login from that org. Written
-// by hand to avoid a code-generator re-run.
-func (s *Store) GetOrCreateTenantByClerkOrg(ctx context.Context, clerkOrgID, slug string) (db.Tenant, error) {
+// GetOrCreateTenantByExternalOrg atomically resolves the Quill tenant for an
+// external IdP organisation, creating it if this is the first login from that
+// org. Written by hand to avoid a code-generator re-run.
+func (s *Store) GetOrCreateTenantByExternalOrg(ctx context.Context, externalOrgID, slug string) (db.Tenant, error) {
 	const q = `
-		INSERT INTO tenants (slug, name, clerk_org_id)
+		INSERT INTO tenants (slug, name, external_org_id)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (clerk_org_id) WHERE clerk_org_id IS NOT NULL
+		ON CONFLICT (external_org_id) WHERE external_org_id IS NOT NULL
 		DO UPDATE SET updated_at = now()
-		RETURNING id, slug, name, clerk_org_id, created_at, updated_at`
-	row := s.pool.QueryRow(ctx, q, slug, slug, clerkOrgID)
+		RETURNING id, slug, name, external_org_id, created_at, updated_at`
+	row := s.pool.QueryRow(ctx, q, slug, slug, externalOrgID)
 	var t db.Tenant
-	err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.ClerkOrgID, &t.CreatedAt, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.ExternalOrgID, &t.CreatedAt, &t.UpdatedAt)
 	if err == nil {
 		return t, nil
 	}
 	// Slug collision with a different tenant — append org ID suffix and retry.
 	const q2 = `
-		INSERT INTO tenants (slug, name, clerk_org_id)
+		INSERT INTO tenants (slug, name, external_org_id)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (clerk_org_id) WHERE clerk_org_id IS NOT NULL
+		ON CONFLICT (external_org_id) WHERE external_org_id IS NOT NULL
 		DO UPDATE SET updated_at = now()
-		RETURNING id, slug, name, clerk_org_id, created_at, updated_at`
-	shortID := clerkOrgID
+		RETURNING id, slug, name, external_org_id, created_at, updated_at`
+	shortID := externalOrgID
 	if len(shortID) > 8 {
 		shortID = shortID[len(shortID)-8:]
 	}
 	fallbackSlug := slug + "-" + shortID
-	row = s.pool.QueryRow(ctx, q2, fallbackSlug, slug, clerkOrgID)
-	err = row.Scan(&t.ID, &t.Slug, &t.Name, &t.ClerkOrgID, &t.CreatedAt, &t.UpdatedAt)
+	row = s.pool.QueryRow(ctx, q2, fallbackSlug, slug, externalOrgID)
+	err = row.Scan(&t.ID, &t.Slug, &t.Name, &t.ExternalOrgID, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

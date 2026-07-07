@@ -39,9 +39,9 @@ type Server struct {
 	markupCache  *markupCache
 }
 
-// externalAuthEnabled reports whether an external IdP (Clerk or Zitadel) is
-// configured and ready. When false, Quill falls back to local username/password
-// auth (register/login/password routes are registered).
+// externalAuthEnabled reports whether an external IdP (Zitadel) is configured
+// and ready. When false, Quill falls back to local username/password auth
+// (register/login/password routes are registered).
 func (s *Server) externalAuthEnabled() bool {
 	return s.verifier != nil && s.verifier.Enabled()
 }
@@ -55,20 +55,12 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
 	}
 
-	// Select the external IdP by QUILL_AUTH_PROVIDER. Clerk is the default; both
-	// providers verify a bearer JWT, provision the user on first login, and map
-	// the org claim to a Quill tenant. Personal project creation happens during
-	// onboarding, so neither path creates one here.
+	// The external IdP (Zitadel) verifies a bearer JWT, provisions the user on
+	// first login, and maps the org claim to a Quill tenant. Personal project
+	// creation happens during onboarding, so this path does not create one here.
 	var verifier auth.TokenVerifier
-	switch cfg.AuthProvider {
-	case auth.ProviderZitadel:
-		if cfg.Zitadel.Issuer != "" {
-			verifier = auth.NewZitadelVerifier(cfg.Zitadel, st, logger).WithForgejo(fj)
-		}
-	default: // clerk
-		if cfg.Clerk.FrontendAPI != "" {
-			verifier = auth.NewClerkVerifier(cfg.Clerk, st, logger).WithForgejo(fj)
-		}
+	if cfg.Zitadel.Issuer != "" {
+		verifier = auth.NewZitadelVerifier(cfg.Zitadel, st, logger).WithForgejo(fj)
 	}
 
 	// Project-mirror dispatcher: pushes project create/delete events to Tempo.
@@ -191,8 +183,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/webhooks/forgejo", s.handleWebhook)
 
 		// Authentication: /me requires a valid token. Register/login are handled by
-		// Clerk on the frontend; local auth routes are available as a fallback when
-		// QUILL_CLERK_FRONTEND_API is not set (development / self-hosted without Clerk).
+		// Zitadel on the frontend; local auth routes are available as a fallback when
+		// ZITADEL_ISSUER is not set (development / self-hosted without Zitadel).
 		r.Route("/auth", func(r chi.Router) {
 			if !s.externalAuthEnabled() {
 				authLimiter := newIPRateLimiter(10, time.Minute)

@@ -29,10 +29,10 @@ export QUILL_DATABASE_URL="${QUILL_DATABASE_URL:-postgres://quill:quill@localhos
 export QUILL_LOG_FORMAT="${QUILL_LOG_FORMAT:-text}"
 export QUILL_JWT_SECRET="${QUILL_JWT_SECRET:-dev-insecure-secret-change-me}"
 export QUILL_CORS_ALLOWED_ORIGINS="${QUILL_CORS_ALLOWED_ORIGINS:-http://localhost:3001}"
-export QUILL_FORGEJO_BASE_URL="${QUILL_FORGEJO_BASE_URL:-http://localhost:3000}"
+export FORGEJO_BASE_URL="${FORGEJO_BASE_URL:-http://localhost:3000}"
 # Pass through the Forgejo admin token (e.g. exported by .envrc). Most repo/PR
 # operations need it; warn rather than fail so UI-only iteration still works.
-export QUILL_FORGEJO_ADMIN_TOKEN="${QUILL_FORGEJO_ADMIN_TOKEN:-}"
+export FORGEJO_ADMIN_TOKEN="${FORGEJO_ADMIN_TOKEN:-}"
 # API <-> dispatcher wiring (host ports).
 export QUILL_PIPELINE_DISPATCH_URL="${QUILL_PIPELINE_DISPATCH_URL:-http://localhost:8090}"
 export QUILL_PIPELINE_DISPATCH_SECRET="${QUILL_PIPELINE_DISPATCH_SECRET:-dev-dispatch-secret}"
@@ -83,8 +83,8 @@ if ! curl -fsS http://localhost:3000/api/healthz >/dev/null 2>&1; then
 fi
 log "Forgejo is ready."
 
-if [[ -z "${QUILL_FORGEJO_ADMIN_TOKEN}" ]]; then
-  log "warning: QUILL_FORGEJO_ADMIN_TOKEN is unset — repo/PR operations against Forgejo will fail."
+if [[ -z "${FORGEJO_ADMIN_TOKEN}" ]]; then
+  log "warning: FORGEJO_ADMIN_TOKEN is unset — repo/PR operations against Forgejo will fail."
   log "         create one (see deploy/compose/README.md) and export it, e.g. via .envrc."
 fi
 

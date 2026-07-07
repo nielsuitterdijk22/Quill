@@ -1,11 +1,11 @@
-// Derive the Clerk Frontend API hostname from the publishable key so the CSP
-// is correct for any Clerk instance without hardcoding the domain.
-function clerkHost() {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
-  const b64 = key.replace(/^pk_(test|live)_/, "");
-  if (!b64) return null;
+// Derive the Zitadel origin from the configured issuer so the CSP can allow the
+// browser's OIDC discovery fetch (used on RP-initiated logout) without
+// hardcoding the instance host.
+function zitadelOrigin() {
+  const issuer = process.env.NEXT_PUBLIC_ZITADEL_ISSUER ?? "";
+  if (!issuer) return null;
   try {
-    return Buffer.from(b64, "base64").toString("utf8").replace(/\$$/, "");
+    return new URL(issuer).origin;
   } catch {
     return null;
   }
@@ -44,22 +44,24 @@ const nextConfig = {
     ];
   },
   async headers() {
-    const clerk = clerkHost();
-    const clerkSrc = clerk ? ` https://${clerk}` : "";
+    const zitadel = zitadelOrigin();
+    const zitadelSrc = zitadel ? ` ${zitadel}` : "";
     const csp = [
       "default-src 'self'",
       // Next.js injects inline scripts for hydration; unsafe-inline is required
       // until nonce-based CSP is wired through the App Router.
-      `script-src 'self' 'unsafe-inline' 'unsafe-eval'${clerkSrc} https://challenges.cloudflare.com`,
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
       "style-src 'self' 'unsafe-inline'",
-      `img-src 'self' data: blob: https://img.clerk.com${clerkSrc}`,
+      `img-src 'self' data: blob:`,
       "font-src 'self' data:",
       `worker-src 'self' blob:`,
-      `connect-src 'self'${clerkSrc} https://clerk-telemetry.com https://challenges.cloudflare.com`,
-      `frame-src${clerkSrc} https://challenges.cloudflare.com`,
+      // Zitadel origin is allowed for the OIDC discovery fetch on logout.
+      `connect-src 'self'${zitadelSrc}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      // Sign-in / logout redirect the browser to Zitadel's authorize / end-session
+      // endpoints, which are cross-origin form/navigation targets.
+      `form-action 'self'${zitadelSrc}`,
     ].join("; ");
     return [
       {

@@ -53,6 +53,36 @@ Quill is the home for two companion tools that surface inside it:
 
 ## Quickstart
 
+### First-time setup
+
+Requirements: Go 1.24+, Node 22+, Docker, and [direnv](https://direnv.net) (loads
+`.envrc`).
+
+1. **Load the environment.** Config lives in the repo-root `.envrc` (Postgres
+   creds, auth provider, secrets). Allow direnv to load it:
+
+   ```bash
+   direnv allow
+   ```
+
+2. **Start the stack** — Postgres + Forgejo in Docker, api/dispatch/web
+   hot-reloading on the host:
+
+   ```bash
+   make up
+   ```
+
+3. **Mint the Forgejo admin token.** Quill drives Forgejo through its REST API
+   with an admin token; without a valid one, repo/PR operations fail with
+   `401 access token does not exist`. `FORGEJO_ADMIN_TOKEN` starts empty — mint a
+   real token and set it in `.envrc`. See
+   [deploy/compose/README.md → Forgejo admin token](deploy/compose/README.md#forgejo-admin-token)
+   for the two commands. Run `direnv allow` again and restart `make up` to pick
+   it up.
+
+4. **Register the first user.** Open http://localhost:3001, click **Create one**,
+   and register — the first account created becomes the admin.
+
 ### Dev stack (hot reload) — recommended
 
 ```bash
@@ -64,7 +94,7 @@ make down     # stop the containers (Ctrl-C stops the host processes)
 (stateful/slow), waits for both, then runs the API and pipeline dispatcher with
 [air](https://github.com/air-verse/air) and the frontend with `next dev` — all
 hot-reloading. Web is on http://localhost:3001, api on `:8080`, Forgejo on
-`:3000`. Set `QUILL_FORGEJO_ADMIN_TOKEN` (see `deploy/compose/README.md`) so
+`:3000`. Set `FORGEJO_ADMIN_TOKEN` (see `deploy/compose/README.md`) so
 repo/PR operations work.
 
 ### Full stack (Docker, no hot reload)

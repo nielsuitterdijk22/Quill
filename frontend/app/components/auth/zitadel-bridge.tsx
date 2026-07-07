@@ -1,11 +1,10 @@
 "use client";
 
 // ZitadelAuthBridge adapts next-auth/react to the provider-neutral QuillAuth
-// context. Mounted only when NEXT_PUBLIC_AUTH_PROVIDER=zitadel, inside
-// <SessionProvider>. The access token is surfaced on the session by the jwt/
-// session callbacks in app/auth.ts.
-import { useMemo } from "react";
+// context. Mounted inside <SessionProvider>. The access token is surfaced on the
+// session by the jwt/session callbacks in app/auth.ts.
 import { signOut as nextSignOut, useSession } from "next-auth/react";
+import { useMemo } from "react";
 
 import { QuillAuthProvider, type QuillAuth } from "./context";
 
@@ -18,7 +17,9 @@ const issuer = process.env.NEXT_PUBLIC_ZITADEL_ISSUER ?? "";
 // IdP session too. The endpoint is looked up via discovery rather than
 // hardcoded since it has moved between Zitadel API versions. Returns true if
 // it navigated the browser away (so the caller shouldn't also redirect).
-async function endZitadelSession(idToken: string | undefined): Promise<boolean> {
+async function endZitadelSession(
+  idToken: string | undefined,
+): Promise<boolean> {
   if (!issuer) return false;
   try {
     const res = await fetch(`${issuer}/.well-known/openid-configuration`);
@@ -50,6 +51,7 @@ export function ZitadelAuthBridge({ children }: { children: React.ReactNode }) {
           const idToken = (session as { idToken?: string } | null)?.idToken;
           await nextSignOut({ redirect: false });
           const navigated = await endZitadelSession(idToken);
+          console.log("ZitadelAuthBridge.signOut: navigated away?", navigated);
           if (!navigated) window.location.href = "/sign-in";
         })();
       },

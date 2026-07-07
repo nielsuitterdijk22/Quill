@@ -2,7 +2,7 @@
 # provision.sh — bootstrap Forgejo on first boot.
 #
 # Creates the Forgejo admin user and mints an admin token, then writes
-# QUILL_FORGEJO_ADMIN_TOKEN into deploy/compose/.env so the api service
+# FORGEJO_ADMIN_TOKEN into deploy/compose/.env so the api service
 # can use it immediately (or after `make stack` to restart with the token).
 #
 # Usage:
@@ -86,11 +86,11 @@ if [ ! -f "${ENV_FILE}" ]; then
   fi
 fi
 
-# Update or append QUILL_FORGEJO_ADMIN_TOKEN.
-if grep -q "^QUILL_FORGEJO_ADMIN_TOKEN=" "${ENV_FILE}"; then
-  sed -i "s|^QUILL_FORGEJO_ADMIN_TOKEN=.*|QUILL_FORGEJO_ADMIN_TOKEN=${TOKEN_VALUE}|" "${ENV_FILE}"
+# Update or append FORGEJO_ADMIN_TOKEN.
+if grep -q "^FORGEJO_ADMIN_TOKEN=" "${ENV_FILE}"; then
+  sed -i "s|^FORGEJO_ADMIN_TOKEN=.*|FORGEJO_ADMIN_TOKEN=${TOKEN_VALUE}|" "${ENV_FILE}"
 else
-  echo "QUILL_FORGEJO_ADMIN_TOKEN=${TOKEN_VALUE}" >> "${ENV_FILE}"
+  echo "FORGEJO_ADMIN_TOKEN=${TOKEN_VALUE}" >> "${ENV_FILE}"
 fi
 
 log "Token written to ${ENV_FILE}."

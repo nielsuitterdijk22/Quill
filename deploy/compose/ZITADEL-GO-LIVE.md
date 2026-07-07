@@ -6,6 +6,7 @@ Everything below is done in `/home/quill/quill` (the deploy checkout) and via th
 project's `.env`.
 
 The pieces:
+
 - `zitadel` + `zitadel-db` services (compose profile `zitadel`).
 - A Caddy vhost whose host **follows `ZITADEL_EXTERNALDOMAIN`** → `h2c://zitadel:8080`
   (already in the Caddyfile). It can be any host with a DNS record pointing at the
@@ -94,7 +95,7 @@ deploy/compose/zitadel/bootstrap.sh >> .env
 It appends these to `.env`:
 
 ```dotenv
-QUILL_ZITADEL_ISSUER=https://auth.example.com
+ZITADEL_ISSUER=https://auth.example.com
 NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.example.com
 NEXT_PUBLIC_ZITADEL_CLIENT_ID=<generated>
 NEXT_PUBLIC_ZITADEL_PROJECT_ID=<generated>
@@ -104,7 +105,7 @@ Also create a **service-user PAT** with org-management permission in the console
 and add it for the backend (account deletion + future org/member provisioning):
 
 ```dotenv
-QUILL_ZITADEL_MANAGEMENT_TOKEN=<service-user PAT>
+ZITADEL_MANAGEMENT_TOKEN=<service-user PAT>
 ```
 
 ## 5. Flip Quill onto Zitadel
@@ -159,7 +160,7 @@ full `up` (not just `up -d zitadel`) must run it. Bring up the whole profile:
 
 ## Falling back to local auth
 
-Leave `QUILL_ZITADEL_ISSUER` / `NEXT_PUBLIC_ZITADEL_ISSUER` unset and redeploy:
+Leave `ZITADEL_ISSUER` / `NEXT_PUBLIC_ZITADEL_ISSUER` unset and redeploy:
 Quill falls back to local username/password auth. Stop Zitadel with
 `docker compose -f deploy/compose/docker-compose.yml --profile zitadel down`.
 

@@ -1,10 +1,10 @@
 "use client";
 
 // QuillAuthContext gives client components one provider-neutral auth API:
-//   getToken(): the backend bearer (Clerk session JWT or Zitadel access token)
+//   getToken(): the backend bearer (Zitadel access token)
 //   signOut():  end the session and return to /sign-in
-// A per-provider bridge (clerk-bridge / zitadel-bridge) fills it using that
-// provider's hooks, so consumers never import @clerk/nextjs or next-auth/react.
+// The zitadel-bridge fills it using next-auth's hooks, so consumers never import
+// next-auth/react directly.
 import { createContext, useContext } from "react";
 
 export type QuillAuth = {

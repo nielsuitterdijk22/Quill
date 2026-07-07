@@ -37,7 +37,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 		name = slug
 	}
 
-	// Use the actor's tenant when set (Clerk multi-tenant), else fall back to the
+	// Use the actor's tenant when set (Zitadel multi-tenant), else fall back to the
 	// seeded default tenant for single-tenant / local-auth deployments.
 	var tenantID uuid.UUID
 	if actor.TenantID != (uuid.UUID{}) {
@@ -139,7 +139,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 // CreatePersonalProject provisions a personal-namespace project for userID.
 // The project slug equals the username so /{username} routes resolve to it.
 // Idempotent: returns nil without error if the slug is already taken (a previous
-// successful call or a race). Called from Clerk post-provisioning; must never
+// successful call or a race). Called from post-provisioning; must never
 // fail the login response.
 func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, username string) error {
 	slug := normalizeSlug(username)

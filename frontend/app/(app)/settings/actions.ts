@@ -93,10 +93,10 @@ export async function deleteAccountAction(
   const res = await deleteMyAccount(token);
   if (!res.ok) return { error: res.error };
 
-  // Do NOT redirect server-side here: the Clerk session is still live, so a
+  // Do NOT redirect server-side here: the IdP session is still live, so a
   // bare redirect to /sign-in would let the next request re-provision a brand
   // new Quill user (account "resurrection") and bounce between /sign-in and
-  // /onboarding forever. Return success so the client can sign out of Clerk
+  // /onboarding forever. Return success so the client can sign out of the IdP
   // first, which clears the session before navigating away.
   return { ok: true };
 }

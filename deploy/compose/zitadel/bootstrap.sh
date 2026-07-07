@@ -78,7 +78,7 @@ echo "client_id=$CLIENT_ID" >&2
 # Emit the .env block on stdout so it can be appended/redirected cleanly.
 cat <<EOF
 # --- Zitadel app (from bootstrap.sh) — paste into /home/quill/quill/.env ---
-QUILL_ZITADEL_ISSUER=$ZITADEL_PUBLIC_URL
+ZITADEL_ISSUER=$ZITADEL_PUBLIC_URL
 NEXT_PUBLIC_ZITADEL_ISSUER=$ZITADEL_PUBLIC_URL
 NEXT_PUBLIC_ZITADEL_CLIENT_ID=$CLIENT_ID
 NEXT_PUBLIC_ZITADEL_PROJECT_ID=$PROJ_ID

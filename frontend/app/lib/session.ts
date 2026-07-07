@@ -1,24 +1,15 @@
-// Server-only session helpers, provider-neutral. The active IdP's bearer token
-// (Clerk session JWT or Zitadel access token) is forwarded to the Quill backend,
-// which verifies it against that provider's JWKS. Selected by
-// NEXT_PUBLIC_AUTH_PROVIDER (see lib/auth-provider).
-import { auth as clerkAuth, currentUser as clerkCurrentUser } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+// Server-only session helpers. The Zitadel access token is forwarded to the
+// Quill backend, which verifies it against Zitadel's JWKS.
 
+import { redirect } from "next/navigation";
 import { auth as zitadelAuth } from "../auth";
-import { isZitadel } from "./auth-provider";
 import { fetchMe, type User } from "./api";
 
 // getToken returns the current IdP bearer token for Quill backend calls, or
 // undefined when the user is not signed in.
 export async function getToken(): Promise<string | undefined> {
-  if (isZitadel) {
-    const session = await zitadelAuth();
-    const token = (session as { accessToken?: string } | null)?.accessToken;
-    return token ?? undefined;
-  }
-  const { getToken } = await clerkAuth();
-  const token = await getToken();
+  const session = await zitadelAuth();
+  const token = (session as { accessToken?: string } | null)?.accessToken;
   return token ?? undefined;
 }
 
@@ -33,7 +24,9 @@ export async function getToken(): Promise<string | undefined> {
 // to re-authenticate, instead of erroring or bouncing indefinitely. A transient
 // backend outage degrades to the same signed-out state rather than a crash.
 export async function getSession(): Promise<User | null> {
+  console.log("getting token");
   const token = await getToken();
+  console.log("token:", token);
   if (!token) return null;
   try {
     return await fetchMe(token);
@@ -47,15 +40,14 @@ export async function getSession(): Promise<User | null> {
 // routes, so this redirect is a belt-and-suspenders guard.
 export async function requireSession(): Promise<User> {
   const user = await getSession();
+  console.log("user:", user);
   if (!user) redirect("/sign-in");
   return user;
 }
 
 // getProfileAvatar returns the signed-in user's avatar URL from the IdP, or null
-// when none is available. Clerk exposes it on currentUser; Zitadel avatars come
-// from the userinfo "picture" claim (not surfaced yet), so null for now.
+// when none is available. Zitadel avatars come from the userinfo "picture" claim
+// (not surfaced yet), so null for now.
 export async function getProfileAvatar(): Promise<string | null> {
-  if (isZitadel) return null;
-  const user = await clerkCurrentUser();
-  return user?.imageUrl ?? null;
+  return null;
 }

@@ -18,7 +18,7 @@ export default async function AppLayout({
 
   // Use authGet directly so we can distinguish "no projects" (should redirect)
   // from "fetch failed / auth error" (should not redirect — avoids a loop when
-  // Clerk middleware hasn't initialised yet during a soft navigation).
+  // the auth middleware hasn't initialised yet during a soft navigation).
   let projects: MyProject[] = [];
   if (token) {
     const res = await authGet<{ projects?: MyProject[] }>(token, "/api/v1/me/projects");

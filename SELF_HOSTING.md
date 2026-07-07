@@ -54,12 +54,12 @@ After step 5 you can register your first Quill account at `http://localhost:3001
 
 These must be set in `deploy/compose/.env` before starting the stack:
 
-| Variable | Required? | Description |
-| -------- | --------- | ----------- |
-| `QUILL_ENV` | Always | Set to `production` on any public instance. Enforces the `Secure` cookie flag and rejects a missing `QUILL_JWT_SECRET`. |
-| `QUILL_JWT_SECRET` | In production | Long random string used to sign session cookies. Generate with `openssl rand -hex 32`. |
-| `QUILL_FORGEJO_ADMIN_TOKEN` | After first boot | Set automatically by `make provision`. |
-| `QUILL_FORGEJO_PUBLIC_URL` | In production | The public URL Forgejo is reachable at from a browser (e.g. `https://git.example.com`). Used in clone URLs. |
+| Variable              | Required?        | Description                                                                                                             |
+| --------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `QUILL_ENV`           | Always           | Set to `production` on any public instance. Enforces the `Secure` cookie flag and rejects a missing `QUILL_JWT_SECRET`. |
+| `QUILL_JWT_SECRET`    | In production    | Long random string used to sign session cookies. Generate with `openssl rand -hex 32`.                                  |
+| `FORGEJO_ADMIN_TOKEN` | After first boot | Set automatically by `make provision`.                                                                                  |
+| `FORGEJO_PUBLIC_URL`  | In production    | The public URL Forgejo is reachable at from a browser (e.g. `https://git.example.com`). Used in clone URLs.             |
 
 See `deploy/compose/.env.example` for the full list with descriptions.
 
@@ -151,7 +151,7 @@ than HTTPS:
    already does this by default).
 2. Set `FORGEJO__server__SSH_DOMAIN` to your public domain in the forgejo
    service environment.
-3. Set `QUILL_FORGEJO_PUBLIC_URL` to include the SSH host so Quill shows the
+3. Set `FORGEJO_PUBLIC_URL` to include the SSH host so Quill shows the
    correct SSH clone URL.
 
 ---
@@ -177,7 +177,7 @@ The script is idempotent — re-running it will skip user creation if the
 account already exists and simply issue a new token.
 
 After provisioning, run `make stack` once more so the api service picks up
-the updated `QUILL_FORGEJO_ADMIN_TOKEN` value.
+the updated `FORGEJO_ADMIN_TOKEN` value.
 
 ---
 
@@ -392,7 +392,7 @@ to initialise (e.g. on very slow disk), it may time out; re-run `make stack`.
 
 **The api starts but Forgejo operations fail with "git unavailable"**
 
-`QUILL_FORGEJO_ADMIN_TOKEN` is missing or invalid. Run `make provision` and
+`FORGEJO_ADMIN_TOKEN` is missing or invalid. Run `make provision` and
 then `make stack` again.
 
 **Users can't clone over SSH**

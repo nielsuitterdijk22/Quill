@@ -11,7 +11,7 @@
 #   caddy     80/443  Reverse proxy (production profile only)
 #
 # After first boot run `make provision` to create the Forgejo admin account and
-# generate QUILL_FORGEJO_ADMIN_TOKEN automatically — see deploy/compose/README.md.
+# generate FORGEJO_ADMIN_TOKEN automatically — see deploy/compose/README.md.
 #
 # Production: add --profile production to enable the Caddy reverse proxy.
 
@@ -65,7 +65,8 @@ services:
     volumes:
       - forgejo-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/healthz || exit 1"]
+      test:
+        ["CMD-SHELL", "curl -fsS http://localhost:3000/api/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -79,18 +80,18 @@ services:
       QUILL_HTTP_ADDR: ":8080"
       QUILL_LOG_FORMAT: text
       QUILL_DATABASE_URL: postgres://${POSTGRES_USER:-quill}:${POSTGRES_PASSWORD:-quill}@postgres:5432/${POSTGRES_DB:-quill}?sslmode=disable
-      QUILL_FORGEJO_BASE_URL: http://forgejo:3000
-      QUILL_FORGEJO_ADMIN_TOKEN: ${QUILL_FORGEJO_ADMIN_TOKEN:-}
-      QUILL_FORGEJO_PUBLIC_URL: ${QUILL_FORGEJO_PUBLIC_URL:-}
+      FORGEJO_BASE_URL: http://forgejo:3000
+      FORGEJO_ADMIN_TOKEN: ${FORGEJO_ADMIN_TOKEN:-}
+      FORGEJO_PUBLIC_URL: ${FORGEJO_PUBLIC_URL:-}
       QUILL_JWT_SECRET: ${QUILL_JWT_SECRET:-dev-insecure-secret-change-me}
       QUILL_CORS_ALLOWED_ORIGINS: ${QUILL_CORS_ALLOWED_ORIGINS:-http://localhost:3001}
       # Auth provider (Zitadel). The Zitadel settings below must be populated;
       # when the issuer is unset, Quill falls back to local username/password auth.
       QUILL_AUTH_PROVIDER: ${QUILL_AUTH_PROVIDER:-zitadel}
-      QUILL_ZITADEL_ISSUER: ${QUILL_ZITADEL_ISSUER:-}
-      QUILL_ZITADEL_MANAGEMENT_TOKEN: ${QUILL_ZITADEL_MANAGEMENT_TOKEN:-}
-      QUILL_GITHUB_CLIENT_ID: ${QUILL_GITHUB_CLIENT_ID:-}
-      QUILL_GITHUB_CLIENT_SECRET: ${QUILL_GITHUB_CLIENT_SECRET:-}
+      ZITADEL_ISSUER: ${ZITADEL_ISSUER:-}
+      ZITADEL_MANAGEMENT_TOKEN: ${ZITADEL_MANAGEMENT_TOKEN:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       QUILL_PIPELINE_DISPATCH_URL: http://dispatch:8090
       QUILL_PIPELINE_DISPATCH_SECRET: ${QUILL_PIPELINE_DISPATCH_SECRET:-dev-dispatch-secret}
     ports:
