@@ -85,6 +85,42 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 > delete the old one first: `... forgejo admin user delete-access-token
 > --username quill-admin --token quill-api`.
 
+## Reloading environment variables
+
+Compose reads `deploy/compose/.env` and interpolates the values into each
+service's `environment:` block. After you edit `.env`, the running containers
+keep their **old** values until you recreate them.
+
+> **`restart` does not reload env.** `docker compose restart <service>` reuses
+> the existing container, so it keeps the environment it was created with. Use
+> `up -d`, which recreates the container when its config (including interpolated
+> env) has changed.
+
+```bash
+COMPOSE="docker compose -f deploy/compose/docker-compose.yml"
+
+# 1. Edit deploy/compose/.env with the new value(s).
+
+# 2. Recreate only the affected service(s). Compose detects the changed env and
+#    replaces the container in place; unrelated services are left running.
+$COMPOSE up -d api            # e.g. after changing FORGEJO_ADMIN_TOKEN
+
+# Or recreate the whole stack (equivalent to `make stack` without a rebuild):
+$COMPOSE up -d
+```
+
+Which service to recreate depends on the variable — `POSTGRES_*` affects
+`postgres` (and `forgejo`/`api`, which build their connection strings from it),
+`FORGEJO_*` and the auth/dispatch settings affect `api`, and so on. When in
+doubt, recreate the whole stack.
+
+> **`web` build args need a rebuild.** The frontend's `NEXT_PUBLIC_*` values are
+> inlined into the bundle at build time, so changing them requires rebuilding the
+> image, not just recreating the container:
+> ```bash
+> $COMPOSE up -d --build web
+> ```
+
 ## Production deployment (HTTPS required)
 
 Running Quill over plain HTTP in production is **unsafe**: the session cookie
