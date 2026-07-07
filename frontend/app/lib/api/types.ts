@@ -376,16 +376,25 @@ export type CreateEnvironmentInput = {
   rank: number;
 };
 
-// PipelineSecret is the write-only view of a CI secret: its name and timestamps,
-// never its value. Values are set via the API but never returned.
+// SecretScope is where a secret lives: project-wide, a single repository, or an
+// environment. Environment-scoped secrets also carry the environment slug.
+export type SecretScope = "project" | "repo" | "environment";
+
+// PipelineSecret is the write-only view of a CI secret: its name, scope, and
+// timestamps, never its value. Values are set via the API but never returned.
 export type PipelineSecret = {
   name: string;
+  scope: SecretScope;
+  scopeName?: string;
   createdAt: string;
   updatedAt: string;
 };
 
 export type SecretsResult = {
   secrets: PipelineSecret[];
+  // inherited is present on the repo listing: the project + environment secrets
+  // that also apply to this repo's runs, read-only.
+  inherited?: PipelineSecret[];
 };
 
 export type UpdateEnvironmentInput = {

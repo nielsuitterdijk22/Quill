@@ -16,16 +16,25 @@ import (
 // write-only — a value is accepted on PUT but never returned — and every
 // operation requires a project admin (enforced in the platform service).
 
-// secretResponse is the public JSON shape for a secret: name and timestamps
-// only, never the value.
+// secretResponse is the public JSON shape for a secret: name, scope, and
+// timestamps only, never the value. ScopeName carries the environment slug for
+// environment-scoped secrets (empty otherwise).
 type secretResponse struct {
 	Name      string    `json:"name"`
+	Scope     string    `json:"scope"`
+	ScopeName string    `json:"scopeName,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 func newSecretResponse(s platform.SecretSummary) secretResponse {
-	return secretResponse{Name: s.Name, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt}
+	return secretResponse{
+		Name:      s.Name,
+		Scope:     s.Scope,
+		ScopeName: s.ScopeName,
+		CreatedAt: s.CreatedAt,
+		UpdatedAt: s.UpdatedAt,
+	}
 }
 
 func secretResponses(secrets []platform.SecretSummary) []secretResponse {
@@ -114,7 +123,17 @@ func (s *Server) handleListRepoSecrets(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not list secrets")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"secrets": secretResponses(secrets)})
+	// Also surface the project + environment secrets that apply to this repo's
+	// runs, read-only, so the settings page shows the full effective set.
+	inherited, err := s.platform.ListInheritedSecretsForRepo(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not list inherited secrets")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"secrets":   secretResponses(secrets),
+		"inherited": secretResponses(inherited),
+	})
 }
 
 func (s *Server) handleSetRepoSecret(w http.ResponseWriter, r *http.Request) {

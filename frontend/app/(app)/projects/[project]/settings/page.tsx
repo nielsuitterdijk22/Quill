@@ -78,7 +78,7 @@ export default async function ProjectSettingsPage({
         <h1>{project.name} settings</h1>
       </div>
 
-      <section className="settings-section">
+      <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Branch policies</h2>
           <p className="subtle">
@@ -108,7 +108,7 @@ export default async function ProjectSettingsPage({
         <EnvironmentManager project={project.slug} environments={environments} />
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Secrets</h2>
           <p className="subtle">
@@ -124,7 +124,7 @@ export default async function ProjectSettingsPage({
       </section>
 
       {environmentSecrets.length > 0 && (
-        <section className="settings-section">
+        <section className="settings-section settings-card">
           <div className="settings-head">
             <h2 className="settings-title">Environment secrets</h2>
             <p className="subtle">
@@ -147,7 +147,7 @@ export default async function ProjectSettingsPage({
         </section>
       )}
 
-      <section className="settings-section">
+      <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Environment policies</h2>
           <p className="subtle">
