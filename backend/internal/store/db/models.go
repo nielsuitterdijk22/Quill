@@ -90,6 +90,19 @@ type PipelineRun struct {
 	UpdatedAt   time.Time          `json:"updatedAt"`
 }
 
+type PipelineSecret struct {
+	ID            uuid.UUID     `json:"id"`
+	ProjectID     uuid.UUID     `json:"projectId"`
+	RepoID        uuid.NullUUID `json:"repoId"`
+	EnvironmentID uuid.NullUUID `json:"environmentId"`
+	Name          string        `json:"name"`
+	Ciphertext    []byte        `json:"ciphertext"`
+	Nonce         []byte        `json:"nonce"`
+	CreatedBy     uuid.NullUUID `json:"createdBy"`
+	CreatedAt     time.Time     `json:"createdAt"`
+	UpdatedAt     time.Time     `json:"updatedAt"`
+}
+
 type PipelineStep struct {
 	ID         uuid.UUID          `json:"id"`
 	JobID      uuid.UUID          `json:"jobId"`

@@ -1937,6 +1937,19 @@ h2.section {
 .settings-section .settings-head {
   margin-bottom: 14px;
 }
+/* A titled block within a section, e.g. one per-environment secrets group under
+   the Environment secrets section. */
+.settings-subsection {
+  margin-bottom: 24px;
+}
+.settings-subsection:last-child {
+  margin-bottom: 0;
+}
+.settings-subsection > h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text);
+}
 /* Pad the settings form cards (general settings, add/edit policy). The danger
    zone rows and create-page cards pad their own content, so this is scoped to
    the form-narrow panels that hold a bare form. */

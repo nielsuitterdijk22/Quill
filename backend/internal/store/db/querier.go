@@ -99,6 +99,15 @@ type Querier interface {
 	ListPendingWorkItemRefEvents(ctx context.Context, limit int32) ([]WorkItemRefOutbox, error)
 	MarkWorkItemRefEventDelivered(ctx context.Context, id uuid.UUID) error
 	MarkWorkItemRefEventFailed(ctx context.Context, arg MarkWorkItemRefEventFailedParams) error
+	CreatePipelineSecret(ctx context.Context, arg CreatePipelineSecretParams) (PipelineSecret, error)
+	UpdatePipelineSecretValue(ctx context.Context, arg UpdatePipelineSecretValueParams) (PipelineSecret, error)
+	DeletePipelineSecret(ctx context.Context, id uuid.UUID) error
+	GetProjectSecretByName(ctx context.Context, arg GetProjectSecretByNameParams) (PipelineSecret, error)
+	GetRepoSecretByName(ctx context.Context, arg GetRepoSecretByNameParams) (PipelineSecret, error)
+	GetEnvironmentSecretByName(ctx context.Context, arg GetEnvironmentSecretByNameParams) (PipelineSecret, error)
+	ListProjectSecrets(ctx context.Context, projectID uuid.UUID) ([]PipelineSecret, error)
+	ListRepoSecrets(ctx context.Context, repoID uuid.NullUUID) ([]PipelineSecret, error)
+	ListEnvironmentSecrets(ctx context.Context, environmentID uuid.NullUUID) ([]PipelineSecret, error)
 }
 
 var _ Querier = (*Queries)(nil)

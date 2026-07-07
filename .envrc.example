@@ -19,6 +19,10 @@ export QUILL_API_BASE_URL=http://localhost:8080
 export QUILL_DATABASE_URL=postgres://quill:quill@localhost:5432/quill?sslmode=disable
 export QUILL_JWT_SECRET=dev-insecure-secret-change-me
 export QUILL_PIPELINE_DISPATCH_SECRET=dev-dispatch-secret
+# Encrypts pipeline secrets at rest (AES-256-GCM). Any key material works; a
+# base64 32-byte key is ideal. Required in production; dev falls back to an
+# insecure built-in key when unset.
+export QUILL_SECRET_ENCRYPTION_KEY=dev-insecure-secret-encryption-key-change-me
 
 # --- Postgres ----------------------------------------------------------------
 export POSTGRES_PORT=5432

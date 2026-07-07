@@ -20,9 +20,14 @@ export async function triggerRunAction(
 
   const workflow = String(formData.get("workflow") ?? "").trim();
   const ref = String(formData.get("ref") ?? "").trim();
+  const environment = String(formData.get("environment") ?? "").trim();
   if (!workflow) return { error: "Choose a workflow to run." };
 
-  const result = await triggerPipelineRun(token, project, repo, { workflow, ref });
+  const result = await triggerPipelineRun(token, project, repo, {
+    workflow,
+    ref,
+    environment: environment || undefined,
+  });
   if (!result.ok) return { error: result.error };
 
   const run = result.data.run;
