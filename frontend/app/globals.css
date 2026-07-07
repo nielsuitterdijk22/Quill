@@ -504,6 +504,21 @@ h1 {
   color: var(--muted);
   font-size: 12px;
 }
+/* Last-commit summary + date shown per entry in the code tree. */
+.row-item .msg {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-item .when {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
 
 /* ---- tables ---------------------------------------------------------------- */
 table {
@@ -1119,6 +1134,9 @@ select:focus {
 }
 .commit-strip .sha {
   margin-left: auto;
+}
+.commit-strip .when {
+  white-space: nowrap;
 }
 .panel.attached {
   border-top-left-radius: 0;

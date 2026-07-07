@@ -1,10 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 
-import { getBranches, getContents } from "../../../../../../../lib/api";
+import { getBranches, getCommits, getContents } from "../../../../../../../lib/api";
 import { getToken } from "../../../../../../../lib/session";
 import {
   BrowseError,
   CodeView,
+  fmtDate,
   PathBreadcrumb,
   RepoHeader,
   humanBytes,
@@ -52,6 +53,21 @@ export default async function BlobPage({
   if (!contents.file) notFound();
   const file = contents.file;
 
+  // Fetch the most recent commit touching this file so the header can show
+  // when it was last edited.
+  const latestRes = await getCommits(
+    token,
+    params.project,
+    params.repo,
+    ref,
+    path,
+    1,
+  );
+  const latest =
+    latestRes.ok && latestRes.data.commits.length > 0
+      ? latestRes.data.commits[0]
+      : null;
+
   return (
     <>
       <RepoHeader
@@ -70,6 +86,9 @@ export default async function BlobPage({
       <div className="file-bar">
         <span className="mono">{file.name}</span>
         <span className="spacer" style={{ flex: 1 }} />
+        {latest?.date && (
+          <span className="subtle">Last edited {fmtDate(latest.date)}</span>
+        )}
         <span className="subtle">{humanBytes(file.size)}</span>
       </div>
       {file.tooLarge ? (

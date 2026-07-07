@@ -337,6 +337,7 @@ export function DirView({
           <span className="mono">{shortSha(latest.sha)}</span>
           <span className="msg">{firstLine(latest.message)}</span>
           <span className="sha">{latest.authorLogin || latest.authorName}</span>
+          {latest.date && <span className="when">{fmtDate(latest.date)}</span>}
         </div>
       )}
       <div className={`panel ${latest ? "attached" : ""}`}>
@@ -352,29 +353,38 @@ export function DirView({
         {entries.length === 0 && !showUp ? (
           <div className="empty">This directory is empty.</div>
         ) : (
-          entries.map((e) =>
-            e.type === "dir" ? (
+          entries.map((e) => {
+            const isDir = e.type === "dir";
+            return (
               <Link
                 className="row-item"
                 key={e.path}
-                href={treeHref(project, repo, refName, e.path)}
+                href={
+                  isDir
+                    ? treeHref(project, repo, refName, e.path)
+                    : blobHref(project, repo, refName, e.path)
+                }
               >
-                <span className="tree-icon dir">▸</span>
+                <span className={`tree-icon${isDir ? " dir" : ""}`}>
+                  {isDir ? "▸" : "▤"}
+                </span>
                 <span className="nm">{e.name}</span>
+                {e.lastCommit ? (
+                  <>
+                    <span className="msg" title={firstLine(e.lastCommit.message)}>
+                      {firstLine(e.lastCommit.message)}
+                    </span>
+                    <span className="when">{fmtDate(e.lastCommit.date)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="spacer" />
+                    {!isDir && <span className="sub">{humanBytes(e.size)}</span>}
+                  </>
+                )}
               </Link>
-            ) : (
-              <Link
-                className="row-item"
-                key={e.path}
-                href={blobHref(project, repo, refName, e.path)}
-              >
-                <span className="tree-icon">▤</span>
-                <span className="nm">{e.name}</span>
-                <span className="spacer" />
-                <span className="sub">{humanBytes(e.size)}</span>
-              </Link>
-            ),
-          )
+            );
+          })
         )}
       </div>
     </>

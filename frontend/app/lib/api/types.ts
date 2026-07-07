@@ -55,11 +55,22 @@ export type Commit = {
   date: string;
 };
 
+// EntryCommit is the last commit that touched a directory entry, attached to
+// each ContentEntry so the tree view can show when a file was last edited.
+export type EntryCommit = {
+  sha: string;
+  message: string;
+  authorName: string;
+  authorLogin?: string;
+  date: string;
+};
+
 export type ContentEntry = {
   name: string;
   path: string;
   type: "file" | "dir" | "symlink" | "submodule";
   size: number;
+  lastCommit?: EntryCommit;
 };
 
 export type ContentFile = {
