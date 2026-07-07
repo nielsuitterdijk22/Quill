@@ -4,11 +4,13 @@ import {
   getBranchPolicies,
   getBranches,
   getEnvironmentPolicies,
+  getRepoSecrets,
 } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
 import { BrowseError, RepoHeader } from "../../../../../../components/repo";
 import { EnvironmentPolicyManager } from "../../../../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../../../../components/policy/PolicyManager";
+import { SecretsManager } from "../../../../../../components/secret/SecretsManager";
 import { DangerZone } from "./DangerZone";
 import { RepoSettingsForm } from "./RepoSettingsForm";
 
@@ -45,6 +47,9 @@ export default async function RepoSettingsPage({
   const envRes = await getEnvironmentPolicies(token, params.project, params.repo);
   const envPolicies = envRes.ok ? envRes.data.policies : [];
   const envInherited = envRes.ok ? envRes.data.inherited : [];
+
+  const secretsRes = await getRepoSecrets(token, params.project, params.repo);
+  const secrets = secretsRes.ok ? secretsRes.data.secrets : [];
 
   return (
     <>
@@ -111,6 +116,21 @@ export default async function RepoSettingsPage({
           policies={envPolicies}
           inherited={envInherited}
           canEdit
+        />
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-head">
+          <h2 className="settings-title">Secrets</h2>
+          <p className="subtle">
+            Encrypted values scoped to this repository, exposed to its workflows
+            as ${"{{ secrets.NAME }}"}. These override project secrets of the same
+            name.
+          </p>
+        </div>
+        <SecretsManager
+          target={{ scope: "repo", project: params.project, repo: params.repo }}
+          secrets={secrets}
         />
       </section>
 

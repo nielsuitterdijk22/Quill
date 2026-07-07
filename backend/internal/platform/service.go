@@ -15,6 +15,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
+	"github.com/nielsuitterdijk22/quill/internal/secretbox"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -48,6 +49,10 @@ type Service struct {
 	// are added when a pipeline run starts and removed a few minutes after it
 	// finishes so late SSE subscribers can still replay buffered output.
 	activeRuns sync.Map // string (run UUID) → *logBroadcaster
+	// cipher encrypts pipeline secrets at rest. NewService installs the insecure
+	// development cipher; production wiring overrides it via WithCipher with the
+	// key from QUILL_SECRET_ENCRYPTION_KEY.
+	cipher *secretbox.Cipher
 }
 
 // NewService wires a platform Service. logger may be nil. The CI runner defaults
@@ -64,6 +69,7 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 		logger:    logger,
 		runner:    pipeline.NewActRunner(),
 		evaluator: policy.NewTypedEvaluator(),
+		cipher:    secretbox.NewDev(),
 	}
 }
 
@@ -71,6 +77,13 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 // client) and returns the service for chaining.
 func (s *Service) WithRunner(r pipeline.Runner) *Service {
 	s.runner = r
+	return s
+}
+
+// WithCipher overrides the pipeline-secret cipher (used by production wiring to
+// install the configured encryption key) and returns the service for chaining.
+func (s *Service) WithCipher(c *secretbox.Cipher) *Service {
+	s.cipher = c
 	return s
 }
 

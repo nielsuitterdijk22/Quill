@@ -67,6 +67,11 @@ type JobSpec struct {
 	// Token is an optional credential exposed to the workflow as GITHUB_TOKEN.
 	// Empty is fine — act skips actions/checkout and runs against Workdir.
 	Token string
+	// Secrets are the resolved secret name→value pairs exposed to the workflow as
+	// ${{ secrets.NAME }}. The platform layer merges them (project → repo →
+	// environment) before dispatch. They travel to the dispatcher in the JobSpec
+	// JSON, so the dispatcher process must be trusted; they must never be logged.
+	Secrets map[string]string
 	// LogSink is called for each raw output line during execution. It is omitted
 	// from JSON serialisation so it survives only in the dispatching process.
 	LogSink LogSink `json:"-"`

@@ -2,7 +2,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 
-import type { Branch, PipelineSummary } from "../../../../../../lib/api";
+import type { Branch, Environment, PipelineSummary } from "../../../../../../lib/api";
 import { triggerRunAction, type TriggerState } from "./actions";
 
 const initialState: TriggerState = {};
@@ -24,12 +24,14 @@ export function RunWorkflowForm({
   pipelines,
   branches,
   defaultBranch,
+  environments = [],
 }: {
   project: string;
   repo: string;
   pipelines: PipelineSummary[];
   branches: Branch[];
   defaultBranch: string;
+  environments?: Environment[];
 }) {
   const action = triggerRunAction.bind(null, project, repo);
   const [state, formAction] = useFormState(action, initialState);
@@ -65,6 +67,19 @@ export function RunWorkflowForm({
             ))}
           </select>
         </label>
+        {environments.length > 0 && (
+          <label>
+            <span>Environment</span>
+            <select name="environment" defaultValue="">
+              <option value="">None</option>
+              {environments.map((e) => (
+                <option key={e.slug} value={e.slug}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <SubmitButton />
       </form>
       {state.error && <div className="form-error">{state.error}</div>}

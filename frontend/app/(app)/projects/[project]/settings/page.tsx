@@ -3,13 +3,16 @@ import { notFound } from "next/navigation";
 
 import {
   getEnvironments,
+  getEnvironmentSecrets,
   getProjectEnvironmentPolicies,
   getProjectPolicies,
+  getProjectSecrets,
 } from "../../../../lib/api";
 import { getToken } from "../../../../lib/session";
 import { EnvironmentManager } from "../../../../components/environment/EnvironmentManager";
 import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
+import { SecretsManager } from "../../../../components/secret/SecretsManager";
 
 // ProjectSettingsPage manages project-scoped governance. Branch policies set here
 // apply to every repository in the project, and a repo may only tighten them.
@@ -50,6 +53,18 @@ export default async function ProjectSettingsPage({
 
   const environmentsRes = await getEnvironments(token, params.project);
   const environments = environmentsRes.ok ? environmentsRes.data.environments : [];
+
+  const secretsRes = await getProjectSecrets(token, params.project);
+  const secrets = secretsRes.ok ? secretsRes.data.secrets : [];
+
+  // Environment secrets are per-environment; fetch each in parallel. Environment
+  // counts are small (capped), so this stays a handful of requests.
+  const environmentSecrets = await Promise.all(
+    environments.map(async (env) => {
+      const res = await getEnvironmentSecrets(token, params.project, env.slug);
+      return { env, secrets: res.ok ? res.data.secrets : [] };
+    }),
+  );
 
   return (
     <>
@@ -92,6 +107,45 @@ export default async function ProjectSettingsPage({
         </div>
         <EnvironmentManager project={project.slug} environments={environments} />
       </section>
+
+      <section className="settings-section">
+        <div className="settings-head">
+          <h2 className="settings-title">Secrets</h2>
+          <p className="subtle">
+            Encrypted values shared by every repository in this project, exposed
+            to workflows as ${"{{ secrets.NAME }}"}. A repository or environment
+            secret of the same name overrides one set here.
+          </p>
+        </div>
+        <SecretsManager
+          target={{ scope: "project", project: project.slug }}
+          secrets={secrets}
+        />
+      </section>
+
+      {environmentSecrets.length > 0 && (
+        <section className="settings-section">
+          <div className="settings-head">
+            <h2 className="settings-title">Environment secrets</h2>
+            <p className="subtle">
+              Per-environment values that override project and repository secrets
+              of the same name when a run targets that environment.
+            </p>
+          </div>
+          {environmentSecrets.map(({ env, secrets: envSecrets }) => (
+            <div key={env.slug} className="settings-subsection">
+              <h3 className="mono">
+                {env.name}
+                <span className="sub"> · {env.slug}</span>
+              </h3>
+              <SecretsManager
+                target={{ scope: "environment", project: project.slug, env: env.slug }}
+                secrets={envSecrets}
+              />
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="settings-section">
         <div className="settings-head">

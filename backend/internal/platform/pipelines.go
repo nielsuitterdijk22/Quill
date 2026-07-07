@@ -57,6 +57,11 @@ type TriggerInput struct {
 	Ref string
 	// Event is the trigger kind ("manual", "push", "pull_request").
 	Event string
+	// EnvironmentSlug optionally targets one of the project's environments so the
+	// run also receives that environment's secrets (merged over project and repo
+	// secrets). Empty means no environment — the run gets project + repo secrets
+	// only. Webhook-triggered runs never set it.
+	EnvironmentSlug string
 }
 
 // ---- listing ---------------------------------------------------------------
@@ -293,6 +298,15 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 
 	cloneAuth := s.cloneAuthForRun(owner, name)
 
+	envID, err := s.resolveRunEnvironment(ctx, repo.ProjectID, in.EnvironmentSlug)
+	if err != nil {
+		return db.PipelineRun{}, err
+	}
+	secrets, err := s.resolveRunSecrets(ctx, repo.ProjectID, repo.ID, envID)
+	if err != nil {
+		return db.PipelineRun{}, fmt.Errorf("resolve secrets: %w", err)
+	}
+
 	bc := newLogBroadcaster()
 	s.activeRuns.Store(run.ID.String(), bc)
 
@@ -305,9 +319,30 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		CloneURL:        cloneAuth.URL,
 		CloneAuthHeader: cloneAuth.AuthHeader,
 		RepoFullName:    owner + "/" + name,
+		Secrets:         secrets,
 	})
 
 	return run, nil
+}
+
+// resolveRunEnvironment maps an optional environment slug to its id for secret
+// resolution. An empty slug yields an invalid NullUUID (no environment). An
+// unknown slug is a client error.
+func (s *Service) resolveRunEnvironment(ctx context.Context, projectID uuid.UUID, envSlug string) (uuid.NullUUID, error) {
+	if strings.TrimSpace(envSlug) == "" {
+		return uuid.NullUUID{}, nil
+	}
+	env, err := s.store.GetEnvironmentBySlug(ctx, db.GetEnvironmentBySlugParams{
+		ProjectID: projectID,
+		Lower:     normalizeSlug(envSlug),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.NullUUID{}, fmt.Errorf("%w: unknown environment %q", ErrInvalidInput, envSlug)
+	}
+	if err != nil {
+		return uuid.NullUUID{}, fmt.Errorf("lookup environment: %w", err)
+	}
+	return uuid.NullUUID{UUID: env.ID, Valid: true}, nil
 }
 
 // executeRun carries out the actual workflow execution in a background goroutine.
@@ -332,11 +367,17 @@ func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.
 		time.AfterFunc(5*time.Minute, func() { s.activeRuns.Delete(runID.String()) })
 	}()
 
+	// Redact secret values from both the live log stream and the stored step
+	// logs. act masks values it is told about, but we scrub defensively here so a
+	// secret can never leak through the SSE stream or the persisted logs
+	// regardless of runner behaviour.
+	masker := newSecretMasker(spec.Secrets)
 	spec.LogSink = func(jobKey, stepName, line string) {
-		bc.publish(LogLine{JobKey: jobKey, StepName: stepName, Line: line})
+		bc.publish(LogLine{JobKey: jobKey, StepName: stepName, Line: masker.mask(line)})
 	}
 
 	result, runErr := s.runner.Run(bgCtx, spec)
+	masker.maskResult(&result)
 	if runErr != nil {
 		// "read log stream" errors come from the HTTP dispatcher's SSE stream
 		// dropping after the job was already submitted. Wrap with a clearer message

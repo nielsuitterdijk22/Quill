@@ -376,6 +376,18 @@ export type CreateEnvironmentInput = {
   rank: number;
 };
 
+// PipelineSecret is the write-only view of a CI secret: its name and timestamps,
+// never its value. Values are set via the API but never returned.
+export type PipelineSecret = {
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SecretsResult = {
+  secrets: PipelineSecret[];
+};
+
 export type UpdateEnvironmentInput = {
   name: string;
   description: string;
