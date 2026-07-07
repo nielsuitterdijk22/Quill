@@ -84,6 +84,44 @@ func TestSecretNameNormalizedAndValidated(t *testing.T) {
 	}
 }
 
+func TestSecretInheritedForRepo(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+	owner, _ := seedScopeRepo(t, svc, st, "acme", "widget")
+
+	if _, err := svc.CreateEnvironment(ctx, owner, "acme", CreateEnvironmentInput{Slug: "staging", Name: "Staging"}); err != nil {
+		t.Fatalf("create env: %v", err)
+	}
+	if _, err := svc.SetProjectSecret(ctx, owner, "acme", "PROJECT_KEY", "p"); err != nil {
+		t.Fatalf("project secret: %v", err)
+	}
+	if _, err := svc.SetEnvironmentSecret(ctx, owner, "acme", "staging", "STAGING_KEY", "s"); err != nil {
+		t.Fatalf("env secret: %v", err)
+	}
+	// A repo-scoped secret must NOT appear in the inherited list — it isn't inherited.
+	if _, err := svc.SetRepoSecret(ctx, owner, "acme", "widget", "REPO_KEY", "r"); err != nil {
+		t.Fatalf("repo secret: %v", err)
+	}
+
+	inherited, err := svc.ListInheritedSecretsForRepo(ctx, owner, "acme", "widget")
+	if err != nil {
+		t.Fatalf("list inherited: %v", err)
+	}
+	byName := make(map[string]SecretSummary, len(inherited))
+	for _, s := range inherited {
+		byName[s.Name] = s
+	}
+	if p, ok := byName["PROJECT_KEY"]; !ok || p.Scope != SecretScopeProject {
+		t.Fatalf("PROJECT_KEY: want project scope, got %+v (present=%v)", p, ok)
+	}
+	if e, ok := byName["STAGING_KEY"]; !ok || e.Scope != SecretScopeEnvironment || e.ScopeName != "staging" {
+		t.Fatalf("STAGING_KEY: want environment/staging, got %+v (present=%v)", e, ok)
+	}
+	if _, ok := byName["REPO_KEY"]; ok {
+		t.Fatal("repo secret must not appear in inherited list")
+	}
+}
+
 func TestSecretResolveMergePrecedence(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()

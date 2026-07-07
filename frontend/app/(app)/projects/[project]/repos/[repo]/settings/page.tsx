@@ -50,6 +50,7 @@ export default async function RepoSettingsPage({
 
   const secretsRes = await getRepoSecrets(token, params.project, params.repo);
   const secrets = secretsRes.ok ? secretsRes.data.secrets : [];
+  const inheritedSecrets = secretsRes.ok ? secretsRes.data.inherited ?? [] : [];
 
   return (
     <>
@@ -83,7 +84,7 @@ export default async function RepoSettingsPage({
         />
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Branch policies</h2>
           <p className="subtle">
@@ -101,7 +102,7 @@ export default async function RepoSettingsPage({
         />
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Environment policies</h2>
           <p className="subtle">
@@ -119,7 +120,7 @@ export default async function RepoSettingsPage({
         />
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Secrets</h2>
           <p className="subtle">
@@ -131,6 +132,7 @@ export default async function RepoSettingsPage({
         <SecretsManager
           target={{ scope: "repo", project: params.project, repo: params.repo }}
           secrets={secrets}
+          inherited={inheritedSecrets}
         />
       </section>
 

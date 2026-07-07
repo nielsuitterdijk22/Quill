@@ -35,22 +35,39 @@ const maxSecretValueBytes = 64 << 10 // 64 KiB
 // underscores, mirroring GitHub Actions' rules.
 var secretNameRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
-// SecretSummary is the write-only public view of a secret: its name and
-// timestamps, never its value.
+// Secret scope discriminators, surfaced to the UI so a listing (especially the
+// repo's inherited view, which mixes scopes) can label where each secret lives.
+const (
+	SecretScopeProject     = "project"
+	SecretScopeRepo        = "repo"
+	SecretScopeEnvironment = "environment"
+)
+
+// SecretSummary is the write-only public view of a secret: its name, scope, and
+// timestamps, never its value. ScopeName carries the environment slug for
+// environment-scoped secrets (empty for project and repo scopes).
 type SecretSummary struct {
 	Name      string
+	Scope     string
+	ScopeName string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-func toSecretSummary(s db.PipelineSecret) SecretSummary {
-	return SecretSummary{Name: s.Name, CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt}
+func toSecretSummary(s db.PipelineSecret, scope, scopeName string) SecretSummary {
+	return SecretSummary{
+		Name:      s.Name,
+		Scope:     scope,
+		ScopeName: scopeName,
+		CreatedAt: s.CreatedAt,
+		UpdatedAt: s.UpdatedAt,
+	}
 }
 
-func toSecretSummaries(rows []db.PipelineSecret) []SecretSummary {
+func toSecretSummaries(rows []db.PipelineSecret, scope, scopeName string) []SecretSummary {
 	out := make([]SecretSummary, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toSecretSummary(r))
+		out = append(out, toSecretSummary(r, scope, scopeName))
 	}
 	return out
 }
@@ -68,7 +85,7 @@ func (s *Service) ListProjectSecrets(ctx context.Context, actor Actor, projectSl
 	if err != nil {
 		return nil, fmt.Errorf("list project secrets: %w", err)
 	}
-	return toSecretSummaries(rows), nil
+	return toSecretSummaries(rows, SecretScopeProject, ""), nil
 }
 
 // SetProjectSecret creates or replaces a project-wide secret for a project admin.
@@ -84,7 +101,7 @@ func (s *Service) SetProjectSecret(ctx context.Context, actor Actor, projectSlug
 	existing, err := s.store.GetProjectSecretByName(ctx, db.GetProjectSecretByNameParams{ProjectID: project.ID, Name: name})
 	switch {
 	case err == nil:
-		return s.updateSecretValue(ctx, existing.ID, ciphertext, nonce)
+		return s.updateSecretValue(ctx, existing.ID, ciphertext, nonce, SecretScopeProject, "")
 	case errors.Is(err, pgx.ErrNoRows):
 		if err := enforceSecretCap(s.store.ListProjectSecrets(ctx, project.ID)); err != nil {
 			return SecretSummary{}, err
@@ -95,7 +112,7 @@ func (s *Service) SetProjectSecret(ctx context.Context, actor Actor, projectSlug
 			Ciphertext: ciphertext,
 			Nonce:      nonce,
 			CreatedBy:  uuid.NullUUID{UUID: actor.UserID, Valid: true},
-		})
+		}, SecretScopeProject, "")
 	default:
 		return SecretSummary{}, fmt.Errorf("lookup project secret: %w", err)
 	}
@@ -133,7 +150,38 @@ func (s *Service) ListRepoSecrets(ctx context.Context, actor Actor, projectSlug,
 	if err != nil {
 		return nil, fmt.Errorf("list repo secrets: %w", err)
 	}
-	return toSecretSummaries(rows), nil
+	return toSecretSummaries(rows, SecretScopeRepo, ""), nil
+}
+
+// ListInheritedSecretsForRepo returns the read-only secrets that apply to a
+// repository's runs beyond its own: the project-wide secrets, plus every
+// environment's secrets (any of which a manual run may target). It is metadata
+// only — names and scope labels, never values — so the repo settings page can
+// show what a run will actually receive. Requires a project admin, matching the
+// repo secrets it sits beside.
+func (s *Service) ListInheritedSecretsForRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string) ([]SecretSummary, error) {
+	repo, err := s.authorizedRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return nil, err
+	}
+	projectRows, err := s.store.ListProjectSecrets(ctx, repo.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("list project secrets: %w", err)
+	}
+	out := toSecretSummaries(projectRows, SecretScopeProject, "")
+
+	envs, err := s.store.ListEnvironmentsByProject(ctx, repo.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("list environments: %w", err)
+	}
+	for _, env := range envs {
+		envRows, err := s.store.ListEnvironmentSecrets(ctx, uuid.NullUUID{UUID: env.ID, Valid: true})
+		if err != nil {
+			return nil, fmt.Errorf("list environment secrets: %w", err)
+		}
+		out = append(out, toSecretSummaries(envRows, SecretScopeEnvironment, env.Slug)...)
+	}
+	return out, nil
 }
 
 // SetRepoSecret creates or replaces a repository secret for a project admin.
@@ -150,7 +198,7 @@ func (s *Service) SetRepoSecret(ctx context.Context, actor Actor, projectSlug, r
 	existing, err := s.store.GetRepoSecretByName(ctx, db.GetRepoSecretByNameParams{RepoID: repoID, Name: name})
 	switch {
 	case err == nil:
-		return s.updateSecretValue(ctx, existing.ID, ciphertext, nonce)
+		return s.updateSecretValue(ctx, existing.ID, ciphertext, nonce, SecretScopeRepo, "")
 	case errors.Is(err, pgx.ErrNoRows):
 		if err := enforceSecretCap(s.store.ListRepoSecrets(ctx, repoID)); err != nil {
 			return SecretSummary{}, err
@@ -162,7 +210,7 @@ func (s *Service) SetRepoSecret(ctx context.Context, actor Actor, projectSlug, r
 			Ciphertext: ciphertext,
 			Nonce:      nonce,
 			CreatedBy:  uuid.NullUUID{UUID: actor.UserID, Valid: true},
-		})
+		}, SecretScopeRepo, "")
 	default:
 		return SecretSummary{}, fmt.Errorf("lookup repo secret: %w", err)
 	}
@@ -203,7 +251,7 @@ func (s *Service) ListEnvironmentSecrets(ctx context.Context, actor Actor, proje
 	if err != nil {
 		return nil, fmt.Errorf("list environment secrets: %w", err)
 	}
-	return toSecretSummaries(rows), nil
+	return toSecretSummaries(rows, SecretScopeEnvironment, env.Slug), nil
 }
 
 // SetEnvironmentSecret creates or replaces an environment secret for a project
@@ -221,7 +269,7 @@ func (s *Service) SetEnvironmentSecret(ctx context.Context, actor Actor, project
 	existing, err := s.store.GetEnvironmentSecretByName(ctx, db.GetEnvironmentSecretByNameParams{EnvironmentID: envID, Name: name})
 	switch {
 	case err == nil:
-		return s.updateSecretValue(ctx, existing.ID, ciphertext, nonce)
+		return s.updateSecretValue(ctx, existing.ID, ciphertext, nonce, SecretScopeEnvironment, env.Slug)
 	case errors.Is(err, pgx.ErrNoRows):
 		if err := enforceSecretCap(s.store.ListEnvironmentSecrets(ctx, envID)); err != nil {
 			return SecretSummary{}, err
@@ -233,7 +281,7 @@ func (s *Service) SetEnvironmentSecret(ctx context.Context, actor Actor, project
 			Ciphertext:    ciphertext,
 			Nonce:         nonce,
 			CreatedBy:     uuid.NullUUID{UUID: actor.UserID, Valid: true},
-		})
+		}, SecretScopeEnvironment, env.Slug)
 	default:
 		return SecretSummary{}, fmt.Errorf("lookup environment secret: %w", err)
 	}
@@ -395,7 +443,7 @@ func (s *Service) prepareSecret(name, value string) (string, []byte, []byte, err
 }
 
 // createSecret persists a new secret row and returns its summary.
-func (s *Service) createSecret(ctx context.Context, params db.CreatePipelineSecretParams) (SecretSummary, error) {
+func (s *Service) createSecret(ctx context.Context, params db.CreatePipelineSecretParams, scope, scopeName string) (SecretSummary, error) {
 	row, err := s.store.CreatePipelineSecret(ctx, params)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -403,12 +451,12 @@ func (s *Service) createSecret(ctx context.Context, params db.CreatePipelineSecr
 		}
 		return SecretSummary{}, fmt.Errorf("create secret: %w", err)
 	}
-	return toSecretSummary(row), nil
+	return toSecretSummary(row, scope, scopeName), nil
 }
 
 // updateSecretValue rotates an existing secret's ciphertext and returns its
 // summary.
-func (s *Service) updateSecretValue(ctx context.Context, id uuid.UUID, ciphertext, nonce []byte) (SecretSummary, error) {
+func (s *Service) updateSecretValue(ctx context.Context, id uuid.UUID, ciphertext, nonce []byte, scope, scopeName string) (SecretSummary, error) {
 	row, err := s.store.UpdatePipelineSecretValue(ctx, db.UpdatePipelineSecretValueParams{
 		ID:         id,
 		Ciphertext: ciphertext,
@@ -417,7 +465,7 @@ func (s *Service) updateSecretValue(ctx context.Context, id uuid.UUID, ciphertex
 	if err != nil {
 		return SecretSummary{}, fmt.Errorf("update secret: %w", err)
 	}
-	return toSecretSummary(row), nil
+	return toSecretSummary(row, scope, scopeName), nil
 }
 
 // enforceSecretCap rejects a create that would exceed the per-scope cap. It
