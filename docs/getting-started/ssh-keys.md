@@ -30,7 +30,7 @@ ssh -T git@quill.so
 
 You should see something like:
 
-```
+```text
 Hi your-username! You've successfully authenticated.
 ```
 
@@ -48,7 +48,7 @@ SSH URLs on Quill follow the format `git@quill.so:owner/repo.git`.
 
 If you use multiple SSH identities (e.g. personal and work), add this to your `~/.ssh/config`:
 
-```
+```text
 Host quill.so
   HostName quill.so
   User git

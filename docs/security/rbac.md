@@ -58,6 +58,7 @@ Org owners and project owners can override certain policy gates on specific PRs 
 Platform admins (Quill staff) have elevated access for support and infrastructure purposes. Admin actions are recorded in the audit log and are never used to read your code.
 
 ## Related
+
 - [Organizations](../concepts/organizations.md)
 - [Projects](../concepts/projects.md)
 - [Audit log](audit-log.md)

@@ -19,6 +19,7 @@ on:
 ```
 
 Leave `branches` out to run on all pushes:
+
 ```yaml
 on: push
 ```
@@ -91,6 +92,6 @@ Useful for monorepos — only run the backend pipeline when backend files change
 
 Add `[skip ci]` to your commit message to skip all pipelines for that push:
 
-```
+```bash
 git commit -m "update docs [skip ci]"
 ```

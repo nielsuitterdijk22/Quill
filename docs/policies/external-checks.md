@@ -14,7 +14,7 @@ An external check is a policy gate that reaches out to your own systems and wait
 
 In your branch policy, add an `external_check` gate:
 
-```
+```text
 Gate: external_check
 URL: https://itsm.acme.com/quill-gate
 Secret: your-webhook-secret
@@ -27,6 +27,7 @@ Timeout: 24h
 **Secret** — Quill signs the request with HMAC-SHA256 using this secret. Verify it on your end to ensure the request is genuine.
 
 **Trigger** — when the gate fires:
+
 - `on_pr_open` — fires when the PR is first opened
 - `on_merge_attempt` — fires when someone clicks Merge
 - `always` — fires on both
@@ -66,7 +67,7 @@ Quill sends a POST with `Content-Type: application/json`:
 
 Your system calls back to Quill when it has a verdict:
 
-```
+```text
 POST https://quill.so/api/gates/callback
 Content-Type: application/json
 
@@ -137,6 +138,7 @@ def quill_gate(request):
 ```
 
 ## Related
+
 - [Policies overview](overview.md)
 - [Change freeze](change-freeze.md)
 - [Webhooks](../webhooks.md)

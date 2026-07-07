@@ -9,6 +9,7 @@ Go to the branch's policy settings (repo, project, or org level) → **Change fr
 Or from the PR itself: if you have owner permissions, a **Declare freeze** option appears in the PR action menu.
 
 You'll be prompted for:
+
 - **Reason** — shown to anyone who tries to merge while the freeze is active
 - **Scope** — which branches are frozen (defaults to the current policy's branch pattern)
 - **Auto-lift** — optional. Set a time when the freeze automatically lifts.
@@ -33,7 +34,7 @@ Alternatively, if an auto-lift time was set, the freeze lifts automatically at t
 
 You can schedule a recurring change freeze in advance — useful for release windows when no merges are allowed while a build is being validated and deployed:
 
-```
+```text
 Gate: change_freeze
 Schedule:
   - cron: "0 18 * * 5"     # every Friday at 18:00 UTC
@@ -46,6 +47,7 @@ Scheduled freezes are declared automatically at the configured time and lift whe
 ## Freeze scope
 
 A freeze can be scoped to:
+
 - A specific branch (e.g. only `main`)
 - A branch pattern (e.g. `release/*`)
 - All branches in a project or org
@@ -59,6 +61,7 @@ Org owners can override a freeze on a specific PR by clicking **Override freeze*
 ## Audit trail
 
 Every freeze declaration, lift, and override is recorded in the audit log:
+
 - Who declared the freeze and when
 - The stated reason
 - Who lifted it (or "auto-lifted") and when

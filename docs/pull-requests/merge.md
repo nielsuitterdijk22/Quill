@@ -47,6 +47,7 @@ By default, the source branch is kept. Enable **Automatically delete head branch
 Merged PRs stay in the PR list permanently with a **Merged** label. The diff and discussion are preserved.
 
 ## Related
+
 - [Branch rules](../policies/branch-rules.md)
 - [External checks](../policies/external-checks.md)
 - [Change freeze](../policies/change-freeze.md)

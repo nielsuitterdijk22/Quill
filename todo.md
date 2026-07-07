@@ -18,7 +18,7 @@
   issues to another org is a showstopper — do a dedicated pass before launch.
 - **Email notifications.** PR review requests, CI failures, and @-mentions.
   Without these, users churn silently.
-- **Org member invite flow.** Clerk handles sign-up, but there is no
+- **Org member invite flow.** Zitadel handles sign-up, but there is no
   "invite a teammate to your org" UX inside Quill itself.
 - **Error tracking.** Sentry or equivalent. Need to know when things break in
   prod before users report it.
@@ -54,5 +54,5 @@
   and document it.
 - Empty-state copy for the git-token list (no tokens yet) and for the pipelines
   overview when a repo has workflows but no runs.
-- Settings page: hide the password-change form when Clerk auth is active (the
-  backend route is removed in Clerk mode; it currently shows and silently 404s).
+- Settings page: hide the password-change form when Zitadel auth is active (the
+  backend route is removed with an external IdP; it currently shows and silently 404s).

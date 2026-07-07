@@ -23,10 +23,12 @@ They now have read and write access to all repos in that project.
 ## Roles
 
 **Org roles** (set when the org invite is accepted, changeable in org Settings):
+
 - **Member** — default. Access is controlled entirely by project membership.
 - **Owner** — full access to everything in the org including all projects.
 
 **Project roles** (set per project):
+
 - **Member** — read/write access to repos in this project.
 - **Owner** — can manage project settings, policies, and membership.
 

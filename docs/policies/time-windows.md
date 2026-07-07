@@ -12,7 +12,7 @@ A time window gate restricts merges to specific times. Outside the window, the m
 
 In your branch policy, add a `time_window` gate:
 
-```
+```text
 Gate: time_window
 Days: Monday, Tuesday, Wednesday, Thursday, Friday
 Start: 09:00
@@ -26,7 +26,7 @@ All times are interpreted in the configured timezone. Quill converts to UTC inte
 
 You can define multiple windows if your allowed merge times aren't contiguous:
 
-```
+```text
 Gate: time_window
 Windows:
   - days: [Mon, Tue, Wed, Thu, Fri]

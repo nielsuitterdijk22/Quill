@@ -37,7 +37,7 @@ Quill automatically reports pipeline results back to open PRs. If your branch po
 
 To require a specific workflow to pass before merging, reference it by name in your branch policy:
 
-```
+```text
 Required status checks: CI / test
 ```
 

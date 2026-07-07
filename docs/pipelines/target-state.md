@@ -27,7 +27,7 @@ Why this shape:
 
 ## Target architecture
 
-```
+```text
 push / PR / manual ──► Forgejo (Actions enabled)
                           │ queues workflow job
                           ▼

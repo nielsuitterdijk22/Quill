@@ -14,13 +14,13 @@ For day-to-day development prefer `make up`, which keeps only Postgres + Forgejo
 in Docker and hot-reloads the api, dispatcher, and web on the host (see the root
 `README.md`). `make down` stops the containers either way.
 
-| Service  | URL                     | Notes                                   |
-| -------- | ----------------------- | --------------------------------------- |
-| web      | http://localhost:3001   | Quill UI                                |
-| api      | http://localhost:8080   | Quill backend (`/healthz`, `/api/v1`)   |
-| dispatch | internal `:8090`        | Pipeline dispatcher + Docker-backed runner |
-| forgejo  | http://localhost:3000   | Git backend wrapped by Quill            |
-| postgres | localhost:5432          | `quill` + `forgejo` databases           |
+| Service  | URL                   | Notes                                      |
+| -------- | --------------------- | ------------------------------------------ |
+| web      | http://localhost:3001 | Quill UI                                   |
+| api      | http://localhost:8080 | Quill backend (`/healthz`, `/api/v1`)      |
+| dispatch | internal `:8090`      | Pipeline dispatcher + Docker-backed runner |
+| forgejo  | http://localhost:3000 | Git backend wrapped by Quill               |
+| postgres | localhost:5432        | `quill` + `forgejo` databases              |
 
 ## First boot
 
@@ -28,26 +28,62 @@ Postgres creates two databases (`quill`, `forgejo`) via `initdb/`. Forgejo boots
 with the install wizard locked and self-service registration disabled — Quill
 provisions accounts through the admin API.
 
-## Forgejo admin token (needed from PR 4)
+## Forgejo admin token
 
-Once the stack is healthy, create an admin user and token, then set
-`QUILL_FORGEJO_ADMIN_TOKEN` in `deploy/compose/.env`:
+Quill talks to Forgejo entirely through its REST API using a single **admin
+access token**. You can't invent this value — it must be a real token minted by
+Forgejo, or every authenticated call fails with `401 access token does not
+exist`. `FORGEJO_ADMIN_TOKEN` is empty by default, so mint one on first boot.
+
+The token is created in two steps, both run against the **running** Forgejo
+container (start it first with `make up` or `make stack`):
 
 ```bash
-# create an admin user inside the running Forgejo container
-docker compose -f deploy/compose/docker-compose.yml exec -u 1000 forgejo \
-  forgejo admin user create --admin --username quill-admin \
-  --password "change-me" --email admin@quill.local --must-change-password=false
+COMPOSE="docker compose -f deploy/compose/docker-compose.yml"
 
-# then create a token via the API (or the Forgejo UI: Settings → Applications)
-curl -s -u quill-admin:change-me \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"quill","scopes":["all"]}' \
-  http://localhost:3000/api/v1/users/quill-admin/tokens
+# 1. Create the admin user once (idempotent — re-running errors harmlessly).
+#    The password is only used to bootstrap the account; Quill never needs it.
+$COMPOSE exec -u git forgejo forgejo admin user create \
+  --admin --username quill-admin --email admin@quill.local \
+  --password "$(openssl rand -hex 16)" --must-change-password=false
+
+# 2. Mint an access token for that user. --raw prints just the token value.
+$COMPOSE exec -u git forgejo forgejo admin user generate-access-token \
+  --username quill-admin --token-name quill-api --scopes all --raw
 ```
 
-Copy the returned `sha1` token into `QUILL_FORGEJO_ADMIN_TOKEN` and
-`make stack` again to apply.
+Copy the token string that step 2 prints into `FORGEJO_ADMIN_TOKEN`:
+
+- **Host-run dev (`make up`)** — the api runs on your host and reads the repo
+  root `.envrc`. Set it there:
+  ```bash
+  export FORGEJO_ADMIN_TOKEN=<token from step 2>
+  ```
+  Run `direnv allow`, then restart the api (`make up`).
+
+- **Full Docker stack (`make stack`)** — the api runs in a container that reads
+  `deploy/compose/.env`. Set it there instead:
+  ```
+  FORGEJO_ADMIN_TOKEN=<token from step 2>
+  ```
+  Then `make stack` again to restart the api with it.
+
+Verify the token authenticates (expects `200`):
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: token $FORGEJO_ADMIN_TOKEN" \
+  http://localhost:3000/api/v1/user
+```
+
+> `make provision` (via `scripts/provision.sh`) automates the same two steps and
+> writes the token into `deploy/compose/.env` for you. It's handy for the full
+> Docker stack; for host-run dev you still copy the value into `.envrc`.
+
+> The token name (`quill-api`) must be unique — minting a second token with the
+> same name errors. To rotate, mint one with a new name (e.g. `quill-api-2`) or
+> delete the old one first: `... forgejo admin user delete-access-token
+> --username quill-admin --token quill-api`.
 
 ## Production deployment (HTTPS required)
 
@@ -80,7 +116,7 @@ certificate provisioning from Let's Encrypt automatically.
        ports:
          - "80:80"
          - "443:443"
-         - "443:443/udp"   # HTTP/3
+         - "443:443/udp" # HTTP/3
        volumes:
          - ./Caddyfile:/etc/caddy/Caddyfile:ro
          - caddy_data:/data
@@ -158,11 +194,11 @@ adapt it to your deployment before making your instance public.
 
 A minimal hobby instance (single server) needs at least:
 
-| Component        | Minimum     | Comfortable |
-| ---------------- | ----------- | ----------- |
-| RAM              | 512 MB      | 1 GB        |
-| CPU              | 1 vCPU      | 2 vCPUs     |
-| Disk             | 5 GB        | 20 GB+      |
+| Component | Minimum | Comfortable |
+| --------- | ------- | ----------- |
+| RAM       | 512 MB  | 1 GB        |
+| CPU       | 1 vCPU  | 2 vCPUs     |
+| Disk      | 5 GB    | 20 GB+      |
 
 A €5–6/month VPS (1 vCPU, 1 GB RAM) is sufficient for a small team with
 a few repositories and occasional pipeline runs. Forgejo is the heaviest
@@ -218,6 +254,7 @@ docker compose -f deploy/compose/docker-compose.yml up -d
 When a new Quill release ships, apply it as follows:
 
 1. **Pull the new image** (or rebuild from source):
+
    ```bash
    git pull
    make stack   # rebuilds and restarts all containers

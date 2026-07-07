@@ -33,6 +33,29 @@ type CreateRepoInput struct {
 	CloneFrom *CloneSource
 }
 
+// ensureForgejoOrg fetches the project's Forgejo org, creating it on demand if
+// onboarding never provisioned it (e.g. Forgejo was down at project creation).
+// It also re-adds the acting user to the org (best-effort, idempotent) so they
+// can clone/push, mirroring the provisioning done in CreateProject.
+func (s *Service) ensureForgejoOrg(ctx context.Context, name string, project db.Project, actor Actor) (forgejo.Org, error) {
+	org, err := s.forgejo.GetOrCreateOrg(ctx, forgejo.CreateOrgOptions{
+		Name:        name,
+		FullName:    project.Name,
+		Description: strings.TrimSpace(project.Description),
+		Visibility:  "private",
+	})
+	if err != nil {
+		return forgejo.Org{}, err
+	}
+	if actorUser, uerr := s.store.GetUserByID(ctx, actor.UserID); uerr == nil &&
+		actorUser.ForgejoUsername.Valid && actorUser.ForgejoUsername.String != "" {
+		if merr := s.forgejo.AddOrgMember(ctx, org.Handle(), actorUser.ForgejoUsername.String); merr != nil {
+			s.logger.Warn("failed to add member to forgejo org", "org", org.Handle(), "user", actorUser.ForgejoUsername.String, "error", merr)
+		}
+	}
+	return org, nil
+}
+
 // CreateRepo provisions a repository under projectSlug for an authorized actor.
 // With Forgejo enabled it creates the git repository (auto-initialised) in
 // Forgejo first, then records the repo and its Forgejo linkage in Postgres; the
@@ -105,9 +128,9 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 				}
 				uid = u.ID
 			} else {
-				o, oerr := s.forgejo.GetOrg(ctx, owner)
+				o, oerr := s.ensureForgejoOrg(ctx, owner, project, actor)
 				if oerr != nil {
-					return db.Repository{}, fmt.Errorf("forgejo get org for migrate: %w", oerr)
+					return db.Repository{}, fmt.Errorf("forgejo get-or-create org for migrate: %w", oerr)
 				}
 				uid = o.ID
 			}
@@ -130,6 +153,9 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 			if useUserNamespace {
 				fjRepo, err = s.forgejo.CreateUserRepo(ctx, owner, repoOpts)
 			} else {
+				if _, oerr := s.ensureForgejoOrg(ctx, owner, project, actor); oerr != nil {
+					return db.Repository{}, fmt.Errorf("forgejo ensure org: %w", oerr)
+				}
 				fjRepo, err = s.forgejo.CreateOrgRepo(ctx, owner, repoOpts)
 			}
 		}

@@ -1,7 +1,6 @@
-// NextAuth (Auth.js v5) configuration for the Zitadel OIDC provider. Only used
-// when NEXT_PUBLIC_AUTH_PROVIDER=zitadel; under Clerk these exports are never
-// invoked. Zitadel is a public PKCE client (no secret), so the access token from
-// the auth-code exchange is surfaced on the session for the backend bearer.
+// NextAuth (Auth.js v5) configuration for the Zitadel OIDC provider. Zitadel is
+// a public PKCE client (no secret), so the access token from the auth-code
+// exchange is surfaced on the session for the backend bearer.
 import NextAuth from "next-auth";
 import Zitadel from "next-auth/providers/zitadel";
 
@@ -11,9 +10,9 @@ const clientId = process.env.NEXT_PUBLIC_ZITADEL_CLIENT_ID ?? "";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   pages: { signIn: "/sign-in" },
-  // Only configure the provider when an issuer is set (i.e. under Zitadel). Under
-  // Clerk this module is imported but never invoked, so an empty provider list is
-  // fine and avoids constructing the OIDC client with placeholder values.
+  // Only configure the provider when an issuer is set, avoiding construction of
+  // the OIDC client with placeholder values in environments where Zitadel is not
+  // configured (e.g. local-auth development).
   providers: issuer
     ? [
         Zitadel({

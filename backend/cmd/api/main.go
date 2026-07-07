@@ -43,7 +43,6 @@ func run() error {
 	)
 
 	// Apply schema migrations before opening the pool for serving traffic.
-	logger.Info("applying database migrations")
 	if err := store.Migrate(cfg.DatabaseURL); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}

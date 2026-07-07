@@ -21,10 +21,10 @@ const identityKey ctxKey = iota
 // the resulting Identity to the request context. It responds 401 when the
 // token is missing or invalid.
 //
-// When Clerk is configured it is tried first; the local HS256 JWT service is
-// used as a fallback so the server can operate without Clerk during development.
+// When Zitadel is configured it is tried first; the local HS256 JWT service is
+// used as a fallback so the server can operate without Zitadel during development.
 // The DB lookup that re-reads the user on every request (for deactivation and
-// stale-admin detection) is embedded in ClerkVerifier.Verify; for the local
+// stale-admin detection) is embedded in ZitadelVerifier.Verify; for the local
 // path it is performed here.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +44,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			err error
 		)
 
-		// External IdP path (Clerk/Zitadel): verify the RS256 JWT and provision
+		// External IdP path (Zitadel): verify the RS256 JWT and provision
 		// user/tenant on first login.
 		if s.externalAuthEnabled() {
 			id, err = s.verifier.Verify(r.Context(), token)

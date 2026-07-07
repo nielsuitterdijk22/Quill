@@ -22,6 +22,8 @@ coverage.out
 .env
 .env.*
 !.env.example
+.envrc
+!.envrc.example
 
 # Editor / OS
 .DS_Store

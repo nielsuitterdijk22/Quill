@@ -11,6 +11,7 @@ You can filter by actor, event type, resource, date range, or any combination.
 ## What's logged
 
 Every log entry includes:
+
 - **Timestamp** — UTC, millisecond precision
 - **Actor** — the user who performed the action (username + user ID)
 - **IP address** — the IP the request came from
@@ -128,6 +129,7 @@ After the retention period, log entries are permanently deleted. Export regularl
 Audit log entries cannot be edited or deleted — not by org owners, not by Quill staff. The log is append-only.
 
 ## Related
+
 - [Roles & permissions](rbac.md)
 - [Access control model](access-control.md)
 - [Change freeze](../policies/change-freeze.md)

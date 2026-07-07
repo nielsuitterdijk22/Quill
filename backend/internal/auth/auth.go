@@ -16,18 +16,17 @@ import (
 // Provider names. Stored verbatim in auth_identities.provider.
 const (
 	ProviderLocal   = "local"
-	ProviderClerk   = "clerk"
 	ProviderZitadel = "zitadel"
 )
 
 // TokenVerifier verifies an external IdP's bearer token (a JWT), resolving or
-// provisioning the Quill user and tenant. Both ClerkVerifier and ZitadelVerifier
-// implement it so the HTTP layer can hold whichever provider is configured via
-// QUILL_AUTH_PROVIDER without branching on the concrete type.
+// provisioning the Quill user and tenant. ZitadelVerifier implements it so the
+// HTTP layer can hold the configured provider without branching on the concrete
+// type.
 type TokenVerifier interface {
 	// Enabled reports whether the provider is configured.
 	Enabled() bool
-	// Provider returns the auth_identities.provider key ("clerk" | "zitadel").
+	// Provider returns the auth_identities.provider key ("zitadel").
 	Provider() string
 	// Start begins background JWKS refresh for the lifetime of ctx.
 	Start(ctx context.Context)
@@ -67,11 +66,8 @@ var (
 	ErrInvalidInput       = errors.New("invalid input")
 )
 
-// Compile-time assertions that both external verifiers satisfy TokenVerifier.
-var (
-	_ TokenVerifier = (*ClerkVerifier)(nil)
-	_ TokenVerifier = (*ZitadelVerifier)(nil)
-)
+// Compile-time assertion that the external verifier satisfies TokenVerifier.
+var _ TokenVerifier = (*ZitadelVerifier)(nil)
 
 // Provider authenticates Credentials against a backing identity source and maps
 // the result to a Quill Identity. Implementations must be safe for concurrent use.

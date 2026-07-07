@@ -1,11 +1,12 @@
 # Running Quill on self-hosted Zitadel (production)
 
-Quill's auth provider is flag-gated (`QUILL_AUTH_PROVIDER` / `NEXT_PUBLIC_AUTH_PROVIDER`,
-default `clerk`). This guide stands up **Zitadel behind Caddy with TLS** on the
-deploy VM and switches Quill onto it. Everything below is done in
-`/home/quill/quill` (the deploy checkout) and via the project's `.env`.
+Quill authenticates against a self-hosted **Zitadel** IdP. This guide stands up
+**Zitadel behind Caddy with TLS** on the deploy VM and switches Quill onto it.
+Everything below is done in `/home/quill/quill` (the deploy checkout) and via the
+project's `.env`.
 
 The pieces:
+
 - `zitadel` + `zitadel-db` services (compose profile `zitadel`).
 - A Caddy vhost whose host **follows `ZITADEL_EXTERNALDOMAIN`** → `h2c://zitadel:8080`
   (already in the Caddyfile). It can be any host with a DNS record pointing at the
@@ -94,7 +95,7 @@ deploy/compose/zitadel/bootstrap.sh >> .env
 It appends these to `.env`:
 
 ```dotenv
-QUILL_ZITADEL_ISSUER=https://auth.example.com
+ZITADEL_ISSUER=https://auth.example.com
 NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.example.com
 NEXT_PUBLIC_ZITADEL_CLIENT_ID=<generated>
 NEXT_PUBLIC_ZITADEL_PROJECT_ID=<generated>
@@ -104,7 +105,7 @@ Also create a **service-user PAT** with org-management permission in the console
 and add it for the backend (account deletion + future org/member provisioning):
 
 ```dotenv
-QUILL_ZITADEL_MANAGEMENT_TOKEN=<service-user PAT>
+ZITADEL_MANAGEMENT_TOKEN=<service-user PAT>
 ```
 
 ## 5. Flip Quill onto Zitadel
@@ -157,10 +158,10 @@ full `up` (not just `up -d zitadel`) must run it. Bring up the whole profile:
 **`ZITADEL_MASTERKEY` errors.** The master key must be exactly 32 characters
 (`openssl rand -hex 16`). Changing it after init requires a `zitadel-pgdata` wipe.
 
-## Rollback (instant)
+## Falling back to local auth
 
-Set `QUILL_AUTH_PROVIDER=clerk` and `NEXT_PUBLIC_AUTH_PROVIDER=clerk` (or remove
-them) and redeploy. The Clerk path is untouched. Leave Zitadel running or
+Leave `ZITADEL_ISSUER` / `NEXT_PUBLIC_ZITADEL_ISSUER` unset and redeploy:
+Quill falls back to local username/password auth. Stop Zitadel with
 `docker compose -f deploy/compose/docker-compose.yml --profile zitadel down`.
 
 ## Notes

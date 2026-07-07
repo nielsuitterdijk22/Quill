@@ -151,6 +151,31 @@ func (c *Client) GetOrg(ctx context.Context, name string) (Org, error) {
 	return out, err
 }
 
+// GetOrCreateOrg fetches the org named opts.Name, creating it if it does not
+// exist yet. This self-heals onboarding gaps: a project's org is normally
+// provisioned at creation time, but if that failed (e.g. Forgejo was
+// unreachable), the first repo operation that needs the org reconciles it on
+// demand. Safe under a create race — if another caller creates the org between
+// our lookup and create, we re-fetch instead of surfacing the conflict.
+func (c *Client) GetOrCreateOrg(ctx context.Context, opts CreateOrgOptions) (Org, error) {
+	org, err := c.GetOrg(ctx, opts.Name)
+	if err == nil {
+		return org, nil
+	}
+	if !NotFound(err) {
+		return Org{}, err
+	}
+	org, err = c.CreateOrg(ctx, opts)
+	if err == nil {
+		return org, nil
+	}
+	// Lost a create race? Re-fetch before giving up on the create error.
+	if got, gerr := c.GetOrg(ctx, opts.Name); gerr == nil {
+		return got, nil
+	}
+	return Org{}, err
+}
+
 // DeleteOrg removes a Forgejo organization.
 func (c *Client) DeleteOrg(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/orgs/"+url.PathEscape(name), nil, nil)

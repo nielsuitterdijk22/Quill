@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,9 @@ const (
 )
 
 // ZitadelVerifier verifies Zitadel-issued RS256 JWTs against the instance JWKS
-// and provisions Quill users and tenants on first login. It mirrors
-// ClerkVerifier but reads the user profile from the standard OIDC userinfo
-// endpoint and maps Zitadel's org claims to Quill tenants. Implements
-// TokenVerifier.
+// and provisions Quill users and tenants on first login. It reads the user
+// profile from the standard OIDC userinfo endpoint and maps Zitadel's org claims
+// to Quill tenants. Implements TokenVerifier.
 type ZitadelVerifier struct {
 	store     *store.Store
 	forgejo   *forgejo.Client
@@ -117,6 +117,7 @@ func (v *ZitadelVerifier) Verify(ctx context.Context, token string) (Identity, e
 	v.mu.RUnlock()
 	if ks == nil {
 		if err := v.refresh(ctx); err != nil {
+			v.logger.Warn("zitadel verify: JWKS unavailable", "jwksURL", v.jwksURL, "error", err)
 			return Identity{}, ErrInvalidCredentials
 		}
 		v.mu.RLock()
@@ -132,11 +133,21 @@ func (v *ZitadelVerifier) Verify(ctx context.Context, token string) (Identity, e
 		jwt.WithAcceptableSkew(30*time.Second),
 	)
 	if err != nil {
+		// Log the concrete reason: signature mismatch, issuer mismatch, expiry, or
+		// a non-JWT (opaque) token. Include the token's own iss/aud when parseable
+		// without verification so an issuer mismatch is obvious at a glance.
+		v.logger.Warn("zitadel verify: token rejected",
+			"error", err,
+			"expectedIssuer", v.issuer,
+			"tokenIssuer", unverifiedClaim(token, "iss"),
+			"tokenAud", unverifiedClaim(token, "aud"),
+		)
 		return Identity{}, ErrInvalidCredentials
 	}
 
 	sub, ok := tok.Subject()
 	if !ok || sub == "" {
+		v.logger.Warn("zitadel verify: token missing subject")
 		return Identity{}, ErrInvalidCredentials
 	}
 
@@ -145,6 +156,28 @@ func (v *ZitadelVerifier) Verify(ctx context.Context, token string) (Identity, e
 	_ = tok.Get(zitadelOrgDomainClaim, &orgDomain)
 
 	return v.resolveIdentity(ctx, token, sub, orgID, orgDomain)
+}
+
+// unverifiedClaim decodes a JWT WITHOUT verifying its signature and returns the
+// named string claim, or "" if the token isn't a JWT or lacks the claim. For
+// diagnostics only — never trust the result for authorization. "aud" (a []string
+// or string) is rendered best-effort.
+func unverifiedClaim(token, claim string) string {
+	tok, err := jwt.Parse([]byte(token), jwt.WithVerify(false), jwt.WithValidate(false))
+	if err != nil {
+		return "" // not a JWT (e.g. opaque token) — the caller's error already says so.
+	}
+	if claim == "iss" {
+		if iss, ok := tok.Issuer(); ok {
+			return iss
+		}
+		return ""
+	}
+	var v any
+	if err := tok.Get(claim, &v); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 // resolveIdentity looks up or provisions the Quill user and tenant for a Zitadel
@@ -300,7 +333,7 @@ func (v *ZitadelVerifier) createUserWithIdentity(ctx context.Context, userID, us
 
 // resolveTenant maps a Zitadel org to a Quill tenant (one tenant per org). When
 // orgID is empty the seeded default tenant is used so single-user setups work.
-// The org->tenant mapping reuses the external-org column added in migration 000008.
+// The org->tenant mapping uses the tenants.external_org_id column.
 func (v *ZitadelVerifier) resolveTenant(ctx context.Context, orgID, orgDomain string) (uuid.UUID, error) {
 	if orgID == "" {
 		tenant, err := v.store.GetTenantBySlug(ctx, "default")
@@ -313,11 +346,47 @@ func (v *ZitadelVerifier) resolveTenant(ctx context.Context, orgID, orgDomain st
 	if slug == "" {
 		slug = tailOf(orgID, 12)
 	}
-	tenant, err := v.store.GetOrCreateTenantByClerkOrg(ctx, orgID, slug)
+	tenant, err := v.store.GetOrCreateTenantByExternalOrg(ctx, orgID, slug)
 	if err != nil {
 		return uuid.UUID{}, fmt.Errorf("resolve org tenant for %s: %w", orgID, err)
 	}
 	return tenant.ID, nil
+}
+
+var invalidUsernameCharsRe = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// reservedUsernames mirrors the frontend top-level routes so derived usernames
+// never shadow an app page. Kept in sync with platform.reservedSlugs.
+var reservedUsernames = map[string]bool{
+	"new": true, "edit": true, "settings": true, "api": true,
+	"projects": true, "repositories": true, "pulls": true, "pipelines": true,
+	"admin": true, "sign-in": true, "sign-up": true, "login": true, "register": true,
+}
+
+// deriveUsername builds a clean Quill username from the IdP-provided handle,
+// falling back to the email local-part and finally the tail of the subject ID.
+func deriveUsername(handle, email, subject string) string {
+	candidate := handle
+	if candidate == "" && email != "" {
+		if i := strings.IndexByte(email, '@'); i > 0 {
+			candidate = email[:i]
+		}
+	}
+	candidate = invalidUsernameCharsRe.ReplaceAllString(candidate, "-")
+	if len(candidate) < 2 || reservedUsernames[strings.ToLower(candidate)] {
+		candidate = "user-" + tailOf(subject, 8)
+	}
+	if len(candidate) > 39 {
+		candidate = candidate[:39]
+	}
+	return candidate
+}
+
+func tailOf(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }
 
 // slugifyOrgDomain turns a Zitadel primary domain (e.g. "acme.quill.local") into
@@ -364,11 +433,11 @@ func (v *ZitadelVerifier) provisionForgejo(ctx context.Context, id Identity) {
 
 // DeleteUser removes the Zitadel-side user via the Management API so a deleted
 // account's session can't re-provision a fresh Quill user on the next request. A
-// 404 is treated as success. Requires QUILL_ZITADEL_MANAGEMENT_TOKEN; when it is
+// 404 is treated as success. Requires ZITADEL_MANAGEMENT_TOKEN; when it is
 // unset the call is skipped with a warning (the Quill account is already gone).
 func (v *ZitadelVerifier) DeleteUser(ctx context.Context, subject string) error {
 	if v.mgmtToken == "" {
-		return fmt.Errorf("QUILL_ZITADEL_MANAGEMENT_TOKEN not set")
+		return fmt.Errorf("ZITADEL_MANAGEMENT_TOKEN not set")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
