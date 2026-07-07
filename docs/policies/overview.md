@@ -6,7 +6,7 @@ Policies are how you control how code moves through your system. They live at th
 
 A policy targets a branch pattern and defines a list of gates. A gate is a condition that must pass before a merge goes through. All gates must pass. There's no "any one of these" — it's always all of them.
 
-```
+```text
 Policy: protect main
   Branch pattern: main
   Gates:
@@ -56,6 +56,7 @@ Locked policies are shown with a lock icon in the UI. The lock can only be remov
 - **Repo admins** — can set repo policies (within any org- or project-level locks)
 
 ## Related
+
 - [Branch rules](branch-rules.md)
 - [Time windows](time-windows.md)
 - [Change freeze](change-freeze.md)

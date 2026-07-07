@@ -30,6 +30,7 @@ Inside your org, go to **Projects → New project**. Give it a name and a slug. 
 Once created, you can add repos and invite org members to it.
 
 ## Related
+
 - [Organizations](organizations.md)
 - [Policy hierarchy](policy-hierarchy.md)
 - [Create a project](../projects/create.md)

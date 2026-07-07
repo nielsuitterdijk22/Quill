@@ -18,7 +18,7 @@ Quill is the home for two companion tools that surface inside it:
 
 ## Architecture
 
-```
+```text
 ┌────────────┐        ┌───────────────────────────┐
 │  Next.js   │  REST  │  Quill backend (Go)        │
 │  frontend  │ ─────► │  chi · pgx · sqlc          │
@@ -80,7 +80,7 @@ Requirements: Go 1.24+, Node 22+, Docker, and [direnv](https://direnv.net) (load
    for the two commands. Run `direnv allow` again and restart `make up` to pick
    it up.
 
-4. **Register the first user.** Open http://localhost:3001, click **Create one**,
+4. **Register the first user.** Open <http://localhost:3001>, click **Create one**,
    and register — the first account created becomes the admin.
 
 ### Dev stack (hot reload) — recommended
@@ -93,7 +93,7 @@ make down     # stop the containers (Ctrl-C stops the host processes)
 `make up` runs `scripts/dev-up.sh`: it starts Postgres + Forgejo in Docker
 (stateful/slow), waits for both, then runs the API and pipeline dispatcher with
 [air](https://github.com/air-verse/air) and the frontend with `next dev` — all
-hot-reloading. Web is on http://localhost:3001, api on `:8080`, Forgejo on
+hot-reloading. Web is on <http://localhost:3001>, api on `:8080`, Forgejo on
 `:3000`. Set `FORGEJO_ADMIN_TOKEN` (see `deploy/compose/README.md`) so
 repo/PR operations work.
 

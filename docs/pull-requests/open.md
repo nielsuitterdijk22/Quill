@@ -9,6 +9,7 @@ After pushing a branch, Quill shows a banner on the repo page: **"Your branch wa
 Or go to the repo's **Pull requests** tab → **New pull request**. Choose your source branch and the target branch you want to merge into.
 
 Fill in:
+
 - **Title** — one line, present tense. "Add payment retry logic" not "Added payment retry logic."
 - **Description** — what changed and why. Link to an issue or ticket if relevant.
 
@@ -17,6 +18,7 @@ Click **Open pull request**.
 ## From the command line
 
 After pushing your branch:
+
 ```bash
 git push origin feature/my-change
 ```
@@ -43,6 +45,7 @@ To propose changes from a fork back to the original repo, go to the PR creation 
 - Reviewers can comment, request changes, or approve
 
 ## Related
+
 - [Review & comment](review.md)
 - [Merge](merge.md)
 - [Branch rules](../policies/branch-rules.md)

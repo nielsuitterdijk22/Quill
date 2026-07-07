@@ -3,6 +3,7 @@
 An organization is the top-level boundary in Quill. It's your company, team, or project namespace.
 
 When you create an org, you get:
+
 - A shared namespace for all your repos (`quill.so/your-org/repo-name`)
 - A member roster with role-based access
 - Projects for organizing repos and scoping policies
@@ -28,6 +29,7 @@ Owners can promote any member to owner and demote other owners. There must alway
 Go to your avatar menu → **New organization**. Pick a slug — this becomes your namespace and can't be changed later, so choose carefully.
 
 ## Related
+
 - [Projects](projects.md) — how repos and policies are organized inside an org
 - [Roles & permissions](../security/rbac.md) — the full permission model
 - [Invite members](../projects/invite-members.md) — adding people to your org

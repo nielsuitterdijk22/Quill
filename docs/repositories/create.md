@@ -14,7 +14,8 @@ Navigate to your org, then click **New repository**. The repo will live at `quil
 
 **Description** — optional. Shows up in repo listings and search results.
 
-**Visibility**
+**Visibility** — choose who can see the repo:
+
 - *Private* — only you (or org members with access) can see it
 - *Internal* — all members of the org can see and clone it
 - *Public* — anyone can see it, no account required
@@ -30,6 +31,7 @@ You'll land on the empty repo page with copy-paste commands for your first push,
 Org repos are automatically assigned to a project if you created them from within a project context. If you created from the org root, go to repo **Settings → Project** to assign it.
 
 ## Related
+
 - [Push your first commit](../getting-started/first-push.md)
 - [Visibility & access](visibility.md)
 - [Fork a repository](fork.md)

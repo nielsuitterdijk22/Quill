@@ -76,7 +76,7 @@ of the Quill frontend.
 
 2. Create `deploy/compose/Caddyfile`:
 
-   ```
+   ```text
    your-domain.example.com {
        reverse_proxy web:3001
    }
@@ -325,14 +325,18 @@ the socket, or use Docker's `userns-remap` feature to remap container UIDs.
 
 1. Install Podman on the host (`apt install podman` / `dnf install podman`).
 2. Start the Podman system service as a non-root user:
+
    ```bash
    systemctl --user enable --now podman.socket
    ```
+
 3. In `docker-compose.yml`, replace the socket mount on the `dispatch` service:
+
    ```yaml
    volumes:
      - /run/user/1000/podman/podman.sock:/var/run/docker.sock:ro
    ```
+
 4. Set `DOCKER_HOST=unix:///var/run/docker.sock` in the dispatch environment.
 
 Podman's rootless mode means a compromised job cannot escalate to host root.
@@ -384,27 +388,27 @@ git clone https://your-domain.example.com/forgejo/owner/repo.git
 
 ## Troubleshooting
 
-**`make stack` fails to start the api service**
+### `make stack` fails to start the api service
 
 The api service waits for both Postgres and Forgejo to be healthy before
 starting. Check `make logs` for details. If Forgejo takes more than ~2 minutes
 to initialise (e.g. on very slow disk), it may time out; re-run `make stack`.
 
-**The api starts but Forgejo operations fail with "git unavailable"**
+### The api starts but Forgejo operations fail with "git unavailable"
 
 `FORGEJO_ADMIN_TOKEN` is missing or invalid. Run `make provision` and
 then `make stack` again.
 
-**Users can't clone over SSH**
+### Users can't clone over SSH
 
 Ensure port `2222` is open on the host firewall and `FORGEJO__server__SSH_DOMAIN`
 is set to the public hostname. Users should clone with:
 
-```
+```bash
 git clone ssh://git@your-domain.example.com:2222/owner/repo.git
 ```
 
-**Pipelines stay pending forever**
+### Pipelines stay pending forever
 
 The dispatch service requires Docker socket access (`/var/run/docker.sock`).
 Check that the socket exists on the host and that the dispatch container

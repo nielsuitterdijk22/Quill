@@ -34,6 +34,7 @@ See [Policy hierarchy](../concepts/policy-hierarchy.md) for how inheritance work
 Project owners are set by org owners. Project membership doesn't grant any org-level permissions.
 
 ## Related
+
 - [Invite members](invite-members.md)
 - [Manage repos](manage-repos.md)
 - [Policy hierarchy](../concepts/policy-hierarchy.md)

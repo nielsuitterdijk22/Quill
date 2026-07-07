@@ -1,0 +1,9 @@
+{
+  // Docs prose and tables are not hard-wrapped at 80 columns; enforce
+  // structure (blank lines, code-fence languages, etc.), not line width.
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD060": false
+  }
+}

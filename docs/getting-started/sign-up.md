@@ -13,6 +13,7 @@ Once you're in, you land on your personal dashboard.
 Click **New repository** from the dashboard or from the **+** menu in the top nav.
 
 Fill in:
+
 - **Name** — becomes the URL slug. Use lowercase letters, numbers, hyphens, and underscores. Keep it short.
 - **Description** — optional, but useful.
 - **Visibility** — Private (just you), Internal (all org members, once you're in an org), or Public (anyone).

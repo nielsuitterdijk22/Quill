@@ -34,6 +34,7 @@ Default is private. You can change visibility in the repo's Settings tab.
 Every repo has a default branch (usually `main`). This is the branch PRs target by default and the one that shows up when you visit the repo. You can change it in Settings.
 
 ## Related
+
 - [Create a repository](../repositories/create.md)
 - [Clone & push](../repositories/clone-and-push.md)
 - [Visibility & access](../repositories/visibility.md)

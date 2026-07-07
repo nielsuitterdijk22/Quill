@@ -71,6 +71,7 @@ Use an `external_check` gate to require a pass signal from your ITSM tool. Witho
 Yes — the audit log records the full policy configuration at the time of each merge. The `pr.merged` event captures which gates passed and their verdicts.
 
 ## Related
+
 - [Roles & permissions](rbac.md)
 - [Audit log](audit-log.md)
 - [Policies overview](../policies/overview.md)

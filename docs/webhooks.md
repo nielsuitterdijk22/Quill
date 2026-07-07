@@ -12,14 +12,14 @@ Go to **repo Settings → Webhooks → Add webhook** (for repo-scoped events) or
 
 ## Events
 
-| Event | When it fires |
-|-------|--------------|
-| `push` | Commits pushed to any branch |
-| `pull_request` | PR opened, closed, merged, or synchronized |
-| `pull_request_review` | Review submitted |
-| `pipeline_run` | Pipeline run started, completed, or failed |
-| `branch` | Branch created or deleted |
-| `member` | Org or project membership changed |
+| Event                 | When it fires                              |
+| --------------------- | ------------------------------------------ |
+| `push`                | Commits pushed to any branch               |
+| `pull_request`        | PR opened, closed, merged, or synchronized |
+| `pull_request_review` | Review submitted                           |
+| `pipeline_run`        | Pipeline run started, completed, or failed |
+| `branch`              | Branch created or deleted                  |
+| `member`              | Org or project membership changed          |
 
 ## Payload
 
@@ -70,13 +70,15 @@ The signature header is `X-Quill-Signature`.
 Quill considers a delivery successful if your endpoint responds with any 2xx status within 10 seconds.
 
 On failure (non-2xx, timeout, connection error), Quill retries with exponential backoff:
+
 - 1 min, 5 min, 30 min, 2 hours, 8 hours
 
-After 5 failed attempts, the delivery is marked failed. You can manually redeliver any payload from the webhook's **Recent deliveries** tab.
+After 5 failed attempts, the delivery is marked failed. You can manually redeliver any payload from the webhook's **Recent deliveries** tab. 5 failed attempts, the delivery is marked failed. You can manually redeliver any payload from the webhook's **Recent deliveries** tab.
 
 ## Recent deliveries
 
 Go to **Settings → Webhooks → your webhook → Recent deliveries** to see all recent payloads, their response status and body, and to manually redeliver any of them.
 
 ## Related
+
 - [External checks](policies/external-checks.md)

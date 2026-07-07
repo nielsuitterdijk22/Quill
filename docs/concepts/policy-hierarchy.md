@@ -4,7 +4,7 @@ Policies in Quill apply at three levels: **org**, **project**, and **repo**. The
 
 ## The three levels
 
-```
+```text
 Org
  └── Project
       └── Repo
@@ -40,6 +40,7 @@ Policies are composable. A branch can have multiple gates — all must pass befo
 - **Repo policies** — repo Settings → Branch policies
 
 ## Related
+
 - [Branch rules](../policies/branch-rules.md)
 - [Time windows](../policies/time-windows.md)
 - [Change freeze](../policies/change-freeze.md)

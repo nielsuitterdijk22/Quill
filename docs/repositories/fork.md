@@ -7,6 +7,7 @@ Forking creates a copy of a repo under a different namespace. The fork is indepe
 Go to the repo you want to fork and click **Fork** in the top right.
 
 Choose the destination:
+
 - **Your personal namespace** — `quill.so/your-username/repo-name`
 - **An org you belong to** — `quill.so/your-org/repo-name`, assigned to a project you choose
 

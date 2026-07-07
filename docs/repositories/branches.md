@@ -7,6 +7,7 @@ Go to your repo and click the **Branches** tab. You'll see all branches, their l
 ## Create a branch
 
 Locally:
+
 ```bash
 git checkout -b feature/my-feature
 git push -u origin feature/my-feature
@@ -33,6 +34,7 @@ After a PR merges, Quill can automatically delete the source branch. Turn this o
 To delete manually from the Branches tab, click the trash icon next to any branch. You can't delete the default branch.
 
 Locally:
+
 ```bash
 git branch -d feature/my-feature          # delete if merged
 git push origin --delete feature/my-feature  # delete from remote

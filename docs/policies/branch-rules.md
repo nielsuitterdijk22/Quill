@@ -7,6 +7,7 @@ Branch rules are the core of Quill's policy system. They define what must be tru
 Go to **Settings → Branch policies** (repo, project, or org level). Click **New policy**. Enter a branch pattern and configure the gates you want.
 
 Branch patterns use glob syntax:
+
 - `main` — matches exactly `main`
 - `release/*` — matches any branch starting with `release/`
 - `**` — matches all branches
@@ -17,7 +18,7 @@ Branch patterns use glob syntax:
 
 Require a minimum number of approvals before merging.
 
-```
+```text
 Required approvals: 2
 ```
 
@@ -25,11 +26,11 @@ Approvals must come from project members (or collaborators, for personal repos).
 
 **Dismiss stale approvals** — if enabled, approvals are automatically dismissed when new commits are pushed to the PR. This prevents merging on an old approval after the code has changed. Recommended for any branch you care about.
 
-### Branch rules
+### Source branch restrictions
 
 Restrict which branches can be merged into this branch.
 
-```
+```text
 Allowed source branches: feature/*, bugfix/*
 ```
 
@@ -39,7 +40,7 @@ This blocks direct merges from `main` into `main` (preventing accidental self-me
 
 Block direct pushes to the branch — all changes must go through a PR. Prevents commits being pushed directly to `main` without review.
 
-```
+```text
 Require pull request: true
 ```
 
@@ -47,7 +48,7 @@ Require pull request: true
 
 Prevent `git push --force` to the branch. Protects commit history from being rewritten.
 
-```
+```text
 Block force push: true
 ```
 
@@ -57,7 +58,7 @@ Recommended for any shared branch. Even with force push allowed, `--force-with-l
 
 Require specific pipeline jobs to pass before merging. Reference them as `{workflow name} / {job name}`:
 
-```
+```text
 Required status checks:
   - CI / test
   - CI / lint
@@ -69,7 +70,7 @@ Required status checks:
 
 A reasonable starting policy for most teams:
 
-```
+```text
 Branch: main
 Gates:
   - Require pull request: true
@@ -83,7 +84,7 @@ Gates:
 
 For release branches with a higher bar:
 
-```
+```text
 Branch: release/*
 Gates:
   - Require pull request: true
@@ -96,6 +97,7 @@ Gates:
 ```
 
 ## Related
+
 - [Time windows](time-windows.md)
 - [Change freeze](change-freeze.md)
 - [External checks](external-checks.md)
