@@ -186,16 +186,17 @@ type Tenant struct {
 }
 
 type User struct {
-	ID              uuid.UUID   `json:"id"`
-	Username        string      `json:"username"`
-	Email           string      `json:"email"`
-	DisplayName     string      `json:"displayName"`
-	IsAdmin         bool        `json:"isAdmin"`
-	IsActive        bool        `json:"isActive"`
-	ForgejoUserID   pgtype.Int8 `json:"forgejoUserId"`
-	ForgejoUsername pgtype.Text `json:"forgejoUsername"`
-	CreatedAt       time.Time   `json:"createdAt"`
-	UpdatedAt       time.Time   `json:"updatedAt"`
+	ID              uuid.UUID     `json:"id"`
+	Username        string        `json:"username"`
+	Email           string        `json:"email"`
+	DisplayName     string        `json:"displayName"`
+	IsAdmin         bool          `json:"isAdmin"`
+	IsActive        bool          `json:"isActive"`
+	ForgejoUserID   pgtype.Int8   `json:"forgejoUserId"`
+	ForgejoUsername pgtype.Text   `json:"forgejoUsername"`
+	CreatedAt       time.Time     `json:"createdAt"`
+	UpdatedAt       time.Time     `json:"updatedAt"`
+	TenantID        uuid.NullUUID `json:"tenantId"`
 }
 
 type WorkItemRefOutbox struct {
