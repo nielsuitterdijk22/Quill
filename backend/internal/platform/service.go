@@ -67,9 +67,10 @@ type Service struct {
 type OrgProvisioner interface {
 	// Enabled reports whether external provisioning is configured.
 	Enabled() bool
-	// CreateOrg creates the backing IdP organization and returns its id.
-	CreateOrg(ctx context.Context, name string) (orgID string, err error)
-	// InviteUser creates a member in orgID and triggers the IdP's invite email.
+	// InviteUser creates the user in the IdP and triggers its invite/init email.
+	// orgID scopes the call to a Zitadel org; empty targets the management token's
+	// home (default) org. Quill orgs are not mirrored into Zitadel orgs, so invites
+	// pass "" — the org-scoped form stays for SCIM-era per-org provisioning.
 	InviteUser(ctx context.Context, orgID, email, displayName string) error
 }
 

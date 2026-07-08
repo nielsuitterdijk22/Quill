@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -100,22 +99,12 @@ func (s *Service) CreateOrganization(ctx context.Context, actor Actor, slug, nam
 		return db.Tenant{}, db.Project{}, err
 	}
 
-	// Best-effort: provision the backing Zitadel org so members can be invited by
-	// email and, later, sign in against it (org claim -> this tenant). A failure
-	// here never fails org creation — the org works Quill-side and invites fall
-	// back to shareable links.
-	if s.orgProvisionerEnabled() {
-		if orgID, perr := s.orgs.CreateOrg(ctx, name); perr != nil {
-			s.logger.Warn("could not provision external org", "slug", slug, "error", perr)
-		} else if serr := s.store.SetTenantExternalOrg(ctx, db.SetTenantExternalOrgParams{
-			ID:            tenant.ID,
-			ExternalOrgID: pgtype.Text{String: orgID, Valid: true},
-		}); serr != nil {
-			s.logger.Error("could not link external org to tenant", "slug", slug, "orgId", orgID, "error", serr)
-		} else {
-			tenant.ExternalOrgID = pgtype.Text{String: orgID, Valid: true}
-		}
-	}
+	// Organizations are a Quill-side concept: membership and roles live in
+	// tenant_members, not in a mirror Zitadel org. We deliberately do not
+	// provision a backing Zitadel org per Quill org — a Zitadel user has a single
+	// home org and an instance-unique loginname, so mirroring every Quill org into
+	// its own Zitadel org can't represent multi-org membership and makes invites
+	// collide. Per-org IdP provisioning becomes relevant only for SCIM later.
 	return tenant, project, nil
 }
 
@@ -319,10 +308,16 @@ func (s *Service) CreateInvite(ctx context.Context, actor Actor, orgSlug, email,
 		return InviteResult{}, fmt.Errorf("create invite: %w", err)
 	}
 
+	// When Zitadel is configured, best-effort create the invitee in the default
+	// Zitadel org (empty orgID = the management token's home org) so a brand-new
+	// person gets an IdP account and its initialization email. An existing user
+	// already has an account, so Zitadel returns "already exists"; we log and fall
+	// back to the shareable accept link. Either way the Quill membership is granted
+	// on accept, independent of Zitadel.
 	emailed := false
-	if s.orgProvisionerEnabled() && tenant.ExternalOrgID.Valid && tenant.ExternalOrgID.String != "" {
-		if ierr := s.orgs.InviteUser(ctx, tenant.ExternalOrgID.String, email, ""); ierr != nil {
-			s.logger.Warn("could not send invite via external IdP", "org", orgSlug, "email", email, "error", ierr)
+	if s.orgProvisionerEnabled() {
+		if ierr := s.orgs.InviteUser(ctx, "", email, ""); ierr != nil {
+			s.logger.Info("invite not sent via IdP; sharing accept link instead", "org", orgSlug, "email", email, "reason", ierr)
 		} else {
 			emailed = true
 		}
