@@ -954,6 +954,43 @@ select:focus {
   color: var(--muted);
 }
 
+/* ---- organization members -------------------------------------------------- */
+.org-invite-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.org-invite-form input[type="email"] {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.org-invite-link {
+  margin-bottom: 12px;
+}
+.org-invite-link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.org-invite-link-row code {
+  flex: 1 1 auto;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.settings-subtitle {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 /* ---- sidebar repo context -------------------------------------------------- */
 .repo-ctx {
   margin: 10px 2px 4px;

@@ -192,6 +192,20 @@ type TenantMember struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type OrgInvite struct {
+	ID             uuid.UUID          `json:"id"`
+	TenantID       uuid.UUID          `json:"tenantId"`
+	Email          string             `json:"email"`
+	Role           string             `json:"role"`
+	TokenHash      string             `json:"tokenHash"`
+	Status         string             `json:"status"`
+	InvitedBy      uuid.NullUUID      `json:"invitedBy"`
+	AcceptedUserID uuid.NullUUID      `json:"acceptedUserId"`
+	ExpiresAt      time.Time          `json:"expiresAt"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	AcceptedAt     pgtype.Timestamptz `json:"acceptedAt"`
+}
+
 type User struct {
 	ID              uuid.UUID     `json:"id"`
 	Username        string        `json:"username"`

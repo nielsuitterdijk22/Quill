@@ -54,6 +54,23 @@ type Service struct {
 	// development cipher; production wiring overrides it via WithCipher with the
 	// key from QUILL_SECRET_ENCRYPTION_KEY.
 	cipher *secretbox.Cipher
+	// orgs provisions the external-IdP side of organizations (Zitadel): creating
+	// the backing org and emailing invites through the IdP's mail service. Nil in
+	// local/dev, where orgs are Quill-only and invites use shareable links.
+	orgs OrgProvisioner
+}
+
+// OrgProvisioner abstracts the external-IdP operations Quill drives when managing
+// organizations (satisfied by internal/zitadel.Client). It is optional: when nil
+// or disabled, orgs stay Quill-only and member invites fall back to a shareable
+// accept link instead of an IdP-sent email.
+type OrgProvisioner interface {
+	// Enabled reports whether external provisioning is configured.
+	Enabled() bool
+	// CreateOrg creates the backing IdP organization and returns its id.
+	CreateOrg(ctx context.Context, name string) (orgID string, err error)
+	// InviteUser creates a member in orgID and triggers the IdP's invite email.
+	InviteUser(ctx context.Context, orgID, email, displayName string) error
 }
 
 // NewService wires a platform Service. logger may be nil. The CI runner defaults
@@ -93,6 +110,18 @@ func (s *Service) WithCipher(c *secretbox.Cipher) *Service {
 func (s *Service) WithEvaluator(e policy.Evaluator) *Service {
 	s.evaluator = e
 	return s
+}
+
+// WithOrgProvisioner installs the external-IdP org provisioner (Zitadel) and
+// returns the service for chaining. Absent it, orgs are Quill-only.
+func (s *Service) WithOrgProvisioner(p OrgProvisioner) *Service {
+	s.orgs = p
+	return s
+}
+
+// orgProvisionerEnabled reports whether external org provisioning is active.
+func (s *Service) orgProvisionerEnabled() bool {
+	return s.orgs != nil && s.orgs.Enabled()
 }
 
 // forgejoEnabled reports whether git-side provisioning is active.

@@ -60,6 +60,80 @@ func TestCreateOrganization(t *testing.T) {
 	}
 }
 
+func TestOrgInvitesAndMembers(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+	founder := Actor{UserID: scopeMakeUser(t, st, "founder")}
+	if _, _, err := svc.CreateOrganization(ctx, founder, "acme", "Acme Inc"); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+
+	// The last admin cannot be demoted.
+	if err := svc.UpdateOrgMemberRole(ctx, founder, "acme", founder.UserID, "member"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("demote last admin: want ErrInvalidInput, got %v", err)
+	}
+
+	// Admin invites a member; the raw token builds the accept link.
+	res, err := svc.CreateInvite(ctx, founder, "acme", "jane@acme.com", "member")
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	if res.Token == "" || res.Invite.Email != "jane@acme.com" || res.Invite.Role != "member" {
+		t.Fatalf("invite result: %+v", res)
+	}
+
+	// A second invite to the same email revokes the first, leaving one pending.
+	res2, err := svc.CreateInvite(ctx, founder, "acme", "jane@acme.com", "admin")
+	if err != nil {
+		t.Fatalf("re-invite: %v", err)
+	}
+	pending, err := svc.ListInvites(ctx, founder, "acme")
+	if err != nil {
+		t.Fatalf("list invites: %v", err)
+	}
+	if len(pending) != 1 || pending[0].Role != "admin" {
+		t.Fatalf("want one pending admin invite, got %+v", pending)
+	}
+
+	// The stale first token no longer accepts; the current one does.
+	jane := Actor{UserID: scopeMakeUser(t, st, "jane")}
+	if _, err := svc.AcceptInvite(ctx, jane, res.Token); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("stale token accept: want ErrInvalidInput, got %v", err)
+	}
+	slug, err := svc.AcceptInvite(ctx, jane, res2.Token)
+	if err != nil {
+		t.Fatalf("accept invite: %v", err)
+	}
+	if slug != "acme" {
+		t.Fatalf("accept returned slug %q", slug)
+	}
+
+	// Jane is now an admin member; the roster shows both.
+	members, err := svc.ListOrgMembers(ctx, founder, "acme")
+	if err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("want 2 members, got %+v", members)
+	}
+
+	// A plain member cannot invite. Demote jane, then she is forbidden.
+	if err := svc.UpdateOrgMemberRole(ctx, founder, "acme", jane.UserID, "member"); err != nil {
+		t.Fatalf("demote jane: %v", err)
+	}
+	if _, err := svc.CreateInvite(ctx, jane, "acme", "x@acme.com", "member"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("member invite: want ErrForbidden, got %v", err)
+	}
+
+	// Removing a plain member works; removing the last admin (founder) does not.
+	if err := svc.RemoveOrgMember(ctx, founder, "acme", jane.UserID); err != nil {
+		t.Fatalf("remove member: %v", err)
+	}
+	if err := svc.RemoveOrgMember(ctx, founder, "acme", founder.UserID); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("remove last admin: want ErrInvalidInput, got %v", err)
+	}
+}
+
 func TestOrgAdminManagesTenantPolicies(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()

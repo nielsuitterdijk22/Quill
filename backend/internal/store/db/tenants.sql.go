@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createTenant = `-- name: CreateTenant :one
@@ -66,6 +67,20 @@ DELETE FROM tenants WHERE id = $1
 
 func (q *Queries) DeleteTenant(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTenant, id)
+	return err
+}
+
+const setTenantExternalOrg = `-- name: SetTenantExternalOrg :exec
+UPDATE tenants SET external_org_id = $2 WHERE id = $1
+`
+
+type SetTenantExternalOrgParams struct {
+	ID            uuid.UUID   `json:"id"`
+	ExternalOrgID pgtype.Text `json:"externalOrgId"`
+}
+
+func (q *Queries) SetTenantExternalOrg(ctx context.Context, arg SetTenantExternalOrgParams) error {
+	_, err := q.db.Exec(ctx, setTenantExternalOrg, arg.ID, arg.ExternalOrgID)
 	return err
 }
 

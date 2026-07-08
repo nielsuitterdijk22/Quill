@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -48,4 +49,76 @@ func (q *Queries) GetTenantMember(ctx context.Context, arg GetTenantMemberParams
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listTenantMembers = `-- name: ListTenantMembers :many
+SELECT u.id, u.username, u.email, u.display_name, u.is_admin,
+       m.role AS member_role, m.created_at AS member_since
+FROM tenant_members m
+JOIN users u ON u.id = m.user_id
+WHERE m.tenant_id = $1
+ORDER BY u.username
+`
+
+type ListTenantMembersRow struct {
+	ID          uuid.UUID `json:"id"`
+	Username    string    `json:"username"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"displayName"`
+	IsAdmin     bool      `json:"isAdmin"`
+	MemberRole  string    `json:"memberRole"`
+	MemberSince time.Time `json:"memberSince"`
+}
+
+func (q *Queries) ListTenantMembers(ctx context.Context, tenantID uuid.UUID) ([]ListTenantMembersRow, error) {
+	rows, err := q.db.Query(ctx, listTenantMembers, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTenantMembersRow{}
+	for rows.Next() {
+		var i ListTenantMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.DisplayName,
+			&i.IsAdmin,
+			&i.MemberRole,
+			&i.MemberSince,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeTenantMember = `-- name: RemoveTenantMember :exec
+DELETE FROM tenant_members WHERE tenant_id = $1 AND user_id = $2
+`
+
+type RemoveTenantMemberParams struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	UserID   uuid.UUID `json:"userId"`
+}
+
+func (q *Queries) RemoveTenantMember(ctx context.Context, arg RemoveTenantMemberParams) error {
+	_, err := q.db.Exec(ctx, removeTenantMember, arg.TenantID, arg.UserID)
+	return err
+}
+
+const countTenantAdmins = `-- name: CountTenantAdmins :one
+SELECT count(*) FROM tenant_members WHERE tenant_id = $1 AND role = 'admin'
+`
+
+func (q *Queries) CountTenantAdmins(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTenantAdmins, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }

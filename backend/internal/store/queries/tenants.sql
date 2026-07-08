@@ -17,6 +17,9 @@ RETURNING id, slug, name, external_org_id, created_at, updated_at;
 -- name: DeleteTenant :exec
 DELETE FROM tenants WHERE id = $1;
 
+-- name: SetTenantExternalOrg :exec
+UPDATE tenants SET external_org_id = $2 WHERE id = $1;
+
 -- name: ListOrgTenantsForUser :many
 SELECT t.id, t.slug, t.name, m.role AS member_role
 FROM tenant_members m

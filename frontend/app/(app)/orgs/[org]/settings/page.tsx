@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  getOrgInvites,
+  getOrgMembers,
   getTenantEnvironmentPolicies,
   getTenantPolicies,
   listOrgs,
 } from "../../../../lib/api";
 import { getToken } from "../../../../lib/session";
+import { OrgMembers } from "../../../../components/organization/OrgMembers";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
 import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
 
@@ -28,12 +31,17 @@ export default async function OrgSettingsPage({
   if (!org) notFound();
   const canEdit = org.role === "admin";
 
-  const [branchRes, envRes] = await Promise.all([
+  const [branchRes, envRes, membersRes, invitesRes] = await Promise.all([
     getTenantPolicies(token, params.org),
     getTenantEnvironmentPolicies(token, params.org),
+    getOrgMembers(token, params.org),
+    // Invites are admin-only; a plain member's 403 degrades to an empty list.
+    canEdit ? getOrgInvites(token, params.org) : Promise.resolve({ ok: false as const }),
   ]);
   const branchPolicies = branchRes.ok ? branchRes.data.policies : [];
   const envPolicies = envRes.ok ? envRes.data.policies : [];
+  const members = membersRes.ok ? membersRes.data.members : [];
+  const invites = invitesRes.ok ? invitesRes.data.invites : [];
 
   return (
     <>
@@ -52,6 +60,25 @@ export default async function OrgSettingsPage({
           settings.
         </div>
       )}
+
+      <section className="settings-section settings-card">
+        <div className="settings-head">
+          <h2 className="settings-title">Members</h2>
+          <p className="subtle">
+            People with access to this organization. Admins manage settings,
+            members, and org-wide policies.
+            {canEdit
+              ? " Invite by email — the invitee gets a link (and an email when SSO is configured)."
+              : ""}
+          </p>
+        </div>
+        <OrgMembers
+          org={org.slug}
+          canEdit={canEdit}
+          members={members}
+          invites={invites}
+        />
+      </section>
 
       <section className="settings-section settings-card">
         <div className="settings-head">
