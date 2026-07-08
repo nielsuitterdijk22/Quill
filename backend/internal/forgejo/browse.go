@@ -63,6 +63,17 @@ type Commit struct {
 	Committer *User         `json:"committer"`
 }
 
+// EntryCommit is the last commit that touched a directory entry. It is populated
+// by Quill via a per-path commit lookup and is not part of the Forgejo contents
+// payload, so it carries no JSON tags for unmarshaling.
+type EntryCommit struct {
+	SHA         string
+	Message     string
+	AuthorName  string
+	AuthorLogin string
+	Date        time.Time
+}
+
 // ContentEntry is a single file or directory in a repository tree. For a file
 // fetched directly, Encoding is "base64" and Content holds the encoded bytes;
 // directory listings leave Content nil.
@@ -75,6 +86,11 @@ type ContentEntry struct {
 	Encoding    *string `json:"encoding"`
 	Content     *string `json:"content"`
 	DownloadURL *string `json:"download_url"`
+
+	// LastCommit is the most recent commit touching this entry. The Forgejo
+	// contents endpoint does not report it, so Quill fills it in for directory
+	// listings (see platform.GetContents); it is nil when unknown.
+	LastCommit *EntryCommit `json:"-"`
 }
 
 // Contents is a discriminated result from the contents endpoint: a directory

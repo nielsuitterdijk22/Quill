@@ -43,12 +43,22 @@ type commitResponse struct {
 	Date        time.Time `json:"date"`
 }
 
+// entryCommitResponse is the last commit that touched a directory entry.
+type entryCommitResponse struct {
+	SHA         string    `json:"sha"`
+	Message     string    `json:"message"`
+	AuthorName  string    `json:"authorName"`
+	AuthorLogin string    `json:"authorLogin,omitempty"`
+	Date        time.Time `json:"date"`
+}
+
 // contentEntryResponse is one entry in a directory listing.
 type contentEntryResponse struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	Type string `json:"type"`
-	Size int64  `json:"size"`
+	Name       string               `json:"name"`
+	Path       string               `json:"path"`
+	Type       string               `json:"type"`
+	Size       int64                `json:"size"`
+	LastCommit *entryCommitResponse `json:"lastCommit,omitempty"`
 }
 
 // contentFileResponse is a single file's metadata plus its decoded text content
@@ -395,12 +405,22 @@ func (s *Server) handleRenderMarkup(w http.ResponseWriter, r *http.Request) {
 func newContentEntries(entries []forgejo.ContentEntry) []contentEntryResponse {
 	out := make([]contentEntryResponse, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, contentEntryResponse{
+		entry := contentEntryResponse{
 			Name: e.Name,
 			Path: e.Path,
 			Type: e.Type,
 			Size: e.Size,
-		})
+		}
+		if lc := e.LastCommit; lc != nil {
+			entry.LastCommit = &entryCommitResponse{
+				SHA:         lc.SHA,
+				Message:     lc.Message,
+				AuthorName:  lc.AuthorName,
+				AuthorLogin: lc.AuthorLogin,
+				Date:        lc.Date,
+			}
+		}
+		out = append(out, entry)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		di, dj := out[i].Type == "dir", out[j].Type == "dir"

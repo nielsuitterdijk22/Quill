@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 
@@ -84,7 +85,50 @@ func (s *Service) GetContents(ctx context.Context, actor Actor, projectSlug, rep
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
+	if contents.IsDir {
+		s.attachLastCommits(ctx, owner, name, ref, contents.Entries)
+	}
 	return repo, contents, nil
+}
+
+// lastCommitWorkers bounds how many per-entry commit lookups run at once so a
+// large directory does not fan out into an unbounded burst of Forgejo requests.
+const lastCommitWorkers = 8
+
+// attachLastCommits fills in the LastCommit of each directory entry by fetching
+// the most recent commit touching its path. Lookups run concurrently with a
+// bounded worker pool. It is best-effort: an entry whose lookup fails simply
+// keeps a nil LastCommit rather than failing the whole listing.
+func (s *Service) attachLastCommits(ctx context.Context, owner, name, ref string, entries []forgejo.ContentEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	sem := make(chan struct{}, lastCommitWorkers)
+	var wg sync.WaitGroup
+	for i := range entries {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			commits, err := s.forgejo.ListCommits(ctx, owner, name, ref, entries[i].Path, 1)
+			if err != nil || len(commits) == 0 {
+				return
+			}
+			c := commits[0]
+			ec := &forgejo.EntryCommit{
+				SHA:        c.SHA,
+				Message:    c.Commit.Message,
+				AuthorName: c.Commit.Author.Name,
+				Date:       c.Commit.Author.Date,
+			}
+			if c.Author != nil {
+				ec.AuthorLogin = c.Author.Login
+			}
+			entries[i].LastCommit = ec
+		}(i)
+	}
+	wg.Wait()
 }
 
 // RenderMarkdown renders markdown text to sanitized HTML in the context of a
