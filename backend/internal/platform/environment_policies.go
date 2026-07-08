@@ -116,6 +116,11 @@ func (s *Service) SetEnvironmentPolicy(ctx context.Context, actor Actor, project
 	if err != nil {
 		return EnvironmentPolicyView{}, fmt.Errorf("lookup repo: %w", err)
 	}
+	// A repo shares its project's environments, so a plain (non-glob) selector
+	// must name one that actually exists.
+	if err := s.validateEnvSelector(ctx, repo.ProjectID, in.Selector, in.RequirePreviousEnvironment); err != nil {
+		return EnvironmentPolicyView{}, err
+	}
 	// A repo is the narrowest scope, so locking is meaningless here.
 	in.Locked = false
 	return s.setEnvironmentPolicyAt(ctx, policyScope{policy.ScopeRepo, repo.ID}, in)
@@ -178,6 +183,10 @@ func (s *Service) SetProjectEnvironmentPolicy(ctx context.Context, actor Actor, 
 	if err := s.authorizeProjectAdmin(ctx, actor, project.ID); err != nil {
 		return EnvironmentPolicyView{}, err
 	}
+	// A plain (non-glob) selector must name an environment defined on this project.
+	if err := s.validateEnvSelector(ctx, project.ID, in.Selector, in.RequirePreviousEnvironment); err != nil {
+		return EnvironmentPolicyView{}, err
+	}
 	return s.setEnvironmentPolicyAt(ctx, policyScope{policy.ScopeProject, project.ID}, in)
 }
 
@@ -204,7 +213,7 @@ func (s *Service) ListTenantEnvironmentPolicies(ctx context.Context, actor Actor
 	if err != nil {
 		return db.Tenant{}, EnvironmentPolicySet{}, err
 	}
-	if err := s.authorizeTenantMember(actor, tenant.ID); err != nil {
+	if err := s.authorizeTenantMember(ctx, actor, tenant.ID); err != nil {
 		return db.Tenant{}, EnvironmentPolicySet{}, err
 	}
 	own, err := s.listEnvironmentPoliciesAt(ctx, policyScope{policy.ScopeTenant, tenant.ID})
@@ -215,26 +224,26 @@ func (s *Service) ListTenantEnvironmentPolicies(ctx context.Context, actor Actor
 }
 
 // SetTenantEnvironmentPolicy creates or updates a tenant-scoped environment
-// policy. Platform admins only.
+// policy. Platform admins and org admins of the tenant.
 func (s *Service) SetTenantEnvironmentPolicy(ctx context.Context, actor Actor, tenantSlug string, in EnvironmentPolicyInput) (EnvironmentPolicyView, error) {
-	if err := s.authorizePlatformAdmin(actor); err != nil {
-		return EnvironmentPolicyView{}, err
-	}
 	tenant, err := s.getTenant(ctx, tenantSlug)
 	if err != nil {
+		return EnvironmentPolicyView{}, err
+	}
+	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return EnvironmentPolicyView{}, err
 	}
 	return s.setEnvironmentPolicyAt(ctx, policyScope{policy.ScopeTenant, tenant.ID}, in)
 }
 
 // DeleteTenantEnvironmentPolicy removes a tenant-scoped environment policy.
-// Platform admins only.
+// Platform admins and org admins of the tenant.
 func (s *Service) DeleteTenantEnvironmentPolicy(ctx context.Context, actor Actor, tenantSlug, selector string) error {
-	if err := s.authorizePlatformAdmin(actor); err != nil {
-		return err
-	}
 	tenant, err := s.getTenant(ctx, tenantSlug)
 	if err != nil {
+		return err
+	}
+	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return err
 	}
 	return s.deleteEnvironmentPolicyAt(ctx, policyScope{policy.ScopeTenant, tenant.ID}, strings.TrimSpace(selector))
@@ -378,6 +387,50 @@ func environmentPolicyView(row db.Policy) (EnvironmentPolicyView, error) {
 		Locked:    row.Locked,
 		UpdatedAt: row.UpdatedAt,
 	}, nil
+}
+
+// isGlob reports whether s uses glob metacharacters. A glob selector matches
+// environments by pattern (e.g. "prod-*"), so it is not required to name a
+// currently-defined environment; a plain selector must.
+func isGlob(s string) bool {
+	return strings.ContainsAny(s, "*?[")
+}
+
+// validateEnvSelector couples an environment policy to the environments defined
+// on a project. A plain (non-glob) selector, and a non-empty
+// RequirePreviousEnvironment, must each name an environment that exists on the
+// project; glob selectors are matched at deploy time and skip the check. It is
+// only meaningful at project and repo scope — tenant scope owns no environments
+// and keeps free-text selectors (callers there do not invoke this).
+func (s *Service) validateEnvSelector(ctx context.Context, projectID uuid.UUID, selector, prev string) error {
+	selector = strings.TrimSpace(selector)
+	prev = strings.TrimSpace(prev)
+	if selector == "" || (isGlob(selector) && prev == "") {
+		// Empty selectors are rejected later by setEnvironmentPolicyAt; a glob
+		// selector with no previous-environment requirement needs no lookup.
+		return nil
+	}
+
+	envs, err := s.store.ListEnvironmentsByProject(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("list environments: %w", err)
+	}
+	defined := make(map[string]struct{}, len(envs))
+	for _, env := range envs {
+		defined[env.Slug] = struct{}{}
+	}
+
+	if !isGlob(selector) {
+		if _, ok := defined[normalizeSlug(selector)]; !ok {
+			return fmt.Errorf("%w: no environment named %q is defined on this project (define it first, or use a glob pattern)", ErrInvalidInput, selector)
+		}
+	}
+	if prev != "" {
+		if _, ok := defined[normalizeSlug(prev)]; !ok {
+			return fmt.Errorf("%w: required previous environment %q is not defined on this project", ErrInvalidInput, prev)
+		}
+	}
+	return nil
 }
 
 // normalizeSources trims, drops empties, and de-duplicates the allowed-source

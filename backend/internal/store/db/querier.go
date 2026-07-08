@@ -22,9 +22,14 @@ type Querier interface {
 	CreatePipelineStep(ctx context.Context, arg CreatePipelineStepParams) (PipelineStep, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error)
+	AddTenantMember(ctx context.Context, arg AddTenantMemberParams) error
+	CreateOrgTenant(ctx context.Context, arg CreateOrgTenantParams) (Tenant, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteEnvironment(ctx context.Context, id uuid.UUID) error
+	DeleteTenant(ctx context.Context, id uuid.UUID) error
+	GetTenantMember(ctx context.Context, arg GetTenantMemberParams) (TenantMember, error)
+	ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) ([]ListOrgTenantsForUserRow, error)
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	// Remove all policies attached to a scope (used when the scope is deleted, since
 	// scope_id is polymorphic and cannot cascade via a foreign key).

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -153,16 +154,44 @@ func (s *Service) authorizePlatformAdmin(actor Actor) error {
 // authorizeTenantMember returns nil when the actor is a platform admin or
 // belongs to tenantID, and ErrForbidden otherwise. It gates read-only access to
 // tenant-scoped governance: every member of a tenant may view the policies that
-// apply to them, while only platform admins may change them
-// (authorizePlatformAdmin).
-func (s *Service) authorizeTenantMember(actor Actor, tenantID uuid.UUID) error {
+// apply to them. Membership is either the actor's own (personal) tenant or an
+// explicit tenant_members row (org tenants); writes are gated separately by
+// authorizeTenantAdmin.
+func (s *Service) authorizeTenantMember(ctx context.Context, actor Actor, tenantID uuid.UUID) error {
 	if actor.IsAdmin {
 		return nil
 	}
 	if actor.TenantID == tenantID {
 		return nil
 	}
-	return ErrForbidden
+	_, err := s.store.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenantID, UserID: actor.UserID})
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrForbidden
+	}
+	return fmt.Errorf("check tenant membership: %w", err)
+}
+
+// authorizeTenantAdmin gates org administration — org settings, members, SSO, and
+// org-wide (tenant-scoped) policies. A platform admin always qualifies; otherwise
+// the actor must be an 'admin' member of the tenant (tenant_members.role).
+func (s *Service) authorizeTenantAdmin(ctx context.Context, actor Actor, tenantID uuid.UUID) error {
+	if actor.IsAdmin {
+		return nil
+	}
+	m, err := s.store.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenantID, UserID: actor.UserID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrForbidden
+	}
+	if err != nil {
+		return fmt.Errorf("check tenant admin: %w", err)
+	}
+	if m.Role != "admin" {
+		return ErrForbidden
+	}
+	return nil
 }
 
 // provisionForgejoUser creates a Forgejo account for user and writes the link

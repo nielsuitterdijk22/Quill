@@ -4,6 +4,7 @@ import {
   getBranchPolicies,
   getBranches,
   getEnvironmentPolicies,
+  getEnvironments,
   getRepoSecrets,
 } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
@@ -47,6 +48,11 @@ export default async function RepoSettingsPage({
   const envRes = await getEnvironmentPolicies(token, params.project, params.repo);
   const envPolicies = envRes.ok ? envRes.data.policies : [];
   const envInherited = envRes.ok ? envRes.data.inherited : [];
+
+  // A repo shares its project's environments; surface them so the policy editor
+  // can offer them as a dropdown instead of free text.
+  const environmentsRes = await getEnvironments(token, params.project);
+  const environments = environmentsRes.ok ? environmentsRes.data.environments : [];
 
   const secretsRes = await getRepoSecrets(token, params.project, params.repo);
   const secrets = secretsRes.ok ? secretsRes.data.secrets : [];
@@ -116,6 +122,7 @@ export default async function RepoSettingsPage({
           target={{ scope: "repo", project: params.project, repo: params.repo }}
           policies={envPolicies}
           inherited={envInherited}
+          environments={environments}
           canEdit
         />
       </section>

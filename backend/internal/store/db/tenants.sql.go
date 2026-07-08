@@ -35,6 +35,80 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 	return i, err
 }
 
+const createOrgTenant = `-- name: CreateOrgTenant :one
+INSERT INTO tenants (slug, name, kind)
+VALUES ($1, $2, 'org')
+RETURNING id, slug, name, external_org_id, created_at, updated_at
+`
+
+type CreateOrgTenantParams struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+func (q *Queries) CreateOrgTenant(ctx context.Context, arg CreateOrgTenantParams) (Tenant, error) {
+	row := q.db.QueryRow(ctx, createOrgTenant, arg.Slug, arg.Name)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ExternalOrgID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteTenant = `-- name: DeleteTenant :exec
+DELETE FROM tenants WHERE id = $1
+`
+
+func (q *Queries) DeleteTenant(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTenant, id)
+	return err
+}
+
+const listOrgTenantsForUser = `-- name: ListOrgTenantsForUser :many
+SELECT t.id, t.slug, t.name, m.role AS member_role
+FROM tenant_members m
+JOIN tenants t ON t.id = m.tenant_id
+WHERE m.user_id = $1 AND t.kind = 'org'
+ORDER BY t.name
+`
+
+type ListOrgTenantsForUserRow struct {
+	ID         uuid.UUID `json:"id"`
+	Slug       string    `json:"slug"`
+	Name       string    `json:"name"`
+	MemberRole string    `json:"memberRole"`
+}
+
+func (q *Queries) ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) ([]ListOrgTenantsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listOrgTenantsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrgTenantsForUserRow{}
+	for rows.Next() {
+		var i ListOrgTenantsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.MemberRole,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTenantByID = `-- name: GetTenantByID :one
 SELECT id, slug, name, created_at, updated_at FROM tenants WHERE id = $1
 `

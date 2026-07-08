@@ -36,9 +36,12 @@ func scopeTestService(t *testing.T) (*Service, *store.Store) {
 	}
 	t.Cleanup(st.Close)
 	reset := func() {
-		// Leave the seeded default tenant; clear everything beneath it.
+		// Leave the seeded default tenant; clear everything beneath it. Truncating
+		// projects/users first frees the org tenants (projects reference tenants with
+		// ON DELETE RESTRICT), so the org-tenant delete afterward never trips it.
 		_, _ = st.Pool().Exec(context.Background(), "TRUNCATE projects, users CASCADE")
 		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM policies")
+		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM tenants WHERE kind = 'org'")
 	}
 	reset()
 	t.Cleanup(reset)

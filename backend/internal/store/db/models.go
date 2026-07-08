@@ -185,6 +185,13 @@ type Tenant struct {
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
+type TenantMember struct {
+	TenantID  uuid.UUID `json:"tenantId"`
+	UserID    uuid.UUID `json:"userId"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type User struct {
 	ID              uuid.UUID     `json:"id"`
 	Username        string        `json:"username"`

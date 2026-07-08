@@ -941,6 +941,19 @@ select:focus {
   text-decoration: underline;
 }
 
+/* ---- sidebar organizations ------------------------------------------------- */
+.side-orgs {
+  margin-top: 6px;
+}
+.side-orgs-label {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* ---- sidebar repo context -------------------------------------------------- */
 .repo-ctx {
   margin: 10px 2px 4px;

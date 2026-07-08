@@ -90,8 +90,14 @@ export async function fetchProjectGovernance(
 // environment policies — from pre-fetched data. Split out from secrets so the
 // settings page can surface them under a dedicated Policies tab.
 export function GovernancePolicies({ data }: { data: ProjectGovernance }) {
-  const { project, branchPolicies, branchInherited, envPolicies, envInherited } =
-    data;
+  const {
+    project,
+    branchPolicies,
+    branchInherited,
+    envPolicies,
+    envInherited,
+    environments,
+  } = data;
 
   return (
     <>
@@ -126,6 +132,7 @@ export function GovernancePolicies({ data }: { data: ProjectGovernance }) {
           target={{ scope: "project", project: project.slug }}
           policies={envPolicies}
           inherited={envInherited}
+          environments={environments}
           canLock
           canEdit
         />

@@ -264,6 +264,8 @@ func (s *Server) setupRoutes() {
 					})
 				})
 			})
+			r.Get("/orgs", s.handleListOrganizations)
+			r.Post("/orgs", s.handleCreateOrganization)
 			r.Route("/projects", func(r chi.Router) {
 				r.Get("/", s.handleListProjects)
 				r.Post("/", s.handleCreateProject)
