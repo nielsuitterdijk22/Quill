@@ -1,0 +1,6 @@
+BEGIN;
+
+DROP TABLE IF EXISTS tenant_members;
+ALTER TABLE tenants DROP COLUMN IF EXISTS kind;
+
+COMMIT;

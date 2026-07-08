@@ -185,6 +185,40 @@ type Tenant struct {
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
+type TenantMember struct {
+	TenantID  uuid.UUID `json:"tenantId"`
+	UserID    uuid.UUID `json:"userId"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type OrgInvite struct {
+	ID             uuid.UUID          `json:"id"`
+	TenantID       uuid.UUID          `json:"tenantId"`
+	Email          string             `json:"email"`
+	Role           string             `json:"role"`
+	TokenHash      string             `json:"tokenHash"`
+	Status         string             `json:"status"`
+	InvitedBy      uuid.NullUUID      `json:"invitedBy"`
+	AcceptedUserID uuid.NullUUID      `json:"acceptedUserId"`
+	ExpiresAt      time.Time          `json:"expiresAt"`
+	CreatedAt      time.Time          `json:"createdAt"`
+	AcceptedAt     pgtype.Timestamptz `json:"acceptedAt"`
+}
+
+type TenantSsoConfig struct {
+	TenantID               uuid.UUID `json:"tenantId"`
+	Protocol               string    `json:"protocol"`
+	Issuer                 string    `json:"issuer"`
+	ClientID               string    `json:"clientId"`
+	ClientSecretCiphertext []byte    `json:"clientSecretCiphertext"`
+	ClientSecretNonce      []byte    `json:"clientSecretNonce"`
+	EmailDomain            string    `json:"emailDomain"`
+	Enabled                bool      `json:"enabled"`
+	CreatedAt              time.Time `json:"createdAt"`
+	UpdatedAt              time.Time `json:"updatedAt"`
+}
+
 type User struct {
 	ID              uuid.UUID     `json:"id"`
 	Username        string        `json:"username"`

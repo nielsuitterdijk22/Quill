@@ -223,7 +223,11 @@ export default function OnboardingPage() {
     }
     startTransition(async () => {
       const token = await getToken();
-      const res = await fetch("/api/backend/projects", {
+      // Create a first-class organization: a dedicated org tenant with the creator
+      // as admin plus a same-named first project (see POST /orgs). This is what
+      // gives the org its own members, SSO, and org-wide policies — unlike a plain
+      // project, which is all the old flow created.
+      const res = await fetch("/api/backend/orgs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -232,7 +236,6 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           slug: orgSlug.trim(),
           name: orgName.trim() || orgSlug.trim(),
-          description: "",
         }),
       });
       if (!res.ok) {

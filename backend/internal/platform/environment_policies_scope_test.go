@@ -48,10 +48,24 @@ func TestTenantEnvironmentPolicyRequiresPlatformAdmin(t *testing.T) {
 	}
 }
 
+// seedScopeEnv defines environments on a project so environment policies that
+// name them (a plain, non-glob selector must reference a real environment) can
+// be created in these scope tests.
+func seedScopeEnv(t *testing.T, svc *Service, owner Actor, project string, slugs ...string) {
+	t.Helper()
+	ctx := context.Background()
+	for _, slug := range slugs {
+		if _, err := svc.CreateEnvironment(ctx, owner, project, CreateEnvironmentInput{Slug: slug, Name: slug}); err != nil {
+			t.Fatalf("create environment %q: %v", slug, err)
+		}
+	}
+}
+
 func TestProjectEnvironmentPolicyAuthz(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 	owner, _ := seedScopeRepo(t, svc, st, "acme", "widget")
+	seedScopeEnv(t, svc, owner, "acme", "staging")
 
 	// Owners may write project environment policies.
 	if _, err := svc.SetProjectEnvironmentPolicy(ctx, owner, "acme", EnvironmentPolicyInput{Selector: "staging", RequiredApprovals: 1}); err != nil {
@@ -72,6 +86,7 @@ func TestRepoListSurfacesInheritedEnvironmentPolicies(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 	owner, _ := seedScopeRepo(t, svc, st, "acme", "widget")
+	seedScopeEnv(t, svc, owner, "acme", "staging", "production")
 	admin := Actor{UserID: owner.UserID, IsAdmin: true}
 
 	if _, err := svc.SetTenantEnvironmentPolicy(ctx, admin, "default", EnvironmentPolicyInput{Selector: "production", RequiredApprovals: 2, Locked: true}); err != nil {
@@ -122,6 +137,7 @@ func TestEnvironmentPolicyRepoScopeUnlocked(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 	owner, _ := seedScopeRepo(t, svc, st, "acme", "widget")
+	seedScopeEnv(t, svc, owner, "acme", "production")
 
 	// A repo is the narrowest scope, so locking is forced false even if asked.
 	view, err := svc.SetEnvironmentPolicy(ctx, owner, "acme", "widget", EnvironmentPolicyInput{Selector: "production", Locked: true})
@@ -137,6 +153,7 @@ func TestEnvironmentPolicyUpsertAndDelete(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 	owner, _ := seedScopeRepo(t, svc, st, "acme", "widget")
+	seedScopeEnv(t, svc, owner, "acme", "production")
 
 	if _, err := svc.SetEnvironmentPolicy(ctx, owner, "acme", "widget", EnvironmentPolicyInput{Selector: "production", RequiredApprovals: 1}); err != nil {
 		t.Fatalf("create: %v", err)
@@ -158,5 +175,42 @@ func TestEnvironmentPolicyUpsertAndDelete(t *testing.T) {
 	}
 	if err := svc.DeleteEnvironmentPolicy(ctx, owner, "acme", "widget", "production"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete missing: want ErrNotFound, got %v", err)
+	}
+}
+
+// TestEnvironmentPolicyCoupledToEnvironments verifies that a plain (non-glob)
+// environment-policy selector must name an environment defined on the project,
+// while glob selectors and tenant-scope selectors (which own no environments)
+// remain free-text.
+func TestEnvironmentPolicyCoupledToEnvironments(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+	owner, _ := seedScopeRepo(t, svc, st, "acme", "widget")
+	seedScopeEnv(t, svc, owner, "acme", "staging")
+
+	// A plain selector naming an undefined environment is rejected at project scope.
+	if _, err := svc.SetProjectEnvironmentPolicy(ctx, owner, "acme", EnvironmentPolicyInput{Selector: "production", RequiredApprovals: 1}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("undefined env selector: want ErrInvalidInput, got %v", err)
+	}
+
+	// A defined environment is accepted.
+	if _, err := svc.SetProjectEnvironmentPolicy(ctx, owner, "acme", EnvironmentPolicyInput{Selector: "staging", RequiredApprovals: 1}); err != nil {
+		t.Fatalf("defined env selector: %v", err)
+	}
+
+	// A glob selector matches by pattern and needs no defined environment.
+	if _, err := svc.SetProjectEnvironmentPolicy(ctx, owner, "acme", EnvironmentPolicyInput{Selector: "prod-*", RequiredApprovals: 1}); err != nil {
+		t.Fatalf("glob selector: %v", err)
+	}
+
+	// A required previous environment must also be defined.
+	if _, err := svc.SetEnvironmentPolicy(ctx, owner, "acme", "widget", EnvironmentPolicyInput{Selector: "staging", RequirePreviousEnvironment: "canary"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("undefined previous env: want ErrInvalidInput, got %v", err)
+	}
+
+	// Tenant scope owns no environments, so its selectors stay free-text.
+	admin := Actor{UserID: owner.UserID, IsAdmin: true}
+	if _, err := svc.SetTenantEnvironmentPolicy(ctx, admin, "default", EnvironmentPolicyInput{Selector: "production", RequiredApprovals: 1}); err != nil {
+		t.Fatalf("tenant free-text selector: %v", err)
 	}
 }

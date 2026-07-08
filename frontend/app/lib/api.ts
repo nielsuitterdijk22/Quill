@@ -8,6 +8,7 @@ export * from "./api/types";
 export * from "./api/meta";
 export * from "./api/auth";
 export * from "./api/projects";
+export * from "./api/organizations";
 export * from "./api/contributions";
 export * from "./api/repos";
 export * from "./api/pulls";

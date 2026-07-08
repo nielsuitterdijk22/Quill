@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 
-import type { EnvironmentPolicy } from "../../lib/api";
+import type { Environment, EnvironmentPolicy } from "../../lib/api";
 import type { PolicyFormState, PolicyTarget } from "./actions";
 import {
   deleteEnvironmentPolicyAction,
@@ -75,6 +75,115 @@ function FlagTags({ policy }: { policy: EnvironmentPolicy }) {
   );
 }
 
+// PatternField couples the selector to the project's defined environments: it
+// offers a dropdown of environment slugs plus an "Other (glob pattern)…" escape
+// hatch for pattern selectors (e.g. prod-*). It submits the chosen value under
+// name="pattern" via a hidden input so either mode works with the plain form
+// action. On edit the selector is immutable, so it renders read-only.
+function PatternField({
+  environments,
+  defaultValue,
+  editing,
+}: {
+  environments: Environment[];
+  defaultValue: string;
+  editing: boolean;
+}) {
+  const slugs = environments.map((e) => e.slug);
+  const startsGlob = defaultValue !== "" && !slugs.includes(defaultValue);
+  const [mode, setMode] = useState<"pick" | "glob">(
+    environments.length === 0 || startsGlob ? "glob" : "pick",
+  );
+  const [value, setValue] = useState(
+    defaultValue || (slugs.length > 0 ? slugs[0] : ""),
+  );
+
+  if (editing) {
+    return (
+      <label className="field">
+        <span>Environment</span>
+        <input name="pattern" defaultValue={defaultValue} readOnly />
+      </label>
+    );
+  }
+
+  const glob = mode === "glob" || environments.length === 0;
+  return (
+    <label className="field">
+      <span>Environment</span>
+      <input type="hidden" name="pattern" value={value} />
+      {environments.length > 0 && (
+        <select
+          value={glob ? "__glob__" : value}
+          onChange={(e) => {
+            if (e.target.value === "__glob__") {
+              setMode("glob");
+            } else {
+              setMode("pick");
+              setValue(e.target.value);
+            }
+          }}
+        >
+          {slugs.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+          <option value="__glob__">Other (glob pattern)…</option>
+        </select>
+      )}
+      {glob && (
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="production or prod-*"
+          required
+          autoFocus={environments.length > 0}
+        />
+      )}
+    </label>
+  );
+}
+
+// PreviousEnvField renders the ordered-promotion prerequisite as a dropdown of
+// the project's environments (blank = none). A legacy free-text value that is no
+// longer a defined environment is preserved as an extra option.
+function PreviousEnvField({
+  environments,
+  defaultValue,
+}: {
+  environments: Environment[];
+  defaultValue: string;
+}) {
+  const slugs = environments.map((e) => e.slug);
+  if (environments.length === 0) {
+    return (
+      <label className="field">
+        <span>Require previous environment</span>
+        <input
+          name="requirePreviousEnvironment"
+          defaultValue={defaultValue}
+          placeholder="staging (blank = none)"
+        />
+      </label>
+    );
+  }
+  const extra = defaultValue && !slugs.includes(defaultValue) ? [defaultValue] : [];
+  return (
+    <label className="field">
+      <span>Require previous environment</span>
+      <select name="requirePreviousEnvironment" defaultValue={defaultValue}>
+        <option value="">— none —</option>
+        {[...slugs, ...extra].map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function InheritedTable({ policies }: { policies: EnvironmentPolicy[] }) {
   return (
     <table className="policy-table">
@@ -109,12 +218,14 @@ export function EnvironmentPolicyManager({
   target,
   policies,
   inherited = [],
+  environments = [],
   canLock = false,
   canEdit = false,
 }: {
   target: PolicyTarget;
   policies: EnvironmentPolicy[];
   inherited?: EnvironmentPolicy[];
+  environments?: Environment[];
   canLock?: boolean;
   canEdit?: boolean;
 }) {
@@ -250,16 +361,11 @@ export function EnvironmentPolicyManager({
         </div>
         {state.error && <div className="form-error">{state.error}</div>}
         <form action={formAction} key={formKey}>
-          <label className="field">
-            <span>Environment</span>
-            <input
-              name="pattern"
-              defaultValue={current.pattern}
-              readOnly={!!editing}
-              placeholder="production or prod-*"
-              required
-            />
-          </label>
+          <PatternField
+            environments={environments}
+            defaultValue={current.pattern}
+            editing={!!editing}
+          />
           <label className="field">
             <span>Required approvals</span>
             <input
@@ -277,14 +383,10 @@ export function EnvironmentPolicyManager({
               placeholder="main, release/* (blank = any)"
             />
           </label>
-          <label className="field">
-            <span>Require previous environment</span>
-            <input
-              name="requirePreviousEnvironment"
-              defaultValue={current.requirePreviousEnvironment}
-              placeholder="staging (blank = none)"
-            />
-          </label>
+          <PreviousEnvField
+            environments={environments}
+            defaultValue={current.requirePreviousEnvironment}
+          />
           <label className="field">
             <span>Wait window (minutes)</span>
             <input

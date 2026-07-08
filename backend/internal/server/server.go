@@ -21,6 +21,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/secretbox"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 	"github.com/nielsuitterdijk22/quill/internal/workitemrefs"
+	"github.com/nielsuitterdijk22/quill/internal/zitadel"
 )
 
 // Version is the API version reported by the /api/v1/meta endpoint.
@@ -63,6 +64,12 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		platformSvc.WithCipher(cipher)
 	} else if !errors.Is(err, secretbox.ErrKeyMissing) {
 		logger.Warn("invalid QUILL_SECRET_ENCRYPTION_KEY; using development cipher", "error", err)
+	}
+	// Org provisioning + member invites through Zitadel's Management API and mail
+	// service. Idle unless both the issuer and a management token are configured;
+	// when absent, orgs are Quill-only and invites use shareable accept links.
+	if cfg.Zitadel.Issuer != "" && cfg.Zitadel.ManagementToken != "" {
+		platformSvc.WithOrgProvisioner(zitadel.NewClient(cfg.Zitadel.Issuer, cfg.Zitadel.ManagementToken))
 	}
 
 	// The external IdP (Zitadel) verifies a bearer JWT, provisions the user on
@@ -264,6 +271,20 @@ func (s *Server) setupRoutes() {
 					})
 				})
 			})
+			r.Get("/orgs", s.handleListOrganizations)
+			r.Post("/orgs", s.handleCreateOrganization)
+			r.Route("/orgs/{slug}", func(r chi.Router) {
+				r.Get("/members", s.handleListOrgMembers)
+				r.Patch("/members/{userId}", s.handleUpdateOrgMemberRole)
+				r.Delete("/members/{userId}", s.handleRemoveOrgMember)
+				r.Get("/invites", s.handleListInvites)
+				r.Post("/invites", s.handleCreateInvite)
+				r.Delete("/invites/{id}", s.handleRevokeInvite)
+				r.Get("/sso", s.handleGetOrgSSO)
+				r.Put("/sso", s.handleSetOrgSSO)
+				r.Delete("/sso", s.handleDeleteOrgSSO)
+			})
+			r.Post("/invites/{token}/accept", s.handleAcceptInvite)
 			r.Route("/projects", func(r chi.Router) {
 				r.Get("/", s.handleListProjects)
 				r.Post("/", s.handleCreateProject)

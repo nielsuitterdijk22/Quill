@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { useQuillAuth } from "./auth/context";
 
 import { setCurrentProjectAction } from "../lib/actions";
-import type { MyProject, User } from "../lib/api";
+import type { MyProject, Organization, User } from "../lib/api";
 import { AppSwitcher } from "./AppSwitcher";
 import { AppTile } from "./icons/AppMarks";
 import { ThemeToggle } from "./ThemeToggle";
@@ -294,10 +294,12 @@ function ProjectSwitcher({
 export function Sidebar({
   user,
   projects,
+  orgs = [],
   currentProject,
 }: {
   user: User;
   projects: MyProject[];
+  orgs?: Organization[];
   currentProject: string | null;
 }) {
   const pathname = usePathname() || "/";
@@ -362,6 +364,27 @@ export function Sidebar({
           </Link>
         ))}
       </nav>
+
+      {orgs.length > 0 && (
+        <div className="side-orgs">
+          <div className="side-orgs-label">Organizations</div>
+          <nav className="nav">
+            {orgs.map((o) => (
+              <Link
+                key={o.slug}
+                href={`/orgs/${encodeURIComponent(o.slug)}/settings`}
+                className={
+                  isActive(pathname, `/orgs/${o.slug}`) ? "active" : ""
+                }
+              >
+                <span className="ic">◱</span>
+                {o.name}
+                {o.role === "admin" && <span className="tag">admin</span>}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      )}
 
       {repoCtx && (
         <div className="repo-ctx">

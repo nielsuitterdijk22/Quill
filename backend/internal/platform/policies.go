@@ -225,7 +225,7 @@ func (s *Service) ListTenantBranchPolicies(ctx context.Context, actor Actor, ten
 	if err != nil {
 		return db.Tenant{}, BranchPolicySet{}, err
 	}
-	if err := s.authorizeTenantMember(actor, tenant.ID); err != nil {
+	if err := s.authorizeTenantMember(ctx, actor, tenant.ID); err != nil {
 		return db.Tenant{}, BranchPolicySet{}, err
 	}
 	own, err := s.listBranchPoliciesAt(ctx, policyScope{policy.ScopeTenant, tenant.ID})
@@ -236,26 +236,26 @@ func (s *Service) ListTenantBranchPolicies(ctx context.Context, actor Actor, ten
 }
 
 // SetTenantBranchPolicy creates or updates a tenant-scoped branch policy.
-// Platform admins only.
+// Platform admins and org admins of the tenant.
 func (s *Service) SetTenantBranchPolicy(ctx context.Context, actor Actor, tenantSlug string, in BranchPolicyInput) (BranchPolicyView, error) {
-	if err := s.authorizePlatformAdmin(actor); err != nil {
-		return BranchPolicyView{}, err
-	}
 	tenant, err := s.getTenant(ctx, tenantSlug)
 	if err != nil {
+		return BranchPolicyView{}, err
+	}
+	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return BranchPolicyView{}, err
 	}
 	return s.setBranchPolicyAt(ctx, policyScope{policy.ScopeTenant, tenant.ID}, in)
 }
 
 // DeleteTenantBranchPolicy removes a tenant-scoped branch policy. Platform admins
-// only.
+// and org admins of the tenant.
 func (s *Service) DeleteTenantBranchPolicy(ctx context.Context, actor Actor, tenantSlug, pattern string) error {
-	if err := s.authorizePlatformAdmin(actor); err != nil {
-		return err
-	}
 	tenant, err := s.getTenant(ctx, tenantSlug)
 	if err != nil {
+		return err
+	}
+	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return err
 	}
 	return s.deleteBranchPolicyAt(ctx, policyScope{policy.ScopeTenant, tenant.ID}, strings.TrimSpace(pattern))

@@ -22,9 +22,27 @@ type Querier interface {
 	CreatePipelineStep(ctx context.Context, arg CreatePipelineStepParams) (PipelineStep, error)
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)
 	CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error)
+	AddTenantMember(ctx context.Context, arg AddTenantMemberParams) error
+	CountTenantAdmins(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CreateInvite(ctx context.Context, arg CreateInviteParams) (OrgInvite, error)
+	CreateOrgTenant(ctx context.Context, arg CreateOrgTenantParams) (Tenant, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteEnvironment(ctx context.Context, id uuid.UUID) error
+	DeleteTenant(ctx context.Context, id uuid.UUID) error
+	DeleteTenantSSO(ctx context.Context, tenantID uuid.UUID) error
+	GetInviteByTokenHash(ctx context.Context, tokenHash string) (OrgInvite, error)
+	GetTenantSSO(ctx context.Context, tenantID uuid.UUID) (TenantSsoConfig, error)
+	GetTenantMember(ctx context.Context, arg GetTenantMemberParams) (TenantMember, error)
+	ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) ([]ListOrgTenantsForUserRow, error)
+	ListPendingInvitesByTenant(ctx context.Context, tenantID uuid.UUID) ([]OrgInvite, error)
+	ListTenantMembers(ctx context.Context, tenantID uuid.UUID) ([]ListTenantMembersRow, error)
+	MarkInviteAccepted(ctx context.Context, arg MarkInviteAcceptedParams) error
+	RemoveTenantMember(ctx context.Context, arg RemoveTenantMemberParams) error
+	RevokeInvite(ctx context.Context, arg RevokeInviteParams) (int64, error)
+	RevokePendingInvitesByEmail(ctx context.Context, arg RevokePendingInvitesByEmailParams) error
+	SetTenantExternalOrg(ctx context.Context, arg SetTenantExternalOrgParams) error
+	UpsertTenantSSO(ctx context.Context, arg UpsertTenantSSOParams) (TenantSsoConfig, error)
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	// Remove all policies attached to a scope (used when the scope is deleted, since
 	// scope_id is polymorphic and cannot cascade via a foreign key).
