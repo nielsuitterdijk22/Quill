@@ -100,6 +100,44 @@ export function acceptInvite(
   return postData<{ slug: string }>(token, `/api/v1/invites/${inviteToken}/accept`, {});
 }
 
+// SSOConfig is an org's SSO configuration. The client secret is never returned —
+// hasSecret only reports whether one is stored.
+export type SSOConfig = {
+  configured: boolean;
+  protocol: string; // 'oidc' | 'saml'
+  issuer: string;
+  clientId: string;
+  emailDomain: string;
+  enabled: boolean;
+  hasSecret: boolean;
+  updatedAt: string;
+};
+
+export type SetSSOInput = {
+  protocol: string;
+  issuer: string;
+  clientId: string;
+  clientSecret: string; // blank preserves the stored secret
+  emailDomain: string;
+  enabled: boolean;
+};
+
+export function getOrgSSO(token: string, org: string): Promise<Result<SSOConfig>> {
+  return authGet<SSOConfig>(token, `/api/v1/orgs/${org}/sso`);
+}
+
+export function setOrgSSO(
+  token: string,
+  org: string,
+  input: SetSSOInput,
+): Promise<DataResult<SSOConfig>> {
+  return sendData<SSOConfig>(token, "PUT", `/api/v1/orgs/${org}/sso`, input);
+}
+
+export function deleteOrgSSO(token: string, org: string): Promise<SimpleResult> {
+  return deleteResource(token, `/api/v1/orgs/${org}/sso`);
+}
+
 // listOrgs returns the organizations the authenticated user belongs to. Degrades
 // to an empty list on any error so nav never blanks the shell.
 export async function listOrgs(token: string): Promise<Organization[]> {

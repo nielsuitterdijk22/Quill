@@ -206,6 +206,19 @@ type OrgInvite struct {
 	AcceptedAt     pgtype.Timestamptz `json:"acceptedAt"`
 }
 
+type TenantSsoConfig struct {
+	TenantID               uuid.UUID `json:"tenantId"`
+	Protocol               string    `json:"protocol"`
+	Issuer                 string    `json:"issuer"`
+	ClientID               string    `json:"clientId"`
+	ClientSecretCiphertext []byte    `json:"clientSecretCiphertext"`
+	ClientSecretNonce      []byte    `json:"clientSecretNonce"`
+	EmailDomain            string    `json:"emailDomain"`
+	Enabled                bool      `json:"enabled"`
+	CreatedAt              time.Time `json:"createdAt"`
+	UpdatedAt              time.Time `json:"updatedAt"`
+}
+
 type User struct {
 	ID              uuid.UUID     `json:"id"`
 	Username        string        `json:"username"`

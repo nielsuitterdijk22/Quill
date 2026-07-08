@@ -280,6 +280,9 @@ func (s *Server) setupRoutes() {
 				r.Get("/invites", s.handleListInvites)
 				r.Post("/invites", s.handleCreateInvite)
 				r.Delete("/invites/{id}", s.handleRevokeInvite)
+				r.Get("/sso", s.handleGetOrgSSO)
+				r.Put("/sso", s.handleSetOrgSSO)
+				r.Delete("/sso", s.handleDeleteOrgSSO)
 			})
 			r.Post("/invites/{token}/accept", s.handleAcceptInvite)
 			r.Route("/projects", func(r chi.Router) {

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
 
 // orgResponse is the public JSON shape for an organization (an org-kind tenant)
@@ -271,4 +272,102 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logAudit(r, "org.invite.accepted", "tenant", slug, map[string]any{"org": slug})
 	httpx.JSON(w, http.StatusOK, orgResponse{Slug: slug})
+}
+
+// ---- SSO -------------------------------------------------------------------
+
+type ssoResponse struct {
+	Configured  bool      `json:"configured"`
+	Protocol    string    `json:"protocol"`
+	Issuer      string    `json:"issuer"`
+	ClientID    string    `json:"clientId"`
+	EmailDomain string    `json:"emailDomain"`
+	Enabled     bool      `json:"enabled"`
+	HasSecret   bool      `json:"hasSecret"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type setSSORequest struct {
+	Protocol     string `json:"protocol"`
+	Issuer       string `json:"issuer"`
+	ClientID     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
+	EmailDomain  string `json:"emailDomain"`
+	Enabled      bool   `json:"enabled"`
+}
+
+func newSSOResponse(v platform.SSOConfigView) ssoResponse {
+	return ssoResponse{
+		Configured:  v.Configured,
+		Protocol:    v.Protocol,
+		Issuer:      v.Issuer,
+		ClientID:    v.ClientID,
+		EmailDomain: v.EmailDomain,
+		Enabled:     v.Enabled,
+		HasSecret:   v.HasSecret,
+		UpdatedAt:   v.UpdatedAt,
+	}
+}
+
+// handleGetOrgSSO returns an organization's SSO configuration (admin only, never
+// the secret).
+func (s *Server) handleGetOrgSSO(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	view, err := s.platform.GetOrgSSO(r.Context(), actor, chi.URLParam(r, "slug"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not load SSO settings")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
+}
+
+// handleSetOrgSSO creates or updates an organization's SSO configuration (admin
+// only). A blank clientSecret preserves the stored one.
+func (s *Server) handleSetOrgSSO(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req setSSORequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	view, err := s.platform.SetOrgSSO(r.Context(), actor, chi.URLParam(r, "slug"), platform.SSOConfigInput{
+		Protocol:     req.Protocol,
+		Issuer:       req.Issuer,
+		ClientID:     req.ClientID,
+		ClientSecret: req.ClientSecret,
+		EmailDomain:  req.EmailDomain,
+		Enabled:      req.Enabled,
+	})
+	if err != nil {
+		s.writePlatformError(w, err, "could not save SSO settings")
+		return
+	}
+	s.logAudit(r, "org.sso.updated", "tenant", chi.URLParam(r, "slug"), map[string]any{
+		"org":      chi.URLParam(r, "slug"),
+		"protocol": view.Protocol,
+		"enabled":  view.Enabled,
+	})
+	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
+}
+
+// handleDeleteOrgSSO removes an organization's SSO configuration (admin only).
+func (s *Server) handleDeleteOrgSSO(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.platform.DeleteOrgSSO(r.Context(), actor, chi.URLParam(r, "slug")); err != nil {
+		s.writePlatformError(w, err, "could not remove SSO settings")
+		return
+	}
+	s.logAudit(r, "org.sso.removed", "tenant", chi.URLParam(r, "slug"), map[string]any{"org": chi.URLParam(r, "slug")})
+	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
 }

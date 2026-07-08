@@ -4,12 +4,15 @@ import { notFound } from "next/navigation";
 import {
   getOrgInvites,
   getOrgMembers,
+  getOrgSSO,
   getTenantEnvironmentPolicies,
   getTenantPolicies,
   listOrgs,
 } from "../../../../lib/api";
+import type { SSOConfig } from "../../../../lib/api";
 import { getToken } from "../../../../lib/session";
 import { OrgMembers } from "../../../../components/organization/OrgMembers";
+import { OrgSSO } from "../../../../components/organization/OrgSSO";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
 import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
 
@@ -42,6 +45,23 @@ export default async function OrgSettingsPage({
   const envPolicies = envRes.ok ? envRes.data.policies : [];
   const members = membersRes.ok ? membersRes.data.members : [];
   const invites = invitesRes.ok ? invitesRes.data.invites : [];
+
+  // SSO is admin-only; default to an empty (unconfigured) view for members.
+  const ssoRes = canEdit
+    ? await getOrgSSO(token, params.org)
+    : ({ ok: false } as const);
+  const sso: SSOConfig = ssoRes.ok
+    ? ssoRes.data
+    : {
+        configured: false,
+        protocol: "oidc",
+        issuer: "",
+        clientId: "",
+        emailDomain: "",
+        enabled: false,
+        hasSecret: false,
+        updatedAt: "",
+      };
 
   return (
     <>
@@ -79,6 +99,20 @@ export default async function OrgSettingsPage({
           invites={invites}
         />
       </section>
+
+      {canEdit && (
+        <section className="settings-section settings-card">
+          <div className="settings-head">
+            <h2 className="settings-title">Single sign-on</h2>
+            <p className="subtle">
+              Configure how members of this organization authenticate. The client
+              secret is stored encrypted and never shown again. Routing logins by
+              email domain is applied by the identity provider.
+            </p>
+          </div>
+          <OrgSSO org={org.slug} config={sso} />
+        </section>
+      )}
 
       <section className="settings-section settings-card">
         <div className="settings-head">

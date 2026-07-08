@@ -4,9 +4,12 @@ import { revalidatePath } from "next/cache";
 
 import {
   createOrgInvite,
+  deleteOrgSSO,
   removeOrgMember,
   revokeOrgInvite,
   setOrgMemberRole,
+  setOrgSSO,
+  type SetSSOInput,
 } from "../../lib/api";
 import { getToken } from "../../lib/session";
 
@@ -60,6 +63,24 @@ export async function removeMemberAction(org: string, userId: string): Promise<A
   const token = await getToken();
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
   const res = await removeOrgMember(token, org, userId);
+  if (!res.ok) return res;
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function saveSSOAction(org: string, input: SetSSOInput): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await setOrgSSO(token, org, input);
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function removeSSOAction(org: string): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await deleteOrgSSO(token, org);
   if (!res.ok) return res;
   revalidate(org);
   return { ok: true };

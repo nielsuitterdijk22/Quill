@@ -990,6 +990,12 @@ select:focus {
   font-weight: 600;
   color: var(--muted);
 }
+.org-sso-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
 
 /* ---- sidebar repo context -------------------------------------------------- */
 .repo-ctx {

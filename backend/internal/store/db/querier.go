@@ -30,7 +30,9 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteEnvironment(ctx context.Context, id uuid.UUID) error
 	DeleteTenant(ctx context.Context, id uuid.UUID) error
+	DeleteTenantSSO(ctx context.Context, tenantID uuid.UUID) error
 	GetInviteByTokenHash(ctx context.Context, tokenHash string) (OrgInvite, error)
+	GetTenantSSO(ctx context.Context, tenantID uuid.UUID) (TenantSsoConfig, error)
 	GetTenantMember(ctx context.Context, arg GetTenantMemberParams) (TenantMember, error)
 	ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) ([]ListOrgTenantsForUserRow, error)
 	ListPendingInvitesByTenant(ctx context.Context, tenantID uuid.UUID) ([]OrgInvite, error)
@@ -40,6 +42,7 @@ type Querier interface {
 	RevokeInvite(ctx context.Context, arg RevokeInviteParams) (int64, error)
 	RevokePendingInvitesByEmail(ctx context.Context, arg RevokePendingInvitesByEmailParams) error
 	SetTenantExternalOrg(ctx context.Context, arg SetTenantExternalOrgParams) error
+	UpsertTenantSSO(ctx context.Context, arg UpsertTenantSSOParams) (TenantSsoConfig, error)
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	// Remove all policies attached to a scope (used when the scope is deleted, since
 	// scope_id is polymorphic and cannot cascade via a foreign key).
