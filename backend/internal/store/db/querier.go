@@ -77,6 +77,7 @@ type Querier interface {
 	SetRepositoryArchived(ctx context.Context, arg SetRepositoryArchivedParams) (Repository, error)
 	SetRepositoryForgejoLink(ctx context.Context, arg SetRepositoryForgejoLinkParams) (Repository, error)
 	SetUserForgejoLink(ctx context.Context, arg SetUserForgejoLinkParams) (User, error)
+	SetUserTenant(ctx context.Context, arg SetUserTenantParams) (User, error)
 	UpdateAuthIdentitySecret(ctx context.Context, arg UpdateAuthIdentitySecretParams) error
 	UpdateEnvironment(ctx context.Context, arg UpdateEnvironmentParams) (Environment, error)
 	UpdatePipelineRunStatus(ctx context.Context, arg UpdatePipelineRunStatusParams) (PipelineRun, error)

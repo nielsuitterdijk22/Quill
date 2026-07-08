@@ -21,6 +21,10 @@ type Claims struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	IsAdmin  bool   `json:"isAdmin"`
+	// TenantID is the account's owning tenant (a UUID string), carried so every
+	// request resolves the same per-account tenant without a database hit. Empty
+	// for tokens issued before tenant isolation, or when no tenant applies.
+	TenantID string `json:"tenantId,omitempty"`
 }
 
 // TokenService issues and verifies Quill access tokens (HS256 JWTs).
@@ -63,6 +67,9 @@ func (t *TokenService) Issue(id Identity) (string, time.Time, error) {
 		Email:    id.Email,
 		IsAdmin:  id.IsAdmin,
 	}
+	if id.TenantID != (uuid.UUID{}) {
+		claims.TenantID = id.TenantID.String()
+	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(t.secret)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("sign token: %w", err)
@@ -87,10 +94,18 @@ func (t *TokenService) Verify(token string) (Identity, error) {
 	if err != nil {
 		return Identity{}, ErrInvalidCredentials
 	}
-	return Identity{
+	id := Identity{
 		UserID:   uid,
 		Username: claims.Username,
 		Email:    claims.Email,
 		IsAdmin:  claims.IsAdmin,
-	}, nil
+	}
+	// A malformed tenant claim is treated as absent rather than failing auth: the
+	// caller falls back to the default tenant, and re-login mints a correct token.
+	if claims.TenantID != "" {
+		if tid, err := uuid.Parse(claims.TenantID); err == nil {
+			id.TenantID = tid
+		}
+	}
+	return id, nil
 }

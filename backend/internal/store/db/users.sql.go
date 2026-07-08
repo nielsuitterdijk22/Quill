@@ -84,7 +84,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at FROM users WHERE id = $1
+SELECT id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at, tenant_id FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -101,6 +101,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.ForgejoUsername,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }
@@ -256,6 +257,37 @@ func (q *Queries) UpdateUsername(ctx context.Context, arg UpdateUsernameParams) 
 		&i.ForgejoUsername,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setUserTenant = `-- name: SetUserTenant :one
+UPDATE users
+SET tenant_id = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at, tenant_id
+`
+
+type SetUserTenantParams struct {
+	ID       uuid.UUID     `json:"id"`
+	TenantID uuid.NullUUID `json:"tenantId"`
+}
+
+func (q *Queries) SetUserTenant(ctx context.Context, arg SetUserTenantParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserTenant, arg.ID, arg.TenantID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.DisplayName,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.ForgejoUserID,
+		&i.ForgejoUsername,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TenantID,
 	)
 	return i, err
 }

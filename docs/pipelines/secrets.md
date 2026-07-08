@@ -11,10 +11,10 @@ Typical uses: API tokens, registry credentials, deploy keys, signing keys.
 A secret belongs to exactly one of three scopes. Each scope is managed in a
 different place and applies to a different set of runs.
 
-| Scope | Applies to | Managed on |
-| --- | --- | --- |
-| **Project** | Every repository in the project | Project → Settings → **Secrets** |
-| **Repository** | One repository's runs | Repo → Settings → **Secrets** |
+| Scope           | Applies to                        | Managed on                                   |
+| --------------- | --------------------------------- | -------------------------------------------- |
+| **Project**     | Every repository in the project   | Project → Settings → **Secrets**             |
+| **Repository**  | One repository's runs             | Repo → Settings → **Secrets**                |
 | **Environment** | Runs that target that environment | Project → Settings → **Environment secrets** |
 
 You need to be a **project admin** to view or manage secrets at any scope.
@@ -24,7 +24,7 @@ You need to be a **project admin** to view or manage secrets at any scope.
 When a run starts, Quill gathers the secrets that apply to it and merges them in
 this order:
 
-```
+```text
 project  →  repository  →  environment
 (broadest)                 (most specific)
 ```
@@ -48,7 +48,7 @@ project and repository secrets only.
 ## The inherited view
 
 On a repository's **Secrets** settings, the secrets that reach the repo's runs
-from *other* scopes are listed above the repo's own secrets, read-only and
+from _other_ scopes are listed above the repo's own secrets, read-only and
 labelled by scope. This is just a window into what a run will receive — you still
 manage those values at their own scope (the project or the environment). A repo
 secret of the same name overrides an inherited one.
