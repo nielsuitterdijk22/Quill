@@ -216,6 +216,9 @@ func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
 type triggerRunRequest struct {
 	Workflow string `json:"workflow"`
 	Ref      string `json:"ref"`
+	// Environment optionally targets one of the project's environments so the run
+	// also receives that environment's secrets. Empty means none.
+	Environment string `json:"environment"`
 }
 
 // handleTriggerRun runs a workflow manually.
@@ -230,20 +233,22 @@ func (s *Server) handleTriggerRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, run, err := s.platform.TriggerRun(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), platform.TriggerInput{
-		WorkflowPath: req.Workflow,
-		Ref:          req.Ref,
-		Event:        "manual",
+		WorkflowPath:    req.Workflow,
+		Ref:             req.Ref,
+		Event:           "manual",
+		EnvironmentSlug: req.Environment,
 	})
 	if err != nil {
 		s.writePlatformError(w, err, "could not trigger run")
 		return
 	}
 	s.logAudit(r, "pipeline.run_triggered", "pipeline_run", run.ID.String(), map[string]any{
-		"project":  chi.URLParam(r, "slug"),
-		"repo":     chi.URLParam(r, "repo"),
-		"workflow": req.Workflow,
-		"ref":      req.Ref,
-		"event":    "manual",
+		"project":     chi.URLParam(r, "slug"),
+		"repo":        chi.URLParam(r, "repo"),
+		"workflow":    req.Workflow,
+		"ref":         req.Ref,
+		"event":       "manual",
+		"environment": req.Environment,
 	})
 	out := newRunResponse(run)
 	out.WorkflowPath = req.Workflow

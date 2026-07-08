@@ -57,12 +57,19 @@ func (p *LocalProvider) Authenticate(ctx context.Context, c Credentials) (Identi
 		return Identity{}, ErrInvalidCredentials
 	}
 
-	return Identity{
+	id := Identity{
 		UserID:   user.ID,
 		Username: user.Username,
 		Email:    user.Email,
 		IsAdmin:  user.IsAdmin,
-	}, nil
+	}
+	// Carry the account's owning tenant so it flows into the issued token and,
+	// from there, into every request's Actor. Legacy users without a tenant fall
+	// back to the default tenant at project-creation time.
+	if user.TenantID.Valid {
+		id.TenantID = user.TenantID.UUID
+	}
+	return id, nil
 }
 
 // compile-time check.

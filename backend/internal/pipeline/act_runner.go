@@ -105,7 +105,7 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		LogOutput:             true,
 		Token:                 spec.Token,
 		Env:                   map[string]string{},
-		Secrets:               map[string]string{},
+		Secrets:               mapOrEmpty(spec.Secrets),
 		Vars:                  map[string]string{},
 		GitHubInstance:        "github.com",
 	}
@@ -339,6 +339,15 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// mapOrEmpty returns m, or a fresh empty map when m is nil, so act always
+// receives a non-nil secrets map.
+func mapOrEmpty(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
 }
 
 func firstNonEmpty(a, b string) string {

@@ -36,6 +36,7 @@
 
 * [Write your first workflow](pipelines/first-workflow.md)
 * [Triggers](pipelines/triggers.md)
+* [Secrets](pipelines/secrets.md)
 * [Quill pipeline extensions](pipelines/quill-extensions.md)
 * [View logs](pipelines/logs.md)
 

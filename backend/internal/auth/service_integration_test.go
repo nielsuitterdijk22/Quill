@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/store"
@@ -28,13 +30,16 @@ func newService(t *testing.T) *auth.Service {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(st.Close)
-	// Start clean and clean up after: users cascade to auth_identities.
-	if _, err := st.Pool().Exec(context.Background(), "DELETE FROM users"); err != nil {
-		t.Fatalf("reset users: %v", err)
-	}
-	t.Cleanup(func() {
+	// Start clean and clean up after: users cascade to auth_identities. Each
+	// registration now also creates a per-account tenant (slug = username), so
+	// clear those too — otherwise a reused username collides on tenants.slug
+	// across runs. The seeded 'default' tenant is preserved.
+	reset := func() {
 		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM users")
-	})
+		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM tenants WHERE slug <> 'default'")
+	}
+	reset()
+	t.Cleanup(reset)
 	tokens := auth.NewTokenService(config.JWTConfig{Secret: "itest-secret", Issuer: "quill", TTL: time.Hour})
 	return auth.NewService(st, auth.NewLocalProvider(st), tokens)
 }
@@ -74,6 +79,51 @@ func TestRegisterThenLogin(t *testing.T) {
 	}
 	if verified.UserID != id.UserID {
 		t.Fatalf("verified user mismatch")
+	}
+}
+
+// TestRegisterGivesEachAccountItsOwnTenant is the core tenant-isolation
+// guarantee: two accounts must land in different tenants (never the shared
+// default), and that tenant must survive login and the JWT round-trip so every
+// request resolves it.
+func TestRegisterGivesEachAccountItsOwnTenant(t *testing.T) {
+	svc := newService(t)
+	ctx := context.Background()
+
+	alice, err := svc.Register(ctx, auth.RegisterInput{
+		Username: "alice", Email: "alice@example.test", Password: "correct horse battery",
+	})
+	if err != nil {
+		t.Fatalf("register alice: %v", err)
+	}
+	bob, err := svc.Register(ctx, auth.RegisterInput{
+		Username: "bob", Email: "bob@example.test", Password: "correct horse battery",
+	})
+	if err != nil {
+		t.Fatalf("register bob: %v", err)
+	}
+
+	if alice.TenantID == (uuid.UUID{}) || bob.TenantID == (uuid.UUID{}) {
+		t.Fatalf("each account must have a tenant: alice=%v bob=%v", alice.TenantID, bob.TenantID)
+	}
+	if alice.TenantID == bob.TenantID {
+		t.Fatalf("tenant isolation violated: accounts share tenant %v", alice.TenantID)
+	}
+
+	// The tenant must flow through login and verify back out of the token.
+	token, loginID, err := svc.Login(ctx, auth.Credentials{Username: "alice", Password: "correct horse battery"})
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if loginID.TenantID != alice.TenantID {
+		t.Fatalf("login dropped tenant: got %v want %v", loginID.TenantID, alice.TenantID)
+	}
+	verified, err := svc.Tokens().Verify(token)
+	if err != nil {
+		t.Fatalf("verify token: %v", err)
+	}
+	if verified.TenantID != alice.TenantID {
+		t.Fatalf("token dropped tenant: got %v want %v", verified.TenantID, alice.TenantID)
 	}
 }
 

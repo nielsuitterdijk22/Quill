@@ -14,6 +14,7 @@ export * from "./api/pulls";
 export * from "./api/pipelines";
 export * from "./api/issues";
 export * from "./api/policies";
+export * from "./api/secrets";
 export * from "./api/admin";
 export * from "./api/audit";
 export * from "./api/github";

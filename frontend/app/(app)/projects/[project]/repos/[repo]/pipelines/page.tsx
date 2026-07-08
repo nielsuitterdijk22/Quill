@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import {
   getBranches,
+  getEnvironments,
   getPipelineRuns,
   getPipelines,
   type PipelineRun,
@@ -46,10 +47,11 @@ export default async function PipelinesPage({
   const token = await getToken();
   if (!token) notFound();
 
-  const [pipelinesRes, runsRes, branchesRes] = await Promise.all([
+  const [pipelinesRes, runsRes, branchesRes, environmentsRes] = await Promise.all([
     getPipelines(token, params.project, params.repo),
     getPipelineRuns(token, params.project, params.repo),
     getBranches(token, params.project, params.repo),
+    getEnvironments(token, params.project),
   ]);
 
   if (!pipelinesRes.ok) {
@@ -68,6 +70,7 @@ export default async function PipelinesPage({
   const pipelines = pipelinesRes.data.pipelines;
   const runs = runsRes.ok ? runsRes.data.runs : [];
   const branches = branchesRes.ok ? branchesRes.data.branches : [];
+  const environments = environmentsRes.ok ? environmentsRes.data.environments : [];
   const defaultBranch = repo.defaultBranch;
 
   // Map known run ids to workflow paths so recent-run rows can link correctly.
@@ -94,6 +97,7 @@ export default async function PipelinesPage({
         pipelines={pipelines}
         branches={branches}
         defaultBranch={defaultBranch}
+        environments={environments}
       />
 
       <div className="panel">

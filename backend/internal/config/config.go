@@ -42,6 +42,12 @@ type Config struct {
 	// it in any shared environment.
 	WebhookSecret string
 
+	// SecretEncryptionKey is the base64-encoded key used to encrypt pipeline
+	// secrets at rest (AES-256-GCM). Any key material is accepted and folded to 32
+	// bytes. Empty is allowed only in development, where an insecure built-in key
+	// is used; production requires it (Load returns an error when missing).
+	SecretEncryptionKey string
+
 	CORSAllowedOrigins []string
 }
 
@@ -185,12 +191,17 @@ func Load() (*Config, error) {
 			ZitadelClientSecret: getenv("QUILL_TEMPO_SYNC_ZITADEL_CLIENT_SECRET", ""),
 			ZitadelProjectID:    getenv("QUILL_TEMPO_SYNC_ZITADEL_PROJECT_ID", ""),
 		},
-		WebhookSecret:      getenv("QUILL_WEBHOOK_SECRET", ""),
-		CORSAllowedOrigins: getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
+		WebhookSecret:       getenv("QUILL_WEBHOOK_SECRET", ""),
+		SecretEncryptionKey: getenv("QUILL_SECRET_ENCRYPTION_KEY", ""),
+		CORSAllowedOrigins:  getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 	}
 
 	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Zitadel.Issuer == "" {
 		return nil, fmt.Errorf("production requires QUILL_JWT_SECRET (local auth) or ZITADEL_ISSUER (Zitadel)")
+	}
+
+	if cfg.IsProduction() && cfg.SecretEncryptionKey == "" {
+		return nil, fmt.Errorf("production requires QUILL_SECRET_ENCRYPTION_KEY to encrypt pipeline secrets")
 	}
 
 	return cfg, nil

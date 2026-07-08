@@ -1890,7 +1890,7 @@ h2.section {
 }
 /* Policy modal — wider than fork-dialog to fit the form fields. */
 .policy-modal {
-  background: var(--surface);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--text);
@@ -1936,6 +1936,33 @@ h2.section {
 }
 .settings-section .settings-head {
   margin-bottom: 14px;
+}
+/* A settings section rendered as a distinct card, so governance areas (branch
+   policies, environment policies, secrets) read as self-contained blocks rather
+   than blending into one long page. Applied via "settings-section settings-card".
+   Sections whose body is already a panel (General, Danger zone) stay uncarded to
+   avoid nesting panels. */
+.settings-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+}
+.settings-card .settings-head {
+  margin-bottom: 16px;
+}
+/* A titled block within a section, e.g. one per-environment secrets group under
+   the Environment secrets section. */
+.settings-subsection {
+  margin-bottom: 24px;
+}
+.settings-subsection:last-child {
+  margin-bottom: 0;
+}
+.settings-subsection > h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--text);
 }
 /* Pad the settings form cards (general settings, add/edit policy). The danger
    zone rows and create-page cards pad their own content, so this is scoped to
@@ -2620,7 +2647,7 @@ h2.section {
 
 /* Fork dialog */
 .fork-dialog {
-  background: var(--surface);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--text);

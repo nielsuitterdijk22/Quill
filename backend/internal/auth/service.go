@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
@@ -115,6 +116,19 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Identity, err
 		if err != nil {
 			return err
 		}
+		// Give the account its own tenant so its tenant-scoped policies never bleed
+		// into another account. The slug mirrors the (unique) username, matching the
+		// personal-project convention; the user's projects attach to this tenant.
+		tenant, err := q.CreateTenant(ctx, db.CreateTenantParams{Slug: strings.ToLower(username), Name: display})
+		if err != nil {
+			return fmt.Errorf("create account tenant: %w", err)
+		}
+		if _, err := q.SetUserTenant(ctx, db.SetUserTenantParams{
+			ID:       user.ID,
+			TenantID: uuid.NullUUID{UUID: tenant.ID, Valid: true},
+		}); err != nil {
+			return fmt.Errorf("link account tenant: %w", err)
+		}
 		if _, err := q.CreateAuthIdentity(ctx, db.CreateAuthIdentityParams{
 			UserID:     user.ID,
 			Provider:   ProviderLocal,
@@ -123,7 +137,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Identity, err
 		}); err != nil {
 			return err
 		}
-		id = Identity{UserID: user.ID, Username: user.Username, Email: user.Email, IsAdmin: user.IsAdmin}
+		id = Identity{UserID: user.ID, Username: user.Username, Email: user.Email, IsAdmin: user.IsAdmin, TenantID: tenant.ID}
 		return nil
 	})
 	if err != nil {

@@ -41,7 +41,7 @@ export function triggerPipelineRun(
   token: string,
   project: string,
   repo: string,
-  input: { workflow: string; ref?: string },
+  input: { workflow: string; ref?: string; environment?: string },
 ): Promise<DataResult<{ run: PipelineRun }>> {
   return postData(token, `/api/v1/projects/${project}/repos/${repo}/pipelines`, input);
 }

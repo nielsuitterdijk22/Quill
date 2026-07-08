@@ -143,7 +143,11 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProje
 // fail the login response.
 func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, username string) error {
 	slug := normalizeSlug(username)
-	tenant, err := s.defaultTenant(ctx)
+	// Attach the personal project to the user's own tenant so it is isolated from
+	// other accounts. Fall back to the default tenant only for legacy users whose
+	// tenant was never provisioned (pre-isolation, or Zitadel where the tenant
+	// comes from the token rather than the user row).
+	tenantID, err := s.personalTenantID(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -167,7 +171,7 @@ func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, u
 	}
 	return s.store.InTx(ctx, func(q *db.Queries) error {
 		project, err := q.CreateProject(ctx, db.CreateProjectParams{
-			TenantID:    tenant.ID,
+			TenantID:    tenantID,
 			Slug:        slug,
 			Name:        username,
 			Description: "",
@@ -412,6 +416,24 @@ func (s *Service) getProject(ctx context.Context, slug string) (db.Project, erro
 		return db.Project{}, ErrNotFound
 	}
 	return project, err
+}
+
+// personalTenantID returns the tenant a user's personal project should attach
+// to: the user's own tenant when set (the isolated per-account tenant), else the
+// seeded default tenant as a fallback for legacy or tenant-less users.
+func (s *Service) personalTenantID(ctx context.Context, userID uuid.UUID) (uuid.UUID, error) {
+	user, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return uuid.UUID{}, fmt.Errorf("lookup user: %w", err)
+	}
+	if user.TenantID.Valid {
+		return user.TenantID.UUID, nil
+	}
+	tenant, err := s.defaultTenant(ctx)
+	if err != nil {
+		return uuid.UUID{}, err
+	}
+	return tenant.ID, nil
 }
 
 // defaultTenant resolves the seeded default tenant, creating it if a fresh

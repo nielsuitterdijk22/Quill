@@ -303,6 +303,9 @@ to your deployment before making your instance public.
 - Do not expose port `3000` (Forgejo) or `8080` (Quill API) directly on the
   public interface — route traffic through your reverse proxy.
 - Set `QUILL_WEBHOOK_SECRET` to verify Forgejo webhook payloads.
+- Set `QUILL_SECRET_ENCRYPTION_KEY` (base64 32-byte key) to encrypt pipeline
+  secrets at rest. It is required in production; rotating it makes existing
+  secrets undecryptable, so treat it as durable key material.
 
 ---
 

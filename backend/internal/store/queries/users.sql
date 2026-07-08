@@ -37,3 +37,9 @@ UPDATE users
 SET forgejo_user_id = $2, forgejo_username = $3
 WHERE id = $1
 RETURNING *;
+
+-- name: SetUserTenant :one
+UPDATE users
+SET tenant_id = $2, updated_at = now()
+WHERE id = $1
+RETURNING *;

@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/projectsync"
+	"github.com/nielsuitterdijk22/quill/internal/secretbox"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 	"github.com/nielsuitterdijk22/quill/internal/workitemrefs"
 )
@@ -53,6 +55,14 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	platformSvc := platform.NewService(st, fj, logger)
 	if cfg.Pipeline.DispatchURL != "" {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
+	}
+	// Install the configured pipeline-secret cipher. NewService defaults to the
+	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()
+	// requires the key in production, so the dev fallback only applies locally.
+	if cipher, err := secretbox.NewFromBase64Key(cfg.SecretEncryptionKey); err == nil {
+		platformSvc.WithCipher(cipher)
+	} else if !errors.Is(err, secretbox.ErrKeyMissing) {
+		logger.Warn("invalid QUILL_SECRET_ENCRYPTION_KEY; using development cipher", "error", err)
 	}
 
 	// The external IdP (Zitadel) verifies a bearer JWT, provisions the user on
@@ -269,6 +279,11 @@ func (s *Server) setupRoutes() {
 						r.Put("/", s.handleSetProjectEnvironmentPolicy)
 						r.Delete("/", s.handleDeleteProjectEnvironmentPolicy)
 					})
+					r.Route("/secrets", func(r chi.Router) {
+						r.Get("/", s.handleListProjectSecrets)
+						r.Put("/{name}", s.handleSetProjectSecret)
+						r.Delete("/{name}", s.handleDeleteProjectSecret)
+					})
 					r.Route("/environments", func(r chi.Router) {
 						r.Get("/", s.handleListEnvironments)
 						r.Post("/", s.handleCreateEnvironment)
@@ -276,6 +291,11 @@ func (s *Server) setupRoutes() {
 							r.Get("/", s.handleGetEnvironment)
 							r.Patch("/", s.handleUpdateEnvironment)
 							r.Delete("/", s.handleDeleteEnvironment)
+							r.Route("/secrets", func(r chi.Router) {
+								r.Get("/", s.handleListEnvironmentSecrets)
+								r.Put("/{name}", s.handleSetEnvironmentSecret)
+								r.Delete("/{name}", s.handleDeleteEnvironmentSecret)
+							})
 						})
 					})
 					r.Route("/repos", func(r chi.Router) {
@@ -311,6 +331,11 @@ func (s *Server) setupRoutes() {
 									r.Patch("/", s.handleEditIssue)
 									r.Post("/comments", s.handleCreateIssueComment)
 								})
+							})
+							r.Route("/secrets", func(r chi.Router) {
+								r.Get("/", s.handleListRepoSecrets)
+								r.Put("/{name}", s.handleSetRepoSecret)
+								r.Delete("/{name}", s.handleDeleteRepoSecret)
 							})
 							r.Route("/pipelines", func(r chi.Router) {
 								r.Get("/", s.handleListPipelines)
