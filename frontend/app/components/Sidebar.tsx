@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { useRouter } from "next/navigation";
@@ -26,11 +26,20 @@ const NAV: NavItem[] = [
   { href: "/repositories", label: "Repositories", icon: "⎇" },
   { href: "/pulls", label: "Pull requests", icon: "⤭" },
   { href: "/pipelines", label: "Pipelines", icon: "▷" },
-  // Tenant policies are visible to every member (they govern everyone's work);
-  // only admins can edit them, enforced on the page and in the backend.
-  { href: "/admin/policies", label: "Policies", icon: "🛡" },
+];
+
+// SETTINGS_NAV is appended after the scope-aware Policies entry (see below) so
+// the two sit together at the foot of the primary nav.
+const SETTINGS_NAV: NavItem[] = [
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
+
+// POLICIES_HREF is where the primary-nav "Policies" entry points for an
+// individual account: their personal project is their global ("all my repos")
+// scope, managed under the settings Policies tab. Org-only members have no such
+// global scope — their policies live per project (reached via the Projects nav),
+// so the entry is hidden for them.
+const POLICIES_HREF = "/settings?tab=policies";
 
 const ORG_NAV: NavItem[] = [
   { href: "/projects", label: "Projects", icon: "⊞" },
@@ -292,15 +301,37 @@ export function Sidebar({
   currentProject: string | null;
 }) {
   const pathname = usePathname() || "/";
+  const searchParams = useSearchParams();
+  const settingsTab = searchParams.get("tab");
   const { signOut } = useQuillAuth();
   const repoCtx = parseRepoCtx(pathname);
 
   const hasOrgProjects = projects.some((p) => !p.isPersonal);
+  const hasPersonalProject = projects.some((p) => p.isPersonal);
   const navItems = [
     ...NAV,
+    // Individuals get a Policies entry pointing at their personal (global) scope;
+    // org-only members manage policies per project instead, so it is hidden.
+    ...(hasPersonalProject
+      ? [{ href: POLICIES_HREF, label: "Policies", icon: "🛡" }]
+      : []),
+    ...SETTINGS_NAV,
     ...(hasOrgProjects ? ORG_NAV : []),
     ...(user.isAdmin ? [...ADMIN_NAV, ...(hasOrgProjects ? ORG_ADMIN_NAV : [])] : []),
   ];
+
+  // navItemActive distinguishes the settings-based entries by their tab query,
+  // which isActive (path-only) can't see: the Policies entry lights only on the
+  // policies tab, and Settings lights on every other settings tab.
+  function navItemActive(href: string): boolean {
+    if (href === POLICIES_HREF) {
+      return pathname === "/settings" && settingsTab === "policies";
+    }
+    if (href === "/settings") {
+      return pathname === "/settings" && settingsTab !== "policies";
+    }
+    return isActive(pathname, href);
+  }
 
   return (
     <aside className="side">
@@ -323,7 +354,7 @@ export function Sidebar({
           <Link
             key={it.href}
             href={it.href}
-            className={isActive(pathname, it.href) ? "active" : ""}
+            className={navItemActive(it.href) ? "active" : ""}
           >
             <span className="ic">{it.icon}</span>
             {it.label}
