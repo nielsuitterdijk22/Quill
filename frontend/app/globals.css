@@ -1890,7 +1890,7 @@ h2.section {
 }
 /* Policy modal — wider than fork-dialog to fit the form fields. */
 .policy-modal {
-  background: var(--surface);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--text);
@@ -2647,7 +2647,7 @@ h2.section {
 
 /* Fork dialog */
 .fork-dialog {
-  background: var(--surface);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--text);
