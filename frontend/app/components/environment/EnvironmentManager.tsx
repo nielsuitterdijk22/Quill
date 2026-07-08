@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 
 import type { Environment } from "../../lib/api";
@@ -50,8 +50,9 @@ function DeleteEnvironmentForm({
 }
 
 // EnvironmentManager lists a project's deployment targets and lets project admins
-// create, edit, and delete them. Environments are ranked to express a promotion
-// ladder (lower deploys first); environment policies reference them by slug.
+// create, edit, and delete them through a modal — matching the secrets and
+// branch-policy managers. Environments are ranked to express a promotion ladder
+// (lower deploys first); environment policies reference them by slug.
 export function EnvironmentManager({
   project,
   environments,
@@ -63,24 +64,61 @@ export function EnvironmentManager({
   const updateAction = updateEnvironmentAction.bind(null, project);
   const [createState, createFormAction] = useFormState(createAction, initial);
   const [updateState, updateFormAction] = useFormState(updateAction, initial);
+  // editing is the environment being edited, or null when adding a new one.
   const [editing, setEditing] = useState<Environment | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const prevCreate = useRef(createState);
+  const prevUpdate = useRef(updateState);
 
-  const blank: Environment = {
-    id: "",
+  // Close the modal when a create or update succeeds.
+  useEffect(() => {
+    if (createState !== prevCreate.current) {
+      if (createState.ok) closeModal();
+      prevCreate.current = createState;
+    }
+  }, [createState]);
+  useEffect(() => {
+    if (updateState !== prevUpdate.current) {
+      if (updateState.ok) closeModal();
+      prevUpdate.current = updateState;
+    }
+  }, [updateState]);
+
+  function openAdd() {
+    setEditing(null);
+    dialogRef.current?.showModal();
+  }
+
+  function openEdit(env: Environment) {
+    setEditing(env);
+    dialogRef.current?.showModal();
+  }
+
+  function closeModal() {
+    dialogRef.current?.close();
+    setEditing(null);
+  }
+
+  const formAction = editing ? updateFormAction : createFormAction;
+  const state = editing ? updateState : createState;
+  // A new environment defaults to the next rank so the promotion ladder grows in
+  // order; editing keeps the environment's own values.
+  const current = editing ?? {
     slug: "",
     name: "",
     description: "",
     rank: environments.length,
-    createdAt: "",
-    updatedAt: "",
   };
-  const current = editing ?? blank;
-  const formAction = editing ? updateFormAction : createFormAction;
-  const state = editing ? updateState : createState;
   const formKey = editing ? editing.slug : "new";
 
   return (
     <div className="policy-area">
+      <div className="policy-list-header">
+        <button type="button" className="btn ghost small" onClick={openAdd}>
+          + Add environment
+        </button>
+      </div>
+
       {environments.length > 0 ? (
         <table className="policy-table">
           <thead>
@@ -106,7 +144,7 @@ export function EnvironmentManager({
                   <button
                     type="button"
                     className="btn ghost small"
-                    onClick={() => setEditing(e)}
+                    onClick={() => openEdit(e)}
                   >
                     Edit
                   </button>
@@ -123,40 +161,48 @@ export function EnvironmentManager({
         </div>
       )}
 
-      <div className="panel form-narrow policy-form-panel">
-        <h3>
-          {editing ? `Edit ${editing.slug}` : "Add an environment"}
-        </h3>
+      <dialog
+        ref={dialogRef}
+        className="policy-modal"
+        onCancel={closeModal}
+        onClick={(e) => {
+          if (e.target === dialogRef.current) closeModal();
+        }}
+      >
+        <div className="policy-modal-head">
+          <h3>{editing ? `Edit ${editing.slug}` : "Add an environment"}</h3>
+          <button
+            type="button"
+            className="policy-modal-close"
+            onClick={closeModal}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
         {state.error && <div className="form-error">{state.error}</div>}
         <form action={formAction} key={formKey}>
-          {editing && <input type="hidden" name="slug" value={editing.slug} />}
-          {!editing && (
+          {editing ? (
+            <input type="hidden" name="slug" value={editing.slug} />
+          ) : (
             <label className="field">
               <span>Slug</span>
               <input
                 name="slug"
-                defaultValue={current.slug}
+                defaultValue=""
                 placeholder="production"
+                autoComplete="off"
                 required
               />
             </label>
           )}
           <label className="field">
             <span>Display name</span>
-            <input
-              name="name"
-              defaultValue={current.name}
-              placeholder="Production"
-            />
+            <input name="name" defaultValue={current.name} placeholder="Production" />
           </label>
           <label className="field">
             <span>Rank (promotion order, lower deploys first)</span>
-            <input
-              name="rank"
-              type="number"
-              min={0}
-              defaultValue={current.rank}
-            />
+            <input name="rank" type="number" min={0} defaultValue={current.rank} />
           </label>
           <label className="field">
             <span>Description</span>
@@ -168,18 +214,12 @@ export function EnvironmentManager({
           </label>
           <div className="form-actions">
             <SaveButton editing={!!editing} />
-            {editing && (
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => setEditing(null)}
-              >
-                Cancel
-              </button>
-            )}
+            <button type="button" className="btn ghost" onClick={closeModal}>
+              Cancel
+            </button>
           </div>
         </form>
-      </div>
+      </dialog>
     </div>
   );
 }
