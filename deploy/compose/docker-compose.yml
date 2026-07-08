@@ -84,6 +84,8 @@ services:
       FORGEJO_ADMIN_TOKEN: ${FORGEJO_ADMIN_TOKEN:-}
       FORGEJO_PUBLIC_URL: ${FORGEJO_PUBLIC_URL:-}
       QUILL_JWT_SECRET: ${QUILL_JWT_SECRET:-dev-insecure-secret-change-me}
+      QUILL_SECRET_ENCRYPTION_KEY: ${QUILL_SECRET_ENCRYPTION_KEY:-}
+      QUILL_WEBHOOK_SECRET: ${QUILL_WEBHOOK_SECRET:-}
       QUILL_CORS_ALLOWED_ORIGINS: ${QUILL_CORS_ALLOWED_ORIGINS:-http://localhost:3001}
       # Auth provider (Zitadel). The Zitadel settings below must be populated;
       # when the issuer is unset, Quill falls back to local username/password auth.
