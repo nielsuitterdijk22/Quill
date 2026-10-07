@@ -5,54 +5,6 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
-### T-000: Make ./check pass on main
-- Story: (infrastructure)
-- Accept: `./check` exits 0
-- Tests may change: yes
-
-Fix the code (preferred) or the check script so every step passes. Do not
-delete tests to get green; if a test is genuinely obsolete, explain it in summary.md.
-Last output:
-```
- downloading go.opentelemetry.io/otel v1.43.0
-go: downloading github.com/cloudflare/circl v1.6.3
-go: downloading github.com/kevinburke/ssh_config v1.2.0
-go: downloading github.com/skeema/knownhosts v1.3.1
-go: downloading github.com/xanzy/ssh-agent v0.3.3
-go: downloading golang.org/x/net v0.55.0
-go: downloading gopkg.in/warnings.v0 v0.1.2
-go: downloading github.com/klauspost/compress v1.18.5
-go: downloading github.com/xeipuuv/gojsonschema v1.2.0
-go: downloading github.com/agnivade/levenshtein v1.2.1
-go: downloading github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb
-go: downloading github.com/felixge/httpsnoop v1.0.4
-go: downloading go.opentelemetry.io/otel/metric v1.43.0
-go: downloading github.com/go-logr/logr v1.4.3
-go: downloading github.com/go-logr/stdr v1.2.2
-go: downloading go.opentelemetry.io/auto/sdk v1.2.1
-npm notice
-npm notice New major version of npm available! 11.19.0 -> 12.2.0
-npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
-npm notice To update run: npm install -g npm@12.2.0
-npm notice
-node:internal/process/promises:394
-    triggerUncaughtException(err, true /* fromPromise */);
-    ^
-
-[TypeError: fetch failed] {
-  [cause]: Error: getaddrinfo EAI_AGAIN registry.npmjs.org
-      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:123:26) {
-    errno: -3001,
-    code: 'EAI_AGAIN',
-    syscall: 'getaddrinfo',
-    hostname: 'registry.npmjs.org'
-  }
-}
-
-Node.js v24.21.0
-Next.js build worker exited with code: 1 and signal: null
-```
-
 ### T-001: Implement Individual Tier Quota Enforcement (Repos & Storage)
 - Story: US-017
 - Accept: Run `go test ./internal/quota/... -v` to verify tests `TestRepoQuotaExceeded` and `TestStorageQuotaExceeded` pass, confirming 403/413 responses for free-tier limits.
@@ -154,3 +106,52 @@ Add `webhooks` table. Create `POST /api/v1/projects/{id}/webhooks` endpoint. Imp
 ## Parked
 
 ## Done
+
+### T-000: Make ./check pass on main
+- Story: (infrastructure)
+- Accept: `./check` exits 0
+- Tests may change: yes
+
+Fix the code (preferred) or the check script so every step passes. Do not
+delete tests to get green; if a test is genuinely obsolete, explain it in summary.md.
+Last output:
+```
+ downloading go.opentelemetry.io/otel v1.43.0
+go: downloading github.com/cloudflare/circl v1.6.3
+go: downloading github.com/kevinburke/ssh_config v1.2.0
+go: downloading github.com/skeema/knownhosts v1.3.1
+go: downloading github.com/xanzy/ssh-agent v0.3.3
+go: downloading golang.org/x/net v0.55.0
+go: downloading gopkg.in/warnings.v0 v0.1.2
+go: downloading github.com/klauspost/compress v1.18.5
+go: downloading github.com/xeipuuv/gojsonschema v1.2.0
+go: downloading github.com/agnivade/levenshtein v1.2.1
+go: downloading github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb
+go: downloading github.com/felixge/httpsnoop v1.0.4
+go: downloading go.opentelemetry.io/otel/metric v1.43.0
+go: downloading github.com/go-logr/logr v1.4.3
+go: downloading github.com/go-logr/stdr v1.2.2
+go: downloading go.opentelemetry.io/auto/sdk v1.2.1
+npm notice
+npm notice New major version of npm available! 11.19.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+[TypeError: fetch failed] {
+  [cause]: Error: getaddrinfo EAI_AGAIN registry.npmjs.org
+      at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:123:26) {
+    errno: -3001,
+    code: 'EAI_AGAIN',
+    syscall: 'getaddrinfo',
+    hostname: 'registry.npmjs.org'
+  }
+}
+
+Node.js v24.21.0
+Next.js build worker exited with code: 1 and signal: null
+```
+- Done: 2026-10-07 in 482e855 (attempt 1)
