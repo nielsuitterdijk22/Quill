@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# -- backend (go) -------------------------------------------------------------
+
+if [ -d backend ]; then
+  echo "== go: gofmt"
+  (cd backend && gofmt -l . | grep -v '^$' && exit 1) || true
+
+  echo "== go: go vet"
+  (cd backend && go vet ./...)
+
+  echo "== go: build"
+  (cd backend && go build ./...)
+
+  echo "== go: test"
+  (cd backend && go test -p 1 ./...)
+fi
+
+# -- frontend (typescript) ----------------------------------------------------
+
+if [ -d frontend ]; then
+  if [ ! -d frontend/node_modules ]; then
+    echo "== npm: install"
+    (cd frontend && npm ci)
+  fi
+
+  echo "== frontend: lint"
+  (cd frontend && npm run lint)
+
+  echo "== frontend: build"
+  (cd frontend && npm run build)
+fi
+
+echo "== all checks passed"

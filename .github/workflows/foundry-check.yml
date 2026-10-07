@@ -1,0 +1,15 @@
+name: check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - run: ./check
