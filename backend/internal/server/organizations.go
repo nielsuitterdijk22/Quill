@@ -26,6 +26,115 @@ type createOrgRequest struct {
 
 // handleListOrganizations returns the organizations the authenticated user
 // belongs to, with their role, for nav and the org switcher.
+// adminOrgResponse is an org tenant with its SSO-link status, for the
+// platform-admin console.
+type adminOrgResponse struct {
+	Slug          string `json:"slug"`
+	Name          string `json:"name"`
+	SSOConfigured bool   `json:"ssoConfigured"`
+	ExternalOrgID string `json:"externalOrgId"`
+	EmailDomain   string `json:"emailDomain"`
+}
+
+// handleCreateTenant provisions a bare org tenant (platform admin only — enforced
+// by requireAdmin on this route group). No creator membership and no seed project,
+// unlike self-service POST /orgs: a platform admin creates an empty tenant to link
+// to a Zitadel org and populate by SSO/invite.
+func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req createOrgRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	tenant, err := s.platform.CreateTenant(r.Context(), actor, req.Slug, req.Name)
+	if err != nil {
+		s.writePlatformError(w, err, "could not create tenant")
+		return
+	}
+	s.logAudit(r, "admin.tenant.created", "tenant", tenant.ID.String(), map[string]any{
+		"slug": tenant.Slug,
+		"name": tenant.Name,
+	})
+	httpx.JSON(w, http.StatusCreated, map[string]any{
+		"org": orgResponse{Slug: tenant.Slug, Name: tenant.Name, Role: ""},
+	})
+}
+
+type provisionSSORequest struct {
+	Slug         string   `json:"slug"`
+	Name         string   `json:"name"`
+	Protocol     string   `json:"protocol"`
+	Issuer       string   `json:"issuer"`
+	ClientID     string   `json:"clientId"`
+	ClientSecret string   `json:"clientSecret"`
+	EmailDomain  string   `json:"emailDomain"`
+	AdminEmails  []string `json:"adminEmails"`
+}
+
+// handleProvisionSSOTenant creates a Quill tenant plus its backing Zitadel org
+// (IdP + ORG_OWNER admin shells + external-only login) and links them, in one
+// platform-admin action (requireAdmin gates the group).
+func (s *Server) handleProvisionSSOTenant(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req provisionSSORequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	view, err := s.platform.ProvisionSSOTenant(r.Context(), actor, platform.SSOProvisionInput{
+		Slug:         req.Slug,
+		Name:         req.Name,
+		Protocol:     req.Protocol,
+		Issuer:       req.Issuer,
+		ClientID:     req.ClientID,
+		ClientSecret: req.ClientSecret,
+		EmailDomain:  req.EmailDomain,
+		AdminEmails:  req.AdminEmails,
+	})
+	if err != nil {
+		s.writePlatformError(w, err, "could not provision SSO organization")
+		return
+	}
+	s.logAudit(r, "admin.tenant.sso_provisioned", "tenant", req.Slug, map[string]any{
+		"org":           req.Slug,
+		"externalOrgId": view.ExternalOrgID,
+	})
+	httpx.JSON(w, http.StatusCreated, newSSOResponse(view))
+}
+
+// handleListAllOrgs lists every org tenant with its SSO status (platform admin
+// only — enforced by the requireAdmin middleware on this route group).
+func (s *Server) handleListAllOrgs(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	orgs, err := s.platform.ListAllOrganizations(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list organizations")
+		return
+	}
+	out := make([]adminOrgResponse, 0, len(orgs))
+	for _, o := range orgs {
+		out = append(out, adminOrgResponse{
+			Slug:          o.Slug,
+			Name:          o.Name,
+			SSOConfigured: o.SSOConfigured,
+			ExternalOrgID: o.ExternalOrgID,
+			EmailDomain:   o.EmailDomain,
+		})
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"organizations": out})
+}
+
 func (s *Server) handleListOrganizations(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -277,40 +386,38 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 // ---- SSO -------------------------------------------------------------------
 
 type ssoResponse struct {
-	Configured  bool      `json:"configured"`
-	Protocol    string    `json:"protocol"`
-	Issuer      string    `json:"issuer"`
-	ClientID    string    `json:"clientId"`
-	EmailDomain string    `json:"emailDomain"`
-	Enabled     bool      `json:"enabled"`
-	HasSecret   bool      `json:"hasSecret"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	Configured    bool      `json:"configured"`
+	ExternalOrgID string    `json:"externalOrgId"`
+	EmailDomain   string    `json:"emailDomain"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+
+	DomainVerified    bool   `json:"domainVerified"`
+	DomainStatusKnown bool   `json:"domainStatusKnown"`
+	DomainRecordType  string `json:"domainRecordType"`
+	DomainRecordName  string `json:"domainRecordName"`
+	DomainRecordValue string `json:"domainRecordValue"`
 }
 
 type setSSORequest struct {
-	Protocol     string `json:"protocol"`
-	Issuer       string `json:"issuer"`
-	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
-	EmailDomain  string `json:"emailDomain"`
-	Enabled      bool   `json:"enabled"`
+	ExternalOrgID string `json:"externalOrgId"`
+	EmailDomain   string `json:"emailDomain"`
 }
 
 func newSSOResponse(v platform.SSOConfigView) ssoResponse {
 	return ssoResponse{
-		Configured:  v.Configured,
-		Protocol:    v.Protocol,
-		Issuer:      v.Issuer,
-		ClientID:    v.ClientID,
-		EmailDomain: v.EmailDomain,
-		Enabled:     v.Enabled,
-		HasSecret:   v.HasSecret,
-		UpdatedAt:   v.UpdatedAt,
+		Configured:        v.Configured,
+		ExternalOrgID:     v.ExternalOrgID,
+		EmailDomain:       v.EmailDomain,
+		UpdatedAt:         v.UpdatedAt,
+		DomainVerified:    v.DomainVerified,
+		DomainStatusKnown: v.DomainStatusKnown,
+		DomainRecordType:  v.DomainRecordType,
+		DomainRecordName:  v.DomainRecordName,
+		DomainRecordValue: v.DomainRecordValue,
 	}
 }
 
-// handleGetOrgSSO returns an organization's SSO configuration (admin only, never
-// the secret).
+// handleGetOrgSSO returns an organization's SSO link (platform admin only).
 func (s *Server) handleGetOrgSSO(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -325,8 +432,9 @@ func (s *Server) handleGetOrgSSO(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
 }
 
-// handleSetOrgSSO creates or updates an organization's SSO configuration (admin
-// only). A blank clientSecret preserves the stored one.
+// handleSetOrgSSO links an organization to an existing Zitadel org (platform
+// admin only). No identity-provider provisioning happens — the Zitadel org is set
+// up by hand in the console.
 func (s *Server) handleSetOrgSSO(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -338,26 +446,22 @@ func (s *Server) handleSetOrgSSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view, err := s.platform.SetOrgSSO(r.Context(), actor, chi.URLParam(r, "slug"), platform.SSOConfigInput{
-		Protocol:     req.Protocol,
-		Issuer:       req.Issuer,
-		ClientID:     req.ClientID,
-		ClientSecret: req.ClientSecret,
-		EmailDomain:  req.EmailDomain,
-		Enabled:      req.Enabled,
+		ExternalOrgID: req.ExternalOrgID,
+		EmailDomain:   req.EmailDomain,
 	})
 	if err != nil {
 		s.writePlatformError(w, err, "could not save SSO settings")
 		return
 	}
 	s.logAudit(r, "org.sso.updated", "tenant", chi.URLParam(r, "slug"), map[string]any{
-		"org":      chi.URLParam(r, "slug"),
-		"protocol": view.Protocol,
-		"enabled":  view.Enabled,
+		"org":           chi.URLParam(r, "slug"),
+		"externalOrgId": view.ExternalOrgID,
 	})
 	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
 }
 
-// handleDeleteOrgSSO removes an organization's SSO configuration (admin only).
+// handleDeleteOrgSSO unlinks an organization from its Zitadel org (platform admin
+// only).
 func (s *Server) handleDeleteOrgSSO(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
@@ -370,4 +474,44 @@ func (s *Server) handleDeleteOrgSSO(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logAudit(r, "org.sso.removed", "tenant", chi.URLParam(r, "slug"), map[string]any{"org": chi.URLParam(r, "slug")})
 	httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleGenerateSSODomainValidation (re)issues the DNS ownership challenge for an
+// org's SSO email domain (platform admin only) and returns the record to publish.
+func (s *Server) handleGenerateSSODomainValidation(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	view, err := s.platform.GenerateSSODomainValidation(r.Context(), actor, chi.URLParam(r, "slug"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not generate a verification record")
+		return
+	}
+	s.logAudit(r, "org.sso.domain_challenge_generated", "tenant", chi.URLParam(r, "slug"), map[string]any{
+		"org":    chi.URLParam(r, "slug"),
+		"domain": view.EmailDomain,
+	})
+	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
+}
+
+// handleCheckSSODomainVerification asks Zitadel to validate the outstanding domain
+// challenge (platform admin only) and returns the refreshed status.
+func (s *Server) handleCheckSSODomainVerification(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	view, err := s.platform.CheckSSODomainVerification(r.Context(), actor, chi.URLParam(r, "slug"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not verify the domain")
+		return
+	}
+	s.logAudit(r, "org.sso.domain_verified", "tenant", chi.URLParam(r, "slug"), map[string]any{
+		"org":    chi.URLParam(r, "slug"),
+		"domain": view.EmailDomain,
+	})
+	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
 }

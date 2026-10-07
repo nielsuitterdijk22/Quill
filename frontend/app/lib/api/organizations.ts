@@ -45,6 +45,65 @@ export type CreateInviteResult = {
   emailedByIdp: boolean;
 };
 
+// AdminOrgSummary is an org tenant with its SSO-link status, for the
+// platform-admin console (lists every org, not just the caller's memberships).
+export type AdminOrgSummary = {
+  slug: string;
+  name: string;
+  ssoConfigured: boolean;
+  externalOrgId: string;
+  emailDomain: string;
+};
+
+// listAllOrgs lists every org tenant with its SSO status (platform admin only).
+export function listAllOrgs(
+  token: string,
+): Promise<Result<{ organizations: AdminOrgSummary[] }>> {
+  return authGet<{ organizations: AdminOrgSummary[] }>(token, "/api/v1/admin/orgs");
+}
+
+// createOrg provisions a new org tenant (with the caller as its first admin) plus
+// a same-named project. The self-service path, used from onboarding.
+export function createOrg(
+  token: string,
+  slug: string,
+  name: string,
+): Promise<DataResult<{ org: Organization }>> {
+  return postData<{ org: Organization }>(token, "/api/v1/orgs", { slug, name });
+}
+
+// createTenant provisions a bare org tenant (platform admin only): no creator
+// membership and no seed project. Used from the platform-admin console to onboard
+// a customer whose members arrive by SSO/invite.
+export function createTenant(
+  token: string,
+  slug: string,
+  name: string,
+): Promise<DataResult<{ org: Organization }>> {
+  return postData<{ org: Organization }>(token, "/api/v1/admin/orgs", { slug, name });
+}
+
+// ProvisionSSOInput onboards an SSO customer in one platform-admin action: create
+// a Quill tenant, provision its backing Zitadel org (IdP + ORG_OWNER admin shells
+// + external-only login), link them, and pre-seed the admins.
+export type ProvisionSSOInput = {
+  slug: string;
+  name: string;
+  protocol: string; // 'oidc' | 'saml'
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  emailDomain: string;
+  adminEmails: string[];
+};
+
+export function provisionSSOTenant(
+  token: string,
+  input: ProvisionSSOInput,
+): Promise<DataResult<SSOConfig>> {
+  return postData<SSOConfig>(token, "/api/v1/admin/orgs/sso", input);
+}
+
 export function getOrgMembers(
   token: string,
   org: string,
@@ -100,26 +159,28 @@ export function acceptInvite(
   return postData<{ slug: string }>(token, `/api/v1/invites/${inviteToken}/accept`, {});
 }
 
-// SSOConfig is an org's SSO configuration. The client secret is never returned —
-// hasSecret only reports whether one is stored.
+// SSOConfig is an org's SSO link to a hand-provisioned Zitadel org. Quill does no
+// identity-provider provisioning; this just records which Zitadel org the
+// customer's users authenticate against (plus the email domain for reference).
 export type SSOConfig = {
   configured: boolean;
-  protocol: string; // 'oidc' | 'saml'
-  issuer: string;
-  clientId: string;
+  externalOrgId: string;
   emailDomain: string;
-  enabled: boolean;
-  hasSecret: boolean;
   updatedAt: string;
+  // Domain-ownership verification. domainVerified is live-read from Zitadel (the
+  // source of truth); domainStatusKnown is false when that read failed, so the UI
+  // can show "unknown" rather than falsely "pending". The record* fields are the
+  // persisted DNS challenge to publish (empty until one is generated).
+  domainVerified: boolean;
+  domainStatusKnown: boolean;
+  domainRecordType: string; // "dns" | "http" | ""
+  domainRecordName: string;
+  domainRecordValue: string;
 };
 
 export type SetSSOInput = {
-  protocol: string;
-  issuer: string;
-  clientId: string;
-  clientSecret: string; // blank preserves the stored secret
+  externalOrgId: string;
   emailDomain: string;
-  enabled: boolean;
 };
 
 export function getOrgSSO(token: string, org: string): Promise<Result<SSOConfig>> {
@@ -136,6 +197,24 @@ export function setOrgSSO(
 
 export function deleteOrgSSO(token: string, org: string): Promise<SimpleResult> {
   return deleteResource(token, `/api/v1/orgs/${org}/sso`);
+}
+
+// generateSSODomainValidation (re)issues the DNS ownership challenge for the org's
+// email domain and returns the record to publish (platform admin only).
+export function generateSSODomainValidation(
+  token: string,
+  org: string,
+): Promise<DataResult<SSOConfig>> {
+  return postData<SSOConfig>(token, `/api/v1/orgs/${org}/sso/domain/validation`, {});
+}
+
+// checkSSODomainVerification asks Zitadel to validate the outstanding challenge and
+// returns the refreshed status (platform admin only).
+export function checkSSODomainVerification(
+  token: string,
+  org: string,
+): Promise<DataResult<SSOConfig>> {
+  return postData<SSOConfig>(token, `/api/v1/orgs/${org}/sso/domain/verify`, {});
 }
 
 // listOrgs returns the organizations the authenticated user belongs to. Degrades

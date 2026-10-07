@@ -3,13 +3,16 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  checkSSODomainVerification,
   createOrgInvite,
   deleteOrgSSO,
+  generateSSODomainValidation,
   removeOrgMember,
   revokeOrgInvite,
   setOrgMemberRole,
   setOrgSSO,
   type SetSSOInput,
+  type SSOConfig,
 } from "../../lib/api";
 import { getToken } from "../../lib/session";
 
@@ -84,4 +87,30 @@ export async function removeSSOAction(org: string): Promise<ActionResult> {
   if (!res.ok) return res;
   revalidate(org);
   return { ok: true };
+}
+
+// generateDomainAction (re)issues the DNS ownership challenge for the org's SSO
+// email domain and returns the refreshed config carrying the record to publish.
+export async function generateDomainAction(
+  org: string,
+): Promise<{ ok: true; config: SSOConfig } | { ok: false; error: string }> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await generateSSODomainValidation(token, org);
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true, config: res.data };
+}
+
+// checkDomainAction asks Zitadel to validate the outstanding challenge; a domain
+// that isn't verified yet comes back as { ok: false } with a guidance message.
+export async function checkDomainAction(
+  org: string,
+): Promise<{ ok: true; config: SSOConfig } | { ok: false; error: string }> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await checkSSODomainVerification(token, org);
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true, config: res.data };
 }

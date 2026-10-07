@@ -199,6 +199,9 @@ export type User = {
   isAdmin: boolean;
   isActive: boolean;
   createdAt: string;
+  // False for a fresh SSO account whose handle was derived from the IdP profile;
+  // such users are routed to onboarding to confirm/choose their handle.
+  usernameConfirmed: boolean;
 };
 
 export type AuthOk = { ok: true; token: string; user: User };

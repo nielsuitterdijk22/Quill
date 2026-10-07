@@ -19,6 +19,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/secretbox"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
+	"github.com/nielsuitterdijk22/quill/internal/zitadel"
 )
 
 // Actor is the authenticated principal performing a platform operation. Platform
@@ -64,14 +65,36 @@ type Service struct {
 // organizations (satisfied by internal/zitadel.Client). It is optional: when nil
 // or disabled, orgs stay Quill-only and member invites fall back to a shareable
 // accept link instead of an IdP-sent email.
+//
+// Quill does not provision Zitadel orgs or identity providers for SSO: those are
+// set up by hand in the Zitadel console and linked to a Quill org via
+// tenants.external_org_id (see sso.go). The only IdP operation Quill drives is
+// sending a member invite through Zitadel's mail service.
 type OrgProvisioner interface {
 	// Enabled reports whether external provisioning is configured.
 	Enabled() bool
 	// InviteUser creates the user in the IdP and triggers its invite/init email.
 	// orgID scopes the call to a Zitadel org; empty targets the management token's
-	// home (default) org. Quill orgs are not mirrored into Zitadel orgs, so invites
-	// pass "" — the org-scoped form stays for SCIM-era per-org provisioning.
+	// home (default) org. Self-service users live in the default org, so invites
+	// pass "" — the org-scoped form stays for inviting into an SSO customer's org.
 	InviteUser(ctx context.Context, orgID, email, displayName string) error
+	// ProvisionSSOOrg creates and configures a customer's Zitadel org (IdP with
+	// auto-linking, ORG_OWNER admin shells, external-only login policy) and returns
+	// the new org id. On partial failure it still returns the created org id (if
+	// any) so the caller can tear it down. Used by the SSO onboarding flow.
+	ProvisionSSOOrg(ctx context.Context, spec zitadel.SSOProvisionSpec) (string, error)
+	// DeleteSSOOrg removes a Zitadel org, used to tear down a partially-provisioned
+	// org after a failure so its domain isn't left reserved by the orphan.
+	DeleteSSOOrg(ctx context.Context, orgID string) error
+	// GenerateDomainValidation (re)issues a DNS ownership challenge for the org's
+	// email domain and returns the record the customer must publish.
+	GenerateDomainValidation(ctx context.Context, orgID, domain string) (zitadel.DomainValidation, error)
+	// ValidateDomain asks Zitadel to check the outstanding challenge; a non-nil
+	// error means verification hasn't completed (e.g. the DNS record isn't live).
+	ValidateDomain(ctx context.Context, orgID, domain string) error
+	// IsDomainVerified live-reads whether the org's domain is verified in Zitadel,
+	// the source of truth for the flag Quill displays.
+	IsDomainVerified(ctx context.Context, orgID, domain string) (bool, error)
 }
 
 // NewService wires a platform Service. logger may be nil. The CI runner defaults

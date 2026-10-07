@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (username, email, display_name, is_admin, is_active)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (username, email, display_name, is_admin, is_active, username_confirmed)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -27,8 +27,9 @@ WHERE id = $1
 RETURNING *;
 
 -- name: UpdateUsername :one
+-- Choosing a username also confirms it: an explicit handle is never a derived one.
 UPDATE users
-SET username = $2
+SET username = $2, username_confirmed = true
 WHERE id = $1
 RETURNING *;
 

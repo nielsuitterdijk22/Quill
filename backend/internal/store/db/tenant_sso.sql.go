@@ -9,10 +9,11 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getTenantSSO = `-- name: GetTenantSSO :one
-SELECT tenant_id, protocol, issuer, client_id, client_secret_ciphertext, client_secret_nonce, email_domain, enabled, created_at, updated_at
+SELECT tenant_id, protocol, issuer, client_id, client_secret_ciphertext, client_secret_nonce, email_domain, enabled, created_at, updated_at, external_idp_id, domain_verification_type, domain_verification_token
 FROM tenant_sso_config WHERE tenant_id = $1
 `
 
@@ -30,6 +31,9 @@ func (q *Queries) GetTenantSSO(ctx context.Context, tenantID uuid.UUID) (TenantS
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExternalIdpID,
+		&i.DomainVerificationType,
+		&i.DomainVerificationToken,
 	)
 	return i, err
 }
@@ -46,7 +50,7 @@ ON CONFLICT (tenant_id) DO UPDATE SET
   client_secret_nonce = EXCLUDED.client_secret_nonce,
   email_domain = EXCLUDED.email_domain,
   enabled = EXCLUDED.enabled
-RETURNING tenant_id, protocol, issuer, client_id, client_secret_ciphertext, client_secret_nonce, email_domain, enabled, created_at, updated_at
+RETURNING tenant_id, protocol, issuer, client_id, client_secret_ciphertext, client_secret_nonce, email_domain, enabled, created_at, updated_at, external_idp_id, domain_verification_type, domain_verification_token
 `
 
 type UpsertTenantSSOParams struct {
@@ -83,8 +87,42 @@ func (q *Queries) UpsertTenantSSO(ctx context.Context, arg UpsertTenantSSOParams
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExternalIdpID,
+		&i.DomainVerificationType,
+		&i.DomainVerificationToken,
 	)
 	return i, err
+}
+
+const setTenantSSOExternalIDP = `-- name: SetTenantSSOExternalIDP :exec
+UPDATE tenant_sso_config SET external_idp_id = $2 WHERE tenant_id = $1
+`
+
+type SetTenantSSOExternalIDPParams struct {
+	TenantID      uuid.UUID `json:"tenantId"`
+	ExternalIdpID string    `json:"externalIdpId"`
+}
+
+func (q *Queries) SetTenantSSOExternalIDP(ctx context.Context, arg SetTenantSSOExternalIDPParams) error {
+	_, err := q.db.Exec(ctx, setTenantSSOExternalIDP, arg.TenantID, arg.ExternalIdpID)
+	return err
+}
+
+const setTenantSSODomainVerification = `-- name: SetTenantSSODomainVerification :exec
+UPDATE tenant_sso_config
+SET domain_verification_type = $2, domain_verification_token = $3
+WHERE tenant_id = $1
+`
+
+type SetTenantSSODomainVerificationParams struct {
+	TenantID                uuid.UUID `json:"tenantId"`
+	DomainVerificationType  string    `json:"domainVerificationType"`
+	DomainVerificationToken string    `json:"domainVerificationToken"`
+}
+
+func (q *Queries) SetTenantSSODomainVerification(ctx context.Context, arg SetTenantSSODomainVerificationParams) error {
+	_, err := q.db.Exec(ctx, setTenantSSODomainVerification, arg.TenantID, arg.DomainVerificationType, arg.DomainVerificationToken)
+	return err
 }
 
 const deleteTenantSSO = `-- name: DeleteTenantSSO :exec
@@ -94,4 +132,46 @@ DELETE FROM tenant_sso_config WHERE tenant_id = $1
 func (q *Queries) DeleteTenantSSO(ctx context.Context, tenantID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTenantSSO, tenantID)
 	return err
+}
+
+const getEnabledTenantSSOByDomain = `-- name: GetEnabledTenantSSOByDomain :one
+SELECT t.external_org_id, t.slug, t.name
+FROM tenant_sso_config c
+JOIN tenants t ON t.id = c.tenant_id
+WHERE c.email_domain = $1 AND c.enabled
+  AND t.external_org_id IS NOT NULL AND t.external_org_id <> ''
+`
+
+type GetEnabledTenantSSOByDomainRow struct {
+	ExternalOrgID pgtype.Text `json:"externalOrgId"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+}
+
+func (q *Queries) GetEnabledTenantSSOByDomain(ctx context.Context, emailDomain string) (GetEnabledTenantSSOByDomainRow, error) {
+	row := q.db.QueryRow(ctx, getEnabledTenantSSOByDomain, emailDomain)
+	var i GetEnabledTenantSSOByDomainRow
+	err := row.Scan(&i.ExternalOrgID, &i.Slug, &i.Name)
+	return i, err
+}
+
+const getEnabledTenantSSOBySlug = `-- name: GetEnabledTenantSSOBySlug :one
+SELECT t.external_org_id, t.slug, t.name
+FROM tenant_sso_config c
+JOIN tenants t ON t.id = c.tenant_id
+WHERE t.slug = $1 AND c.enabled
+  AND t.external_org_id IS NOT NULL AND t.external_org_id <> ''
+`
+
+type GetEnabledTenantSSOBySlugRow struct {
+	ExternalOrgID pgtype.Text `json:"externalOrgId"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+}
+
+func (q *Queries) GetEnabledTenantSSOBySlug(ctx context.Context, slug string) (GetEnabledTenantSSOBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getEnabledTenantSSOBySlug, slug)
+	var i GetEnabledTenantSSOBySlugRow
+	err := row.Scan(&i.ExternalOrgID, &i.Slug, &i.Name)
+	return i, err
 }

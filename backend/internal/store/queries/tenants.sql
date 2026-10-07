@@ -4,6 +4,18 @@ SELECT * FROM tenants WHERE lower(slug) = lower($1);
 -- name: GetTenantByID :one
 SELECT * FROM tenants WHERE id = $1;
 
+-- name: GetTenantByExternalOrg :one
+SELECT * FROM tenants WHERE external_org_id = $1;
+
+-- name: ListAllOrgTenants :many
+-- All organization tenants with their SSO-link status, for the platform-admin
+-- console (which onboards customers regardless of the admin's own membership).
+SELECT t.slug, t.name, t.external_org_id, c.email_domain
+FROM tenants t
+LEFT JOIN tenant_sso_config c ON c.tenant_id = t.id
+WHERE t.kind = 'org'
+ORDER BY t.name;
+
 -- name: CreateTenant :one
 INSERT INTO tenants (slug, name)
 VALUES ($1, $2)

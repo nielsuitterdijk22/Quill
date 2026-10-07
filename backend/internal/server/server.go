@@ -229,6 +229,9 @@ func (s *Server) setupRoutes() {
 			r.Use(s.requireAdmin)
 			r.Get("/admin/users", s.handleListUsers)
 			r.Patch("/admin/users/{username}/active", s.handleSetUserActive)
+			r.Get("/admin/orgs", s.handleListAllOrgs)
+			r.Post("/admin/orgs", s.handleCreateTenant)
+			r.Post("/admin/orgs/sso", s.handleProvisionSSOTenant)
 			if !s.externalAuthEnabled() {
 				r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 			}
@@ -283,6 +286,8 @@ func (s *Server) setupRoutes() {
 				r.Get("/sso", s.handleGetOrgSSO)
 				r.Put("/sso", s.handleSetOrgSSO)
 				r.Delete("/sso", s.handleDeleteOrgSSO)
+				r.Post("/sso/domain/validation", s.handleGenerateSSODomainValidation)
+				r.Post("/sso/domain/verify", s.handleCheckSSODomainVerification)
 			})
 			r.Post("/invites/{token}/accept", s.handleAcceptInvite)
 			r.Route("/projects", func(r chi.Router) {

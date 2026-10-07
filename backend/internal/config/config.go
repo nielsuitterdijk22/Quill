@@ -74,8 +74,9 @@ type ZitadelConfig struct {
 	Issuer string
 	// ManagementToken is a Zitadel service-account token (PAT or machine key JWT)
 	// used for the Management API: deleting a user on account deletion (to stop
-	// session resurrection) and, later, org/member provisioning. Optional — when
-	// empty, those server-side calls are skipped and logged.
+	// session resurrection) and emailing member invites. Optional — when empty,
+	// those server-side calls are skipped and logged. SSO needs no management calls
+	// (customer IdPs are set up by hand in the Zitadel console).
 	ManagementToken string
 }
 

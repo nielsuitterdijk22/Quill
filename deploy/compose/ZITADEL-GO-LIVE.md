@@ -158,6 +158,45 @@ full `up` (not just `up -d zitadel`) must run it. Bring up the whole profile:
 **`ZITADEL_MASTERKEY` errors.** The master key must be exactly 32 characters
 (`openssl rand -hex 16`). Changing it after init requires a `zitadel-pgdata` wipe.
 
+## Per-org SSO (customer identity providers)
+
+SSO is set up **by hand in the Zitadel console by a platform engineer** — Quill
+does no identity-provider provisioning. Self-service users all live in the default
+Zitadel org; a customer that needs SSO gets its own Zitadel org, and Quill just
+records the link so those users land in the right workspace.
+
+To onboard an SSO customer:
+
+1. **Enable domain discovery** once, instance-wide: *Default settings → Login
+   Behavior and Security → "Domain discovery allowed"*. This is what lets Zitadel
+   route a login whose email matches a **verified** org domain to that org's IdP.
+   Without it, SSO logins fall back to the default login screen. This is a one-time
+   instance toggle, not per-customer.
+2. **In Quill**, as a **platform admin**, either provision the customer's Zitadel
+   org from Quill (org + IdP + admin shells + external-only login) or link an
+   existing Zitadel org id under **admin → org → Single sign-on**, and set the
+   customer's **email domain**.
+3. **Verify the domain — in Quill.** On the same Single sign-on panel, the
+   **Domain verification** block shows the DNS TXT record to publish and a live
+   *pending / verified* status (read from Zitadel). Have the customer add the
+   record at their DNS, then click **Check verification**. Until this flips to
+   *verified*, domain discovery won't route the customer's users and their SSO
+   login fails with "external login provider not allowed" — so this step is
+   mandatory, not optional. A throwaway domain you don't control (e.g. `gmail.com`)
+   can never be verified; use a domain the customer actually owns.
+
+At login, Quill shows a single sign-in button → Zitadel; domain discovery sends the
+customer's users to their IdP. The issued token carries that Zitadel org as its
+resource-owner claim, which Quill maps back to the linked Quill org and joins the
+user as a member automatically. Quill keeps verifying only Zitadel's own token.
+
+There is **no self-service SSO** — only a platform admin can provision or link a
+customer org. When `ZITADEL_MANAGEMENT_TOKEN` is set, Quill drives the Zitadel
+Management API for SSO onboarding (creating the org/IdP, and generating + checking
+the domain-verification challenge); it is also used for account deletion and for
+emailing member invites. Without the token, the SSO onboarding and
+domain-verification actions are unavailable and orgs stay Quill-only.
+
 ## Falling back to local auth
 
 Leave `ZITADEL_ISSUER` / `NEXT_PUBLIC_ZITADEL_ISSUER` unset and redeploy:

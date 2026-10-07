@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jws"
@@ -23,13 +25,12 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
-// Zitadel exposes a user's organisation as these reserved claims on the issued
-// token. The org id drives Quill's tenant resolution (one tenant per org);
-// primary_domain is a human-readable slug fallback.
-const (
-	zitadelOrgIDClaim     = "urn:zitadel:iam:user:resourceowner:id"
-	zitadelOrgDomainClaim = "urn:zitadel:iam:user:resourceowner:primary_domain"
-)
+// zitadelOrgIDClaim is the reserved claim carrying a user's home Zitadel
+// organisation (its resource-owner). It drives Quill's tenant resolution: the
+// default org (all self-service users) maps to the seeded "default" tenant, while
+// a Zitadel org a platform engineer explicitly linked to a Quill org
+// (tenants.external_org_id) maps to that org tenant. See resolveTenant.
+const zitadelOrgIDClaim = "urn:zitadel:iam:user:resourceowner:id"
 
 // ZitadelVerifier verifies Zitadel-issued RS256 JWTs against the instance JWKS
 // and provisions Quill users and tenants on first login. It reads the user
@@ -151,11 +152,10 @@ func (v *ZitadelVerifier) Verify(ctx context.Context, token string) (Identity, e
 		return Identity{}, ErrInvalidCredentials
 	}
 
-	var orgID, orgDomain string
+	var orgID string
 	_ = tok.Get(zitadelOrgIDClaim, &orgID)
-	_ = tok.Get(zitadelOrgDomainClaim, &orgDomain)
 
-	return v.resolveIdentity(ctx, token, sub, orgID, orgDomain)
+	return v.resolveIdentity(ctx, token, sub, orgID)
 }
 
 // unverifiedClaim decodes a JWT WITHOUT verifying its signature and returns the
@@ -183,7 +183,7 @@ func unverifiedClaim(token, claim string) string {
 // resolveIdentity looks up or provisions the Quill user and tenant for a Zitadel
 // (userID, orgID) pair. rawToken is the bearer used to read the OIDC userinfo
 // profile on first login.
-func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID, orgID, orgDomain string) (Identity, error) {
+func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID, orgID string) (Identity, error) {
 	// Fast path: this Zitadel user has logged in before.
 	ident, err := v.store.GetAuthIdentity(ctx, db.GetAuthIdentityParams{
 		Provider: ProviderZitadel,
@@ -194,9 +194,12 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 		if err != nil || !user.IsActive {
 			return Identity{}, ErrInvalidCredentials
 		}
-		tenantID, err := v.resolveTenant(ctx, orgID, orgDomain)
+		tenantID, linkedOrg, err := v.resolveTenant(ctx, orgID)
 		if err != nil {
 			return Identity{}, err
+		}
+		if linkedOrg {
+			v.ensureOrgMembership(ctx, tenantID, user.ID, user.Email)
 		}
 		return Identity{
 			UserID:   user.ID,
@@ -220,17 +223,52 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 		return Identity{}, ErrInvalidCredentials
 	}
 
-	tenantID, err := v.resolveTenant(ctx, orgID, orgDomain)
+	tenantID, linkedOrg, err := v.resolveTenant(ctx, orgID)
 	if err != nil {
 		return Identity{}, err
 	}
 	id.TenantID = tenantID
+	if linkedOrg {
+		v.ensureOrgMembership(ctx, tenantID, id.UserID, id.Email)
+	}
 
 	// Best-effort Forgejo provisioning, off the login path.
 	if v.forgejo != nil && v.forgejo.Enabled() {
 		go v.provisionForgejo(context.WithoutCancel(ctx), id)
 	}
 	return id, nil
+}
+
+// ensureOrgMembership grants an SSO user membership of the linked customer org
+// they signed in through (JIT provisioning), so a customer's users automatically
+// become members of their Quill org on first login. The caller only invokes this
+// for a Zitadel org explicitly linked to a Quill org (never the default tenant).
+// An existing membership is left untouched so a re-login never downgrades an org
+// admin to member. A new member whose email was pre-seeded as a tenant admin (see
+// platform.ProvisionSSOTenant) is granted 'admin' — mirroring their Zitadel
+// ORG_OWNER — otherwise 'member'. Best-effort: a failure is logged, not fatal.
+func (v *ZitadelVerifier) ensureOrgMembership(ctx context.Context, tenantID, userID uuid.UUID, email string) {
+	if _, err := v.store.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenantID, UserID: userID}); err == nil {
+		return // already a member — preserve their role
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		v.logger.Warn("sso: could not check org membership", "tenant", tenantID, "user", userID, "error", err)
+		return
+	}
+	role := "member"
+	if email != "" {
+		if seeded, err := v.store.IsTenantAdminSeeded(ctx, db.IsTenantAdminSeededParams{TenantID: tenantID, Email: email}); err != nil {
+			v.logger.Warn("sso: could not check tenant admin seed", "tenant", tenantID, "user", userID, "error", err)
+		} else if seeded {
+			role = "admin"
+		}
+	}
+	if err := v.store.AddTenantMember(ctx, db.AddTenantMemberParams{
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     role,
+	}); err != nil {
+		v.logger.Warn("sso: could not grant org membership on login", "tenant", tenantID, "user", userID, "error", err)
+	}
 }
 
 // zitadelUserInfo holds the OIDC userinfo fields Quill needs.
@@ -308,6 +346,10 @@ func (v *ZitadelVerifier) createUserWithIdentity(ctx context.Context, userID, us
 			DisplayName: displayName,
 			IsAdmin:     count == 0,
 			IsActive:    true,
+			// The handle is derived from the IdP profile; the user confirms or
+			// changes it in onboarding on first login (username_confirmed stays
+			// false until they do).
+			UsernameConfirmed: false,
 		})
 		if err != nil {
 			return err
@@ -331,26 +373,31 @@ func (v *ZitadelVerifier) createUserWithIdentity(ctx context.Context, userID, us
 	return id, err
 }
 
-// resolveTenant maps a Zitadel org to a Quill tenant (one tenant per org). When
-// orgID is empty the seeded default tenant is used so single-user setups work.
-// The org->tenant mapping uses the tenants.external_org_id column.
-func (v *ZitadelVerifier) resolveTenant(ctx context.Context, orgID, orgDomain string) (uuid.UUID, error) {
-	if orgID == "" {
-		tenant, err := v.store.GetTenantBySlug(ctx, "default")
-		if err != nil {
-			return uuid.UUID{}, fmt.Errorf("default tenant not found: %w", err)
+// resolveTenant maps a Zitadel org (the token's resource-owner) to a Quill tenant
+// and reports whether it resolved to a linked customer org.
+//
+// Self-service users all live in the default Zitadel org and map to the seeded
+// "default" tenant — with no org membership. Only a Zitadel org a platform
+// engineer explicitly linked to a Quill org (tenants.external_org_id, via
+// platform.SetOrgSSO) maps to that org tenant, and its users are JIT-joined as
+// members. An unknown / unlinked org (including the default org and any org set up
+// in Zitadel but not yet linked in Quill) safely falls back to the default tenant
+// rather than auto-creating a stray one. The bool is true only for a linked org.
+func (v *ZitadelVerifier) resolveTenant(ctx context.Context, orgID string) (uuid.UUID, bool, error) {
+	if orgID != "" {
+		tenant, err := v.store.GetTenantByExternalOrg(ctx, orgID)
+		if err == nil {
+			return tenant.ID, true, nil
 		}
-		return tenant.ID, nil
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return uuid.UUID{}, false, fmt.Errorf("resolve org tenant for %s: %w", orgID, err)
+		}
 	}
-	slug := slugifyOrgDomain(orgDomain)
-	if slug == "" {
-		slug = tailOf(orgID, 12)
-	}
-	tenant, err := v.store.GetOrCreateTenantByExternalOrg(ctx, orgID, slug)
+	tenant, err := v.store.GetTenantBySlug(ctx, "default")
 	if err != nil {
-		return uuid.UUID{}, fmt.Errorf("resolve org tenant for %s: %w", orgID, err)
+		return uuid.UUID{}, false, fmt.Errorf("default tenant not found: %w", err)
 	}
-	return tenant.ID, nil
+	return tenant.ID, false, nil
 }
 
 var invalidUsernameCharsRe = regexp.MustCompile(`[^a-zA-Z0-9_-]`)

@@ -215,13 +215,18 @@ func (s *Service) SetUsername(ctx context.Context, userID uuid.UUID, desired str
 		return user, nil // no-op
 	}
 
-	// Onboarding-only: refuse once the user has any project (repos/namespace exist).
+	// Onboarding-only: the handle is also the personal namespace, so refuse a
+	// rename once the user owns a personal project (repos live under it). Plain
+	// org memberships don't create a personal namespace, so an SSO user who only
+	// belongs to orgs can still choose their handle on first login.
 	projects, err := s.store.ListProjectsByUser(ctx, userID)
 	if err != nil {
 		return db.User{}, fmt.Errorf("check projects: %w", err)
 	}
-	if len(projects) > 0 {
-		return db.User{}, fmt.Errorf("%w: your username can only be set during onboarding", ErrConflict)
+	for _, p := range projects {
+		if p.IsPersonal {
+			return db.User{}, fmt.Errorf("%w: your username can only be set during onboarding", ErrConflict)
+		}
 	}
 
 	// Uniqueness (case-insensitive via GetUserByUsername).

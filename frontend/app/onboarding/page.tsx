@@ -95,6 +95,17 @@ export default function OnboardingPage() {
     getToken().then(async (token) => {
       if (!token) return;
       try {
+        // Don't skip the username step for a fresh SSO user who hasn't confirmed
+        // their handle yet — JIT org membership gives them a project, but picking
+        // a global handle comes first (otherwise they'd loop: the app shell keeps
+        // redirecting here until the username is confirmed).
+        const meRes = await fetch("/api/backend/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (meRes.ok) {
+          const me = (await meRes.json()) as { usernameConfirmed?: boolean };
+          if (me.usernameConfirmed === false) return;
+        }
         const res = await fetch("/api/backend/me/projects", {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -183,6 +194,23 @@ export default function OnboardingPage() {
         const body = (await res.json().catch(() => null)) as { message?: string } | null;
         setError(body?.message ?? "That username isn't available — try another.");
         return;
+      }
+      // A user auto-joined to an org via SSO already has a workspace, so skip the
+      // individual/org choice and drop them straight into the app. A brand-new
+      // self-signup has no project yet and continues onboarding.
+      try {
+        const pr = await fetch("/api/backend/me/projects", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (pr.ok) {
+          const body = (await pr.json()) as { projects?: { slug: string }[] };
+          if ((body.projects ?? []).length > 0) {
+            window.location.href = "/repositories";
+            return;
+          }
+        }
+      } catch {
+        /* fall through to the workspace-choice step */
       }
       setStep("choose");
     });

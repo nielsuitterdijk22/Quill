@@ -25,12 +25,17 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_ROUTES.some((re) => re.test(pathname));
 }
 
-// NextAuth: redirect unauthenticated users on protected routes to /sign-in.
+// NextAuth: redirect unauthenticated users on protected routes to /sign-in,
+// preserving where they were headed as ?redirect_url so sign-in can return them
+// there afterward (e.g. an invite accept link opened while logged out — otherwise
+// the invite silently never completes). SignInPage sanitizes the value.
 const middleware = zitadelAuth((req) => {
   const { pathname } = req.nextUrl;
   if (isPublic(pathname) || req.auth?.user) return NextResponse.next();
   const url = req.nextUrl.clone();
+  const dest = pathname + req.nextUrl.search;
   url.pathname = "/sign-in";
+  url.search = `?redirect_url=${encodeURIComponent(dest)}`;
   return NextResponse.redirect(url);
 });
 

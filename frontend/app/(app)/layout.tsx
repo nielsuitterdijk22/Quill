@@ -18,6 +18,13 @@ export default async function AppLayout({
   const user = await requireSession();
   const token = await getToken();
 
+  // A fresh SSO user whose handle is still IdP-derived must confirm it first.
+  // This is independent of projects: an SSO user auto-joined to an org already
+  // has a project, but still needs to pick their global handle.
+  if (!user.usernameConfirmed) {
+    redirect("/onboarding");
+  }
+
   // Use authGet directly so we can distinguish "no projects" (should redirect)
   // from "fetch failed / auth error" (should not redirect — avoids a loop when
   // the auth middleware hasn't initialised yet during a soft navigation).

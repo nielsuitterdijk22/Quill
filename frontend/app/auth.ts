@@ -4,6 +4,8 @@
 import NextAuth from "next-auth";
 import Zitadel from "next-auth/providers/zitadel";
 
+import { BASE_SCOPE } from "./lib/zitadel-scope";
+
 const issuer = process.env.NEXT_PUBLIC_ZITADEL_ISSUER ?? "";
 const clientId = process.env.NEXT_PUBLIC_ZITADEL_CLIENT_ID ?? "";
 
@@ -25,7 +27,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           checks: ["pkce", "state"],
           authorization: {
             params: {
-              scope: `openid profile email offline_access urn:zitadel:iam:org:project:id:${process.env.NEXT_PUBLIC_ZITADEL_PROJECT_ID ?? "zitadel"}:aud`,
+              scope: BASE_SCOPE,
               // Sign-out only ends Quill's own session, not Zitadel's IdP
               // session (see zitadel-bridge.tsx) — without this, a live
               // Zitadel session silently re-authenticates on sign-in with no

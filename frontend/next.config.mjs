@@ -23,7 +23,7 @@ const nextConfig = {
     const api = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
     // Top-level app routes that must not be treated as owner namespaces.
     const reserved =
-      "projects|settings|admin|repositories|pulls|pipelines|sign-in|sign-up|login|register|api";
+      "projects|orgs|settings|admin|repositories|pulls|pipelines|sign-in|sign-up|login|register|api";
     return [
       {
         source: "/api/backend/:path*",

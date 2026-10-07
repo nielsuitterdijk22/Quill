@@ -207,30 +207,34 @@ type OrgInvite struct {
 }
 
 type TenantSsoConfig struct {
-	TenantID               uuid.UUID `json:"tenantId"`
-	Protocol               string    `json:"protocol"`
-	Issuer                 string    `json:"issuer"`
-	ClientID               string    `json:"clientId"`
-	ClientSecretCiphertext []byte    `json:"clientSecretCiphertext"`
-	ClientSecretNonce      []byte    `json:"clientSecretNonce"`
-	EmailDomain            string    `json:"emailDomain"`
-	Enabled                bool      `json:"enabled"`
-	CreatedAt              time.Time `json:"createdAt"`
-	UpdatedAt              time.Time `json:"updatedAt"`
+	TenantID                uuid.UUID `json:"tenantId"`
+	Protocol                string    `json:"protocol"`
+	Issuer                  string    `json:"issuer"`
+	ClientID                string    `json:"clientId"`
+	ClientSecretCiphertext  []byte    `json:"clientSecretCiphertext"`
+	ClientSecretNonce       []byte    `json:"clientSecretNonce"`
+	EmailDomain             string    `json:"emailDomain"`
+	Enabled                 bool      `json:"enabled"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
+	ExternalIdpID           string    `json:"externalIdpId"`
+	DomainVerificationType  string    `json:"domainVerificationType"`
+	DomainVerificationToken string    `json:"domainVerificationToken"`
 }
 
 type User struct {
-	ID              uuid.UUID     `json:"id"`
-	Username        string        `json:"username"`
-	Email           string        `json:"email"`
-	DisplayName     string        `json:"displayName"`
-	IsAdmin         bool          `json:"isAdmin"`
-	IsActive        bool          `json:"isActive"`
-	ForgejoUserID   pgtype.Int8   `json:"forgejoUserId"`
-	ForgejoUsername pgtype.Text   `json:"forgejoUsername"`
-	CreatedAt       time.Time     `json:"createdAt"`
-	UpdatedAt       time.Time     `json:"updatedAt"`
-	TenantID        uuid.NullUUID `json:"tenantId"`
+	ID                uuid.UUID     `json:"id"`
+	Username          string        `json:"username"`
+	Email             string        `json:"email"`
+	DisplayName       string        `json:"displayName"`
+	IsAdmin           bool          `json:"isAdmin"`
+	IsActive          bool          `json:"isActive"`
+	ForgejoUserID     pgtype.Int8   `json:"forgejoUserId"`
+	ForgejoUsername   pgtype.Text   `json:"forgejoUsername"`
+	CreatedAt         time.Time     `json:"createdAt"`
+	UpdatedAt         time.Time     `json:"updatedAt"`
+	TenantID          uuid.NullUUID `json:"tenantId"`
+	UsernameConfirmed bool          `json:"usernameConfirmed"`
 }
 
 type WorkItemRefOutbox struct {

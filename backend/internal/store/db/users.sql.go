@@ -24,17 +24,18 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (username, email, display_name, is_admin, is_active)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (username, email, display_name, is_admin, is_active, username_confirmed)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	IsAdmin     bool   `json:"isAdmin"`
-	IsActive    bool   `json:"isActive"`
+	Username          string `json:"username"`
+	Email             string `json:"email"`
+	DisplayName       string `json:"displayName"`
+	IsAdmin           bool   `json:"isAdmin"`
+	IsActive          bool   `json:"isActive"`
+	UsernameConfirmed bool   `json:"usernameConfirmed"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -44,6 +45,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.DisplayName,
 		arg.IsAdmin,
 		arg.IsActive,
+		arg.UsernameConfirmed,
 	)
 	var i User
 	err := row.Scan(
@@ -84,7 +86,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at, tenant_id FROM users WHERE id = $1
+SELECT id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at, tenant_id, username_confirmed FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -102,6 +104,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.TenantID,
+		&i.UsernameConfirmed,
 	)
 	return i, err
 }
@@ -129,7 +132,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (User, er
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at FROM users
+SELECT id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at, username_confirmed FROM users
 ORDER BY username
 LIMIT $1 OFFSET $2
 `
@@ -159,6 +162,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.ForgejoUsername,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UsernameConfirmed,
 		); err != nil {
 			return nil, err
 		}
@@ -233,7 +237,7 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 
 const updateUsername = `-- name: UpdateUsername :one
 UPDATE users
-SET username = $2
+SET username = $2, username_confirmed = true
 WHERE id = $1
 RETURNING id, username, email, display_name, is_admin, is_active, forgejo_user_id, forgejo_username, created_at, updated_at
 `

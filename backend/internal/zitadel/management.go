@@ -1,7 +1,9 @@
 // Package zitadel provides a thin client over the Zitadel Management API for the
-// operations Quill drives from the platform layer: provisioning an organization
-// when a Quill org is created, and inviting members by email through Zitadel's
-// own mail service (the same service that sends signup verification).
+// one operation Quill drives from the platform layer: inviting members by email
+// through Zitadel's own mail service (the same service that sends signup
+// verification). Quill does not provision Zitadel orgs or identity providers —
+// SSO customers' orgs are set up by hand in the Zitadel console (see
+// platform/sso.go).
 //
 // It is deliberately best-effort and optional. When Zitadel is not configured
 // (local / self-hosted-without-Zitadel), the platform falls back to Quill-only
@@ -32,7 +34,7 @@ type Client struct {
 
 // NewClient builds a management client. issuer is the Zitadel instance base URL
 // (e.g. https://auth.example.com); mgmtToken is a service-account PAT with
-// org-management permission. Either being empty disables the client.
+// permission to import users. issuer or mgmtToken being empty disables the client.
 func NewClient(issuer, mgmtToken string) *Client {
 	return &Client{
 		issuer:    strings.TrimRight(strings.TrimSpace(issuer), "/"),
@@ -46,31 +48,15 @@ func (c *Client) Enabled() bool {
 	return c != nil && c.issuer != "" && c.mgmtToken != ""
 }
 
-// CreateOrg creates a Zitadel organization and returns its id. Used when a Quill
-// org is created so members can be invited into it and, later, sign in against
-// it (org claim -> Quill tenant).
-func (c *Client) CreateOrg(ctx context.Context, name string) (string, error) {
-	if !c.Enabled() {
-		return "", fmt.Errorf("zitadel management client not configured")
-	}
-	var out struct {
-		ID string `json:"id"`
-	}
-	if err := c.do(ctx, http.MethodPost, "/management/v1/orgs", "", map[string]any{
-		"name": name,
-	}, &out); err != nil {
-		return "", err
-	}
-	if out.ID == "" {
-		return "", fmt.Errorf("zitadel create org returned no id")
-	}
-	return out.ID, nil
-}
-
-// InviteUser creates a human user in orgID with the given email and lets Zitadel
-// send its initialization/invite email (the account has no password, so Zitadel
-// prompts the invitee to set one — the same flow as signup verification).
-// Requires a working SMTP configuration in Zitadel; that is Zitadel's concern.
+// InviteUser creates a human user in orgID with the given email so Zitadel sends
+// its initialization/invite email: with no password and an unverified email, the
+// created user is in the "initial" state and Zitadel mails an init code for the
+// invitee to set up their account (the same flow as signup verification).
+//
+// It uses the create endpoint (/users/human), NOT /users/human/_import — the
+// _import endpoint is for silent bulk migration and does NOT send any email, which
+// is why invites appeared to send no mail. Requires a working SMTP configuration
+// in Zitadel; that is Zitadel's concern.
 func (c *Client) InviteUser(ctx context.Context, orgID, email, displayName string) error {
 	if !c.Enabled() {
 		return fmt.Errorf("zitadel management client not configured")
@@ -88,24 +74,57 @@ func (c *Client) InviteUser(ctx context.Context, orgID, email, displayName strin
 			"isEmailVerified": false,
 		},
 	}
-	return c.do(ctx, http.MethodPost, "/management/v1/users/human/_import", orgID, body, nil)
+	return c.do(ctx, http.MethodPost, "/management/v1/users/human", orgID, body, nil)
 }
 
-// do performs a JSON request against the Management API. orgID, when non-empty,
-// scopes the call to that organization via the x-zitadel-orgid header. out, when
-// non-nil, receives the decoded response body.
+// do performs a JSON request against the Management API and errors on any
+// non-2xx response. orgID, when non-empty, scopes the call to that organization
+// via the x-zitadel-orgid header. out, when non-nil, receives the decoded
+// response body.
 func (c *Client) do(ctx context.Context, method, path, orgID string, body, out any) error {
+	status, snippet, err := c.doStatus(ctx, method, path, orgID, body, out)
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return &apiError{method: method, path: path, status: status, snippet: snippet}
+	}
+	return nil
+}
+
+// doTolerant is do for idempotent calls: a 404 (already gone) or 409 (already
+// exists) is treated as success, so re-running provisioning is safe.
+func (c *Client) doTolerant(ctx context.Context, method, path, orgID string, body any) error {
+	status, snippet, err := c.doStatus(ctx, method, path, orgID, body, nil)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusNotFound || status == http.StatusConflict {
+		return nil
+	}
+	if status < 200 || status >= 300 {
+		return &apiError{method: method, path: path, status: status, snippet: snippet}
+	}
+	return nil
+}
+
+// doStatus performs the request and returns the HTTP status and (on a non-2xx
+// response) a truncated body snippet. The returned error is reserved for
+// transport / encode / decode failures — an HTTP error status is NOT an error
+// here, so callers can branch on the status (e.g. treat 409 as "already exists").
+// out is decoded only on a 2xx response.
+func (c *Client) doStatus(ctx context.Context, method, path, orgID string, body, out any) (int, string, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("encode request: %w", err)
+			return 0, "", fmt.Errorf("encode request: %w", err)
 		}
 		reader = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.issuer+path, reader)
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.mgmtToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -114,19 +133,32 @@ func (c *Client) do(ctx context.Context, method, path, orgID string, body, out a
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("zitadel %s %s returned %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(snippet)))
+		return resp.StatusCode, strings.TrimSpace(string(snippet)), nil
 	}
 	if out != nil {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return fmt.Errorf("decode response: %w", err)
+			return resp.StatusCode, "", fmt.Errorf("decode response: %w", err)
 		}
 	}
-	return nil
+	return resp.StatusCode, "", nil
+}
+
+// apiError is a non-2xx Management API response. It carries the status so callers
+// can treat "already exists" (409) as non-fatal without string matching.
+type apiError struct {
+	method  string
+	path    string
+	status  int
+	snippet string
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf("zitadel %s %s returned %d: %s", e.method, e.path, e.status, e.snippet)
 }
 
 // splitName derives a first/last name for a Zitadel human profile, which requires

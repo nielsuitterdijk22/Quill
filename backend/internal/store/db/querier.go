@@ -31,6 +31,8 @@ type Querier interface {
 	DeleteEnvironment(ctx context.Context, id uuid.UUID) error
 	DeleteTenant(ctx context.Context, id uuid.UUID) error
 	DeleteTenantSSO(ctx context.Context, tenantID uuid.UUID) error
+	GetEnabledTenantSSOByDomain(ctx context.Context, emailDomain string) (GetEnabledTenantSSOByDomainRow, error)
+	GetEnabledTenantSSOBySlug(ctx context.Context, slug string) (GetEnabledTenantSSOBySlugRow, error)
 	GetInviteByTokenHash(ctx context.Context, tokenHash string) (OrgInvite, error)
 	GetTenantSSO(ctx context.Context, tenantID uuid.UUID) (TenantSsoConfig, error)
 	GetTenantMember(ctx context.Context, arg GetTenantMemberParams) (TenantMember, error)
@@ -42,6 +44,8 @@ type Querier interface {
 	RevokeInvite(ctx context.Context, arg RevokeInviteParams) (int64, error)
 	RevokePendingInvitesByEmail(ctx context.Context, arg RevokePendingInvitesByEmailParams) error
 	SetTenantExternalOrg(ctx context.Context, arg SetTenantExternalOrgParams) error
+	SetTenantSSOExternalIDP(ctx context.Context, arg SetTenantSSOExternalIDPParams) error
+	SetTenantSSODomainVerification(ctx context.Context, arg SetTenantSSODomainVerificationParams) error
 	UpsertTenantSSO(ctx context.Context, arg UpsertTenantSSOParams) (TenantSsoConfig, error)
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	// Remove all policies attached to a scope (used when the scope is deleted, since
@@ -61,6 +65,10 @@ type Querier interface {
 	GetProjectBySlug(ctx context.Context, lower string) (Project, error)
 	GetRepositoryByID(ctx context.Context, id uuid.UUID) (Repository, error)
 	GetRepositoryBySlug(ctx context.Context, arg GetRepositoryBySlugParams) (Repository, error)
+	AddTenantAdminSeed(ctx context.Context, arg AddTenantAdminSeedParams) error
+	IsTenantAdminSeeded(ctx context.Context, arg IsTenantAdminSeededParams) (bool, error)
+	GetTenantByExternalOrg(ctx context.Context, externalOrgID string) (Tenant, error)
+	ListAllOrgTenants(ctx context.Context) ([]ListAllOrgTenantsRow, error)
 	GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error)
 	GetTenantBySlug(ctx context.Context, lower string) (Tenant, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)

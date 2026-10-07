@@ -112,6 +112,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (Identity, err
 			DisplayName: display,
 			IsAdmin:     count == 0,
 			IsActive:    true,
+			// A locally-registered user typed their own handle, so it needs no
+			// onboarding confirmation step (unlike an IdP-derived one).
+			UsernameConfirmed: true,
 		})
 		if err != nil {
 			return err

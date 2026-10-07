@@ -3,7 +3,6 @@ package zitadel
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,41 +17,6 @@ func TestClientDisabledWhenUnconfigured(t *testing.T) {
 	}
 	if !NewClient("https://auth.example.com/", "tok").Enabled() {
 		t.Fatal("fully configured client should be enabled")
-	}
-}
-
-func TestCreateOrg(t *testing.T) {
-	var gotAuth, gotPath, gotBody string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotPath = r.URL.Path
-		b, _ := io.ReadAll(r.Body)
-		gotBody = string(b)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"12345"}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "sa-token")
-	id, err := c.CreateOrg(context.Background(), "Acme Inc")
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
-	if id != "12345" {
-		t.Fatalf("org id: got %q", id)
-	}
-	if gotAuth != "Bearer sa-token" {
-		t.Fatalf("auth header: got %q", gotAuth)
-	}
-	if gotPath != "/management/v1/orgs" {
-		t.Fatalf("path: got %q", gotPath)
-	}
-	var body map[string]any
-	if err := json.Unmarshal([]byte(gotBody), &body); err != nil {
-		t.Fatalf("body not json: %v", err)
-	}
-	if body["name"] != "Acme Inc" {
-		t.Fatalf("body name: got %v", body["name"])
 	}
 }
 
@@ -74,7 +38,7 @@ func TestInviteUserScopesOrgAndProfile(t *testing.T) {
 	if gotOrg != "org-9" {
 		t.Fatalf("org header: got %q", gotOrg)
 	}
-	if gotPath != "/management/v1/users/human/_import" {
+	if gotPath != "/management/v1/users/human" {
 		t.Fatalf("path: got %q", gotPath)
 	}
 	if body["userName"] != "jane@acme.com" {
@@ -99,7 +63,7 @@ func TestDoSurfacesHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "sa-token")
-	if _, err := c.CreateOrg(context.Background(), "x"); err == nil {
+	if err := c.InviteUser(context.Background(), "org-1", "x@acme.com", "X"); err == nil {
 		t.Fatal("expected error on 403")
 	}
 }

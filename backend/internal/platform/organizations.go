@@ -108,6 +108,75 @@ func (s *Service) CreateOrganization(ctx context.Context, actor Actor, slug, nam
 	return tenant, project, nil
 }
 
+// CreateTenant provisions a bare org tenant (platform admin only): a kind='org'
+// tenant with NO members and NO seed project. Unlike CreateOrganization — the
+// self-service path, which makes the creator the tenant's admin and seeds a
+// project — a platform admin onboarding a customer creates an empty tenant to link
+// to a Zitadel org. Its members arrive by SSO login (JIT) or invitation, and a
+// customer admin is designated by promoting one of them; the platform admin need
+// not (and does not) become a member.
+func (s *Service) CreateTenant(ctx context.Context, actor Actor, slug, name string) (db.Tenant, error) {
+	if err := s.authorizePlatformAdmin(actor); err != nil {
+		return db.Tenant{}, err
+	}
+	slug = normalizeSlug(slug)
+	name = strings.TrimSpace(name)
+	if !validSlug(slug) {
+		return db.Tenant{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
+	}
+	if name == "" {
+		name = slug
+	}
+	if _, err := s.store.GetTenantBySlug(ctx, slug); err == nil {
+		return db.Tenant{}, ErrConflict
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return db.Tenant{}, fmt.Errorf("lookup tenant: %w", err)
+	}
+	t, err := s.store.CreateOrgTenant(ctx, db.CreateOrgTenantParams{Slug: slug, Name: name})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return db.Tenant{}, ErrConflict
+		}
+		return db.Tenant{}, fmt.Errorf("create tenant: %w", err)
+	}
+	return t, nil
+}
+
+// AdminOrgSummary is an org tenant with its SSO-link status, for the
+// platform-admin console.
+type AdminOrgSummary struct {
+	Slug          string
+	Name          string
+	SSOConfigured bool
+	ExternalOrgID string
+	EmailDomain   string
+}
+
+// ListAllOrganizations returns every org tenant with its SSO-link status
+// (platform admin only). Unlike ListOrganizations it is not scoped to the actor's
+// memberships: onboarding a customer's SSO is a platform-engineer task performed
+// on orgs the admin need not belong to.
+func (s *Service) ListAllOrganizations(ctx context.Context, actor Actor) ([]AdminOrgSummary, error) {
+	if err := s.authorizePlatformAdmin(actor); err != nil {
+		return nil, err
+	}
+	rows, err := s.store.ListAllOrgTenants(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list all organizations: %w", err)
+	}
+	out := make([]AdminOrgSummary, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, AdminOrgSummary{
+			Slug:          r.Slug,
+			Name:          r.Name,
+			SSOConfigured: r.ExternalOrgID.Valid && r.ExternalOrgID.String != "",
+			ExternalOrgID: r.ExternalOrgID.String,
+			EmailDomain:   r.EmailDomain.String,
+		})
+	}
+	return out, nil
+}
+
 // ListOrganizations returns the org tenants the actor is a member of, with their
 // role, for nav and the org switcher.
 func (s *Service) ListOrganizations(ctx context.Context, actor Actor) ([]OrganizationSummary, error) {

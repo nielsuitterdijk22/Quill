@@ -26,17 +26,22 @@ type userResponse struct {
 	IsAdmin     bool      `json:"isAdmin"`
 	IsActive    bool      `json:"isActive"`
 	CreatedAt   time.Time `json:"createdAt"`
+	// UsernameConfirmed is false for a fresh IdP-provisioned account whose handle
+	// was derived from the SSO profile; the frontend routes such users to the
+	// onboarding username step until they confirm it.
+	UsernameConfirmed bool `json:"usernameConfirmed"`
 }
 
 func newUserResponse(u db.User) userResponse {
 	return userResponse{
-		ID:          u.ID.String(),
-		Username:    u.Username,
-		Email:       u.Email,
-		DisplayName: u.DisplayName,
-		IsAdmin:     u.IsAdmin,
-		IsActive:    u.IsActive,
-		CreatedAt:   u.CreatedAt,
+		ID:                u.ID.String(),
+		Username:          u.Username,
+		Email:             u.Email,
+		DisplayName:       u.DisplayName,
+		IsAdmin:           u.IsAdmin,
+		IsActive:          u.IsActive,
+		CreatedAt:         u.CreatedAt,
+		UsernameConfirmed: u.UsernameConfirmed,
 	}
 }
 

@@ -125,7 +125,7 @@ func (q *Queries) ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) (
 }
 
 const getTenantByID = `-- name: GetTenantByID :one
-SELECT id, slug, name, created_at, updated_at FROM tenants WHERE id = $1
+SELECT id, slug, name, external_org_id, created_at, updated_at FROM tenants WHERE id = $1
 `
 
 func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error) {
@@ -135,6 +135,65 @@ func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, erro
 		&i.ID,
 		&i.Slug,
 		&i.Name,
+		&i.ExternalOrgID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listAllOrgTenants = `-- name: ListAllOrgTenants :many
+SELECT t.slug, t.name, t.external_org_id, c.email_domain
+FROM tenants t
+LEFT JOIN tenant_sso_config c ON c.tenant_id = t.id
+WHERE t.kind = 'org'
+ORDER BY t.name
+`
+
+type ListAllOrgTenantsRow struct {
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	ExternalOrgID pgtype.Text `json:"externalOrgId"`
+	EmailDomain   pgtype.Text `json:"emailDomain"`
+}
+
+func (q *Queries) ListAllOrgTenants(ctx context.Context) ([]ListAllOrgTenantsRow, error) {
+	rows, err := q.db.Query(ctx, listAllOrgTenants)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllOrgTenantsRow{}
+	for rows.Next() {
+		var i ListAllOrgTenantsRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.Name,
+			&i.ExternalOrgID,
+			&i.EmailDomain,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTenantByExternalOrg = `-- name: GetTenantByExternalOrg :one
+SELECT id, slug, name, external_org_id, created_at, updated_at FROM tenants WHERE external_org_id = $1
+`
+
+func (q *Queries) GetTenantByExternalOrg(ctx context.Context, externalOrgID string) (Tenant, error) {
+	row := q.db.QueryRow(ctx, getTenantByExternalOrg, externalOrgID)
+	var i Tenant
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.ExternalOrgID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -142,7 +201,7 @@ func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, erro
 }
 
 const getTenantBySlug = `-- name: GetTenantBySlug :one
-SELECT id, slug, name, created_at, updated_at FROM tenants WHERE lower(slug) = lower($1)
+SELECT id, slug, name, external_org_id, created_at, updated_at FROM tenants WHERE lower(slug) = lower($1)
 `
 
 func (q *Queries) GetTenantBySlug(ctx context.Context, lower string) (Tenant, error) {
@@ -152,6 +211,7 @@ func (q *Queries) GetTenantBySlug(ctx context.Context, lower string) (Tenant, er
 		&i.ID,
 		&i.Slug,
 		&i.Name,
+		&i.ExternalOrgID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
