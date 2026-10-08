@@ -26,3 +26,8 @@ One entry per foundry iteration, written by the loop.
   egress filter (returns "403 Filtered") even though the Next server is up and
   serving; the demo therefore reports the proxy's 403 rather than the app's
   200. On a host without that filter the probe returns 200.
+
+## 2026-10-08 06:24 — T-001 — parked after 3 attempts
+attempt 1: stopped: timeout cap hit. Agent summary: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.'
+attempt 2: stopped: timeout cap hit. Agent summary: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.'
+attempt 3: stopped: timeout cap hit. Agent summary: 'Now let me add the quota error mapping to `writePlatformError`:'

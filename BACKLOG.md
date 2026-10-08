@@ -5,13 +5,6 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
-### T-001: Implement Individual Tier Quota Enforcement (Repos & Storage)
-- Story: US-017
-- Accept: Run `go test ./internal/quota/... -v` to verify tests `TestRepoQuotaExceeded` and `TestStorageQuotaExceeded` pass, confirming 403/413 responses for free-tier limits.
-- Tests may change: no
-
-Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` and `tenant.usage` against free-tier limits (50 repos, 1GB). Update `POST /projects` and push webhooks to reject over-limit actions for free users.
-
 ### T-002: Implement Nested Group Hierarchy Creation
 - Story: US-005
 - Accept: Run `go test ./internal/group/... -v` to verify tests `TestCreateNestedGroup` and `TestMaxDepthExceeded` pass, ensuring depth validation and parent linkage.
@@ -104,6 +97,14 @@ Create `internal/notification` package using SMTP client. Add handlers for PR op
 Add `webhooks` table. Create `POST /api/v1/projects/{id}/webhooks` endpoint. Implement async dispatcher to send JSON payloads on PR opened/merged/failed. Add retry logic with exponential backoff (3 attempts).
 
 ## Parked
+
+### T-001: Implement Individual Tier Quota Enforcement (Repos & Storage)
+- Story: US-017
+- Accept: Run `go test ./internal/quota/... -v` to verify tests `TestRepoQuotaExceeded` and `TestStorageQuotaExceeded` pass, confirming 403/413 responses for free-tier limits.
+- Tests may change: no
+
+Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` and `tenant.usage` against free-tier limits (50 repos, 1GB). Update `POST /projects` and push webhooks to reject over-limit actions for free users.
+- Parked: 2026-10-08 after 3 attempts — stopped: timeout cap hit. Tried: attempt 1: stopped: timeout cap hit | attempt 2: stopped: timeout cap hit | attempt 3: stopped: timeout cap hit
 
 ## Done
 
