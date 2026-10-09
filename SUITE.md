@@ -68,3 +68,7 @@ Buyer: VP Eng / Platform lead at a 200-2000 engineer EU org, motivated by sovere
 - No contractual data-residency SLA in v1; pinned to a specific EU region once we move to a cloud provider
 - Each product is its own repository with its own Go backend and Next.js frontend, sharing only the design system, identity, and event bus
 - Pricing is 5 EUR/seat flat + metered overage + 15 EUR/seat support tier; enterprises end on custom usage-based contracts with ~50% margin
+
+## Owner notes
+
+- 2026-10-09: Standardize cross-product communication: REST calls must include tenant context via the `X-Tenant-Id` HTTP header. NATS events must include `tenant_id` in the JSON payload AND the `X-Tenant-Id` NATS header. This ensures tenant isolation is enforced at both the transport and application layers.

@@ -5,6 +5,13 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
+### T-015: Define Canonical PRMergedPayload and Tenant Header Contract
+- Story: (CTO)
+- Accept: Go struct `PRMergedPayload` exists in `internal/events`; `X-Tenant-Id` constant defined in `internal/http`; `go test ./...` passes.
+- Tests may change: no
+
+Create a shared types package defining `PRMergedPayload` (fields: pr_id, repo_id, tenant_id, merged_by, merged_at, sha). Define the `X-Tenant-Id` header constant. This serves as the reference contract for Tempo and Forge to import.
+
 ### T-002: Implement Nested Group Hierarchy Creation
 - Story: US-005
 - Accept: Run `go test ./internal/group/... -v` to verify tests `TestCreateNestedGroup` and `TestMaxDepthExceeded` pass, ensuring depth validation and parent linkage.
