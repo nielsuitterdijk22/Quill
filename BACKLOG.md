@@ -5,17 +5,38 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
-### T-020: Implement admin create-tenant CLI command
+### T-023: Add plan column and CreateOrgTenant store method
 - Story: (CTO)
-- Accept: Running `go run ./cmd/quill admin create-tenant --name test-tenant --plan internal` creates a row in the tenants table with kind='org' and outputs the generated tenant_id; `./check` passes.
+- Accept: go test ./backend/internal/store/... passes; migration 000019 exists and is applied in tests.
 - Tests may change: no
 - Needs: Quill/T-000
 
-1. Create `backend/cmd/quill/main.go` with a `cobra` (or standard `flag`) subcommand `admin`.
-2. Implement `create-tenant` which accepts `--name` and `--plan`.
-3. Call `store.CreateOrgTenant` with the provided name and plan.
-4. Print the new tenant_id to stdout in a machine-readable format.
-5. Add a unit test for the command logic (mocking store).
+1. Create migration 000019_tenant_plan.sql adding `plan TEXT NOT NULL DEFAULT 'internal'` to `tenants`.
+2. Update `db.Tenant` struct to include `Plan string`.
+3. Add `store.CreateOrgTenant(ctx, params)` that inserts a row with `kind='org'`.
+4. Add a unit test using a mock or in-memory store if Postgres is unavailable, or skip if `QUILL_TEST_DATABASE_URL` is not set.
+
+### T-024: Implement admin create-tenant CLI command
+- Story: (CTO)
+- Accept: go test ./backend/cmd/quill/... passes; `go run ./cmd/quill admin create-tenant --name test --plan internal` prints a valid UUID to stdout.
+- Tests may change: no
+- Needs: Quill/T-023
+
+1. Create `backend/cmd/quill/main.go` using standard `flag` package with `admin` subcommand.
+2. Implement `create-tenant` subcommand accepting `--name` and `--plan`.
+3. Call `store.CreateOrgTenant` and print the returned `tenant_id`.
+4. Add a unit test that mocks the store and verifies the output format.
+
+### T-025: Add integration test for admin create-tenant
+- Story: (CTO)
+- Accept: go test -tags=integration ./backend/cmd/quill/... passes when QUILL_TEST_DATABASE_URL is set.
+- Tests may change: no
+- Needs: Quill/T-024
+
+1. Add `backend/cmd/quill/admin_integration_test.go`.
+2. Skip test if `QUILL_TEST_DATABASE_URL` is not set.
+3. Run the CLI command and verify a row exists in `tenants` with `kind='org'` and the provided `plan`.
+4. Ensure `./check` passes without requiring Docker.
 
 ### T-021: Implement admin create-repo CLI command
 - Story: (CTO)
@@ -186,6 +207,20 @@ Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` 
 3. Create the 'suite-meta' repository via API for this tenant.
 4. Commit a README.md that includes links to the Tempo board and Forge pipeline for the suite itself.
 - CTO (2026-10-12): superseded by T-020, T-021, T-022
+
+### T-020: Implement admin create-tenant CLI command
+- Story: (CTO)
+- Accept: Running `go run ./cmd/quill admin create-tenant --name test-tenant --plan internal` creates a row in the tenants table with kind='org' and outputs the generated tenant_id; `./check` passes.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Create `backend/cmd/quill/main.go` with a `cobra` (or standard `flag`) subcommand `admin`.
+2. Implement `create-tenant` which accepts `--name` and `--plan`.
+3. Call `store.CreateOrgTenant` with the provided name and plan.
+4. Print the new tenant_id to stdout in a machine-readable format.
+5. Add a unit test for the command logic (mocking store).
+- CTO (2026-10-12): dropped — Too broad for one session; replaced by T-023, T-024, and T-025 which split the work into store, CLI, and integration steps.
+- CTO (2026-10-12): superseded by T-023, T-024, T-025
 
 ## Done
 
