@@ -71,6 +71,7 @@ Buyer: VP Eng / Platform lead at a 200-2000 engineer EU org, motivated by sovere
 
 ## Owner notes
 
+- 2026-10-12: 2026-10-13: Clarified tenant identity mapping: The suite `tenant_id` (UUID) is the logical isolation boundary. It must be present in the OIDC token (as a custom claim `tenant_id`) or derived via a mapping table if the Zitadel tenant (`zdt`) is used as a proxy. Products must not assume `zdt` == `tenant_id` without explicit configuration. All products must read `tenant_id` from the authenticated user's context to enforce isolation.
 - 2026-10-12: 2026-10-13: Forge's `tenants` table is now keyed by `tenant_id UUID` instead of `installation_id`. All products must use `tenant_id` UUID when interacting with Forge. Webhook-created tenants are assigned a UUID at upsert time. This standardizes tenant identity across the suite and aligns with the shared `X-Tenant-Id` header convention.
 - 2026-10-12: 2026-10-12: The BlackTulip engineering team will dogfood the suite as its primary internal tenant. All engineering work (planning in Tempo, coding in Quill, CI in Forge) must be tracked within the suite itself. This creates the primary internal tenant and validates the core plan-code-CI loop for our own users.
 - 2026-10-12: 2026-10-09: The suite will be dogfooded by the BlackTulip engineering team. All engineering work (planning in Tempo, coding in Quill, CI in Forge) must be tracked within the suite itself. This creates the primary internal tenant and validates the core plan-code-CI loop for our own users.
