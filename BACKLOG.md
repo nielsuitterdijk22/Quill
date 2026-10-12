@@ -5,16 +5,42 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
-### T-019: Create internal 'blacktulip' tenant and bootstrap repo
-- Story: (owner thought)
-- Accept: A tenant named 'blacktulip' exists in the database with a valid tenant_id, and a repository 'suite-meta' is created under it containing a README.md that links to the Tempo board and Forge pipeline.
+### T-020: Implement admin create-tenant CLI command
+- Story: (CTO)
+- Accept: Running `go run ./cmd/quill admin create-tenant --name test-tenant --plan internal` creates a row in the tenants table with kind='org' and outputs the generated tenant_id; `./check` passes.
 - Tests may change: no
 - Needs: Quill/T-000
 
-1. Add a CLI command `quill admin create-tenant --name blacktulip --plan internal`.
-2. Run the command to generate the tenant_id.
-3. Create the 'suite-meta' repository via API for this tenant.
-4. Commit a README.md that includes links to the Tempo board and Forge pipeline for the suite itself.
+1. Create `backend/cmd/quill/main.go` with a `cobra` (or standard `flag`) subcommand `admin`.
+2. Implement `create-tenant` which accepts `--name` and `--plan`.
+3. Call `store.CreateOrgTenant` with the provided name and plan.
+4. Print the new tenant_id to stdout in a machine-readable format.
+5. Add a unit test for the command logic (mocking store).
+
+### T-021: Implement admin create-repo CLI command
+- Story: (CTO)
+- Accept: Running `go run ./cmd/quill admin create-repo --tenant <id> --name suite-meta` calls the Forgejo API to create the repository and outputs the repo URL; `./check` passes.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Add `create-repo` subcommand to the `quill admin` CLI.
+2. Accept `--tenant` (UUID) and `--name` (string).
+3. Resolve the tenant's Forgejo org/user context.
+4. Call Forgejo REST API to create the repository.
+5. Handle errors if repo already exists (idempotent).
+6. Add a unit test mocking the Forgejo client.
+
+### T-022: Implement admin seed-file CLI command
+- Story: (CTO)
+- Accept: Running `go run ./cmd/quill admin seed-file --tenant <id> --repo suite-meta --path README.md --content 'Hello'` creates/updates the file in the repo via Forgejo API; `./check` passes.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Add `seed-file` subcommand to the `quill admin` CLI.
+2. Accept `--tenant`, `--repo`, `--path`, and `--content` (or `--file` for stdin).
+3. Use Forgejo API to create or update the file at the specified path.
+4. Commit with a message indicating it was seeded by admin.
+5. Add a unit test mocking the Forgejo client.
 
 ### T-016: Implement Quota Calculation and Middleware
 - Story: (CTO)
@@ -148,6 +174,18 @@ Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` 
 - Parked: 2026-10-08 after 3 attempts — stopped: timeout cap hit. Tried: attempt 1: stopped: timeout cap hit | attempt 2: stopped: timeout cap hit | attempt 3: stopped: timeout cap hit
 - CTO (2026-10-09): Remove this task. It has been replaced by the three focused tasks above which cover the same scope but are sized for a single agent session.
 - CTO (2026-10-12): superseded by T-016, T-017, T-018 (repaired: the split had left it queued)
+
+### T-019: Create internal 'blacktulip' tenant and bootstrap repo
+- Story: (owner thought)
+- Accept: A tenant named 'blacktulip' exists in the database with a valid tenant_id, and a repository 'suite-meta' is created under it containing a README.md that links to the Tempo board and Forge pipeline.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Add a CLI command `quill admin create-tenant --name blacktulip --plan internal`.
+2. Run the command to generate the tenant_id.
+3. Create the 'suite-meta' repository via API for this tenant.
+4. Commit a README.md that includes links to the Tempo board and Forge pipeline for the suite itself.
+- CTO (2026-10-12): superseded by T-020, T-021, T-022
 
 ## Done
 
