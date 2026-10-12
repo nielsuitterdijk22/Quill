@@ -5,6 +5,22 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
+### T-026: Add plan column to tenants schema
+- Story: (CTO)
+- Accept: go test ./backend/internal/store/... passes; migration 000019_tenant_plan.sql exists and is applied in tests.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Create `backend/internal/store/migrations/000019_tenant_plan.sql` containing `ALTER TABLE tenants ADD COLUMN plan TEXT NOT NULL DEFAULT 'internal';`. 2. Update `backend/internal/store/db/models.go` in the `Tenant` struct to add `Plan string` after `ExternalOrgID`. 3. Run `go generate ./...` if sqlc is used, or manually update `backend/internal/store/db/tenants.sql.go` to include `plan` in the `Tenant` struct and any `SELECT *` queries that return it. 4. Ensure `go build ./...` passes.
+
+### T-027: Update CreateOrgTenant query and add test
+- Story: (CTO)
+- Accept: go test ./backend/internal/store/... -run TestCreateOrgTenant passes.
+- Tests may change: no
+- Needs: Quill/T-024a
+
+1. In `backend/internal/store/queries/tenants.sql`, update the `CreateOrgTenant` query to include `plan` in the INSERT column list (set to 'internal' or param) and in the RETURNING clause. 2. Regenerate or manually update `backend/internal/store/db/tenants.sql.go` to match the new SQL signature. 3. In `backend/internal/store/tenants_test.go`, add a test `TestCreateOrgTenant` that calls `store.CreateOrgTenant` and asserts the returned `Tenant.Plan` is 'internal' and `Kind` is 'org'. Skip if `QUILL_TEST_DATABASE_URL` is not set.
+
 ### T-024: Implement admin create-tenant CLI command
 - Story: (CTO)
 - Accept: go test ./backend/cmd/quill/... passes; `go run ./cmd/quill admin create-tenant --name test --plan internal` prints a valid UUID to stdout.
@@ -248,6 +264,7 @@ Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` 
 - Migration files are embedded via `//go:embed *.sql` in `backend/internal/store/migrations/embed.go`; golang-migrate applies them in order.
 - Two earlier attempts failed due to tool-looping (repeated identical grep calls). Avoid repeating the same command.
 - FEEDBACK.md notes: Forge migrated `ten
+- CTO (2026-10-13): superseded by T-026, T-027
 
 ## Done
 
