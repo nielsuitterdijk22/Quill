@@ -16,22 +16,12 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 3. Create the 'suite-meta' repository via API for this tenant.
 4. Commit a README.md that includes links to the Tempo board and Forge pipeline for the suite itself.
 
-### T-001: Implement Individual Tier Quota Enforcement (Repos & Storage)
-- Story: US-017
-- Accept: Run `go test ./internal/quota/... -v` to verify tests `TestRepoQuotaExceeded` and `TestStorageQuotaExceeded` pass, confirming 403/413 responses for free-tier limits.
-- Tests may change: no
-
-Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` and `tenant.usage` against free-tier limits (50 repos, 1GB). Update `POST /projects` and push webhooks to reject over-limit actions for free users.
-- Parked: 2026-10-08 after 3 attempts — stopped: timeout cap hit. Tried: attempt 1: stopped: timeout cap hit | attempt 2: stopped: timeout cap hit | attempt 3: stopped: timeout cap hit
-- CTO (2026-10-09): Remove this task. It has been replaced by the three focused tasks above which cover the same scope but are sized for a single agent session.
-
-### T-018: Enforce Quotas on Webhook Pushes
+### T-016: Implement Quota Calculation and Middleware
 - Story: (CTO)
-- Accept: Run `go test ./internal/webhook/... -v` to verify `TestPushQuota` passes, confirming a 413 response when a push exceeds the 1GB storage limit.
+- Accept: Run `go test ./internal/quota/... -v` to verify `TestCalculateUsage` and `TestMiddlewareRejects` pass.
 - Tests may change: no
-- Needs: Quill/T-001
 
-Update the push webhook handler to include the quota middleware. Ensure the storage usage check is performed against the incoming payload size. Verify that the webhook returns a 413 response if the push would exceed the storage limit for the tenant's tier.
+Create the `internal/quota` package. Implement logic to calculate current tenant usage (repo count, storage bytes) from the database. Create a middleware that checks `tenant.tier` and current usage against free-tier limits (50 repos, 1GB), returning 403/413 if exceeded. Do not wire it to routes yet.
 
 ### T-017: Enforce Quotas on Project Creation
 - Story: (CTO)
@@ -41,12 +31,13 @@ Update the push webhook handler to include the quota middleware. Ensure the stor
 
 Update the `POST /projects` handler to include the quota middleware. Ensure the project creation logic calls the quota check before writing to the database. Verify that the middleware correctly identifies the tenant and returns the appropriate error code.
 
-### T-016: Implement Quota Calculation and Middleware
+### T-018: Enforce Quotas on Webhook Pushes
 - Story: (CTO)
-- Accept: Run `go test ./internal/quota/... -v` to verify `TestCalculateUsage` and `TestMiddlewareRejects` pass.
+- Accept: Run `go test ./internal/webhook/... -v` to verify `TestPushQuota` passes, confirming a 413 response when a push exceeds the 1GB storage limit.
 - Tests may change: no
+- Needs: Quill/T-001
 
-Create the `internal/quota` package. Implement logic to calculate current tenant usage (repo count, storage bytes) from the database. Create a middleware that checks `tenant.tier` and current usage against free-tier limits (50 repos, 1GB), returning 403/413 if exceeded. Do not wire it to routes yet.
+Update the push webhook handler to include the quota middleware. Ensure the storage usage check is performed against the incoming payload size. Verify that the webhook returns a 413 response if the push would exceed the storage limit for the tenant's tier.
 
 ### T-015: Define Canonical PRMergedPayload and Tenant Header Contract
 - Story: (CTO)
@@ -147,6 +138,16 @@ Create `internal/notification` package using SMTP client. Add handlers for PR op
 Add `webhooks` table. Create `POST /api/v1/projects/{id}/webhooks` endpoint. Implement async dispatcher to send JSON payloads on PR opened/merged/failed. Add retry logic with exponential backoff (3 attempts).
 
 ## Parked
+
+### T-001: Implement Individual Tier Quota Enforcement (Repos & Storage)
+- Story: US-017
+- Accept: Run `go test ./internal/quota/... -v` to verify tests `TestRepoQuotaExceeded` and `TestStorageQuotaExceeded` pass, confirming 403/413 responses for free-tier limits.
+- Tests may change: no
+
+Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` and `tenant.usage` against free-tier limits (50 repos, 1GB). Update `POST /projects` and push webhooks to reject over-limit actions for free users.
+- Parked: 2026-10-08 after 3 attempts — stopped: timeout cap hit. Tried: attempt 1: stopped: timeout cap hit | attempt 2: stopped: timeout cap hit | attempt 3: stopped: timeout cap hit
+- CTO (2026-10-09): Remove this task. It has been replaced by the three focused tasks above which cover the same scope but are sized for a single agent session.
+- CTO (2026-10-12): superseded by T-016, T-017, T-018 (repaired: the split had left it queued)
 
 ## Done
 
