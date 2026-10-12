@@ -5,6 +5,17 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
+### T-019: Create internal 'blacktulip' tenant and bootstrap repo
+- Story: (owner thought)
+- Accept: A tenant named 'blacktulip' exists in the database with a valid tenant_id, and a repository 'suite-meta' is created under it containing a README.md that links to the Tempo board and Forge pipeline.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Add a CLI command `quill admin create-tenant --name blacktulip --plan internal`.
+2. Run the command to generate the tenant_id.
+3. Create the 'suite-meta' repository via API for this tenant.
+4. Commit a README.md that includes links to the Tempo board and Forge pipeline for the suite itself.
+
 ### T-001: Implement Individual Tier Quota Enforcement (Repos & Storage)
 - Story: US-017
 - Accept: Run `go test ./internal/quota/... -v` to verify tests `TestRepoQuotaExceeded` and `TestStorageQuotaExceeded` pass, confirming 403/413 responses for free-tier limits.

@@ -71,4 +71,5 @@ Buyer: VP Eng / Platform lead at a 200-2000 engineer EU org, motivated by sovere
 
 ## Owner notes
 
+- 2026-10-12: 2026-10-09: The suite will be dogfooded by the BlackTulip engineering team. All engineering work (planning in Tempo, coding in Quill, CI in Forge) must be tracked within the suite itself. This creates the primary internal tenant and validates the core plan-code-CI loop for our own users.
 - 2026-10-09: Standardize cross-product communication: REST calls must include tenant context via the `X-Tenant-Id` HTTP header. NATS events must include `tenant_id` in the JSON payload AND the `X-Tenant-Id` NATS header. This ensures tenant isolation is enforced at both the transport and application layers.
