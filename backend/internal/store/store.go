@@ -138,10 +138,10 @@ func (s *Store) GetOrCreateTenantByExternalOrg(ctx context.Context, externalOrgI
 		VALUES ($1, $2, $3)
 		ON CONFLICT (external_org_id) WHERE external_org_id IS NOT NULL
 		DO UPDATE SET updated_at = now()
-		RETURNING id, slug, name, external_org_id, created_at, updated_at`
+		RETURNING id, slug, name, external_org_id, plan, created_at, updated_at`
 	row := s.pool.QueryRow(ctx, q, slug, slug, externalOrgID)
 	var t db.Tenant
-	err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.ExternalOrgID, &t.CreatedAt, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.ExternalOrgID, &t.Plan, &t.CreatedAt, &t.UpdatedAt)
 	if err == nil {
 		return t, nil
 	}
@@ -151,14 +151,14 @@ func (s *Store) GetOrCreateTenantByExternalOrg(ctx context.Context, externalOrgI
 		VALUES ($1, $2, $3)
 		ON CONFLICT (external_org_id) WHERE external_org_id IS NOT NULL
 		DO UPDATE SET updated_at = now()
-		RETURNING id, slug, name, external_org_id, created_at, updated_at`
+		RETURNING id, slug, name, external_org_id, plan, created_at, updated_at`
 	shortID := externalOrgID
 	if len(shortID) > 8 {
 		shortID = shortID[len(shortID)-8:]
 	}
 	fallbackSlug := slug + "-" + shortID
 	row = s.pool.QueryRow(ctx, q2, fallbackSlug, slug, externalOrgID)
-	err = row.Scan(&t.ID, &t.Slug, &t.Name, &t.ExternalOrgID, &t.CreatedAt, &t.UpdatedAt)
+	err = row.Scan(&t.ID, &t.Slug, &t.Name, &t.ExternalOrgID, &t.Plan, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

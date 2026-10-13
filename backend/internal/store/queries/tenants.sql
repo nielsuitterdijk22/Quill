@@ -12,7 +12,7 @@ RETURNING *;
 -- name: CreateOrgTenant :one
 INSERT INTO tenants (slug, name, kind)
 VALUES ($1, $2, 'org')
-RETURNING id, slug, name, external_org_id, created_at, updated_at;
+RETURNING id, slug, name, external_org_id, plan, created_at, updated_at;
 
 -- name: DeleteTenant :exec
 DELETE FROM tenants WHERE id = $1;

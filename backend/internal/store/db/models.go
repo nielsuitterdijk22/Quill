@@ -181,6 +181,7 @@ type Tenant struct {
 	Slug          string      `json:"slug"`
 	Name          string      `json:"name"`
 	ExternalOrgID pgtype.Text `json:"externalOrgId"`
+	Plan          string      `json:"plan"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }
