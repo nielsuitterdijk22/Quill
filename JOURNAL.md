@@ -87,3 +87,35 @@ attempt 3: stopped: explored only — no file changed in 20 min (the task needs 
   so that work belongs to the Forge repo / a follow-up Quill task.
 - Plan values are not yet exposed or settable through any API/CLI; billing provisioning
   of plans is a later task (T-023's CLI/integration split).
+
+## 2026-10-13 05:33 — T-021: Implement admin create-repo CLI command — merged dbaea7e (attempt 2)
+- `backend/cmd/quill` CLI: `admin create-repo --tenant <uuid|slug> --name <name>
+  [--description ...] [--visibility public|internal|private]` (stdlib `flag`;
+  no cobra in go.mod).
+- `createRepo` (cmd/quill/create_repo.go): resolves tenant (UUID or slug),
+  normalizes/validates the repo slug and visibility, resolves the Forgejo org
+  (first project's `forgejo_org_name`, else tenant slug), self-heals the org
+  via `GetOrCreateOrg`, creates the repo via `CreateOrgRepo` (auto-init,
+  default branch main), and is idempotent: on a 409/"already exists" it
+  re-fetches the repo and prints its URL.
+- Postgres sync mirrors `platform.CreateRepo`: creates the tenant's project if
+  missing, then in one transaction upserts the repository row
+  (`CreateRepository`/`UpdateRepository` + `SetRepositoryForgejoLink`).
+- New hand-written `Store.ListProjectsByTenant` in `internal/store/store.go`
+  (raw SQL, no sqlc re-run) — see DECISIONS.md.
+- Unit tests in `create_repo_test.go` (in-memory fake store + `httptest`
+  Forgejo): happy path, project-org-name owner, idempotent 409 re-run,
+  project auto-creation, validation errors, Forgejo-disabled error,
+  `isAlreadyExists`. Fixed the attempt-1 bug: the test mux registered the
+  `/api/v1/orgs/` pattern twice (panic); now a single handler branches on the
+  path suffix.
+- `./check` passes (go vet + build + test in backend; frontend lint + build).
+- Removed the stray 15 MB `backend/quill` build artifact and added it to
+  `.gitignore` (next to `backend/quill-api`).
+- Tokens: 100,693 in (+2,332,516 cached) / 6,911 out, 18 min, 63 steps
+- Questions for owner: - T-024 (the `quill admin` CLI scaffolding) is queued separately; if it lands
+  first, the `admin` dispatch in `main.go` may need a small merge — the
+  `create-repo` subcommand here is self-contained and additive.
+- Follow-ups noticed: - Wire `create-repo` into any admin UI / onboarding flow once T-024 lands.
+- Consider a `--project` flag to target a specific project's org when a tenant
+  has multiple projects (currently uses the first, ordered by slug).
