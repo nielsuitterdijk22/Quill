@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -42,9 +43,14 @@ func usage() error {
 
 Usage:
   quill admin create-repo --tenant <id-or-slug> --name <name> [--description <text>] [--visibility public|internal|private]
+  quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --content <text> [--branch <ref>]
+  quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --file <path-or--> [--branch <ref>]
 
 Commands:
   admin create-repo  create a repository in the tenant's Forgejo org and record it in Postgres
+  admin seed-file    create or update a file in a repository via the Forgejo API, committing as an admin seed
+
+seed-file content comes from --content (inline text) or --file (a file path, or '-' to read stdin).
 
 Configuration is read from the environment (same variables as the API):
   QUILL_DATABASE_URL   Postgres DSN (default: postgres://quill:quill@localhost:5432/quill?sslmode=disable)
@@ -57,13 +63,15 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file)")
 	}
 	switch args[0] {
 	case "create-repo":
 		return runCreateRepo(args[1:])
+	case "seed-file":
+		return runSeedFile(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file)", args[0])
 	}
 }
 
@@ -101,6 +109,79 @@ func runCreateRepo(args []string) error {
 		Name:        *name,
 		Description: *description,
 		Visibility:  *visibility,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println(url)
+	return nil
+}
+
+func runSeedFile(args []string) error {
+	fs := flag.NewFlagSet("seed-file", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	tenant := fs.String("tenant", "", "tenant ID (UUID) or slug the repository belongs to (required)")
+	repo := fs.String("repo", "", "repository name (required)")
+	path := fs.String("path", "", "repository-relative file path (required)")
+	content := fs.String("content", "", "file content (inline text)")
+	file := fs.String("file", "", "path to a file to read as the content ('-' reads stdin)")
+	branch := fs.String("branch", "", "branch to commit to (default: the repository's default branch)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *tenant == "" {
+		return fmt.Errorf("seed-file: --tenant is required")
+	}
+	if *repo == "" {
+		return fmt.Errorf("seed-file: --repo is required")
+	}
+	if *path == "" {
+		return fmt.Errorf("seed-file: --path is required")
+	}
+
+	var contentBytes []byte
+	switch {
+	case *content != "":
+		contentBytes = []byte(*content)
+	case *file != "":
+		if *file == "-" {
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("read stdin: %w", err)
+			}
+			contentBytes = data
+		} else {
+			data, err := os.ReadFile(*file)
+			if err != nil {
+				return fmt.Errorf("read file %q: %w", *file, err)
+			}
+			contentBytes = data
+		}
+	default:
+		return fmt.Errorf("seed-file: provide --content or --file")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	ctx := context.Background()
+	st, err := store.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer st.Close()
+	fj := forgejo.New(cfg.Forgejo)
+	if !fj.Enabled() {
+		return fmt.Errorf("forgejo is not configured (set FORGEJO_BASE_URL and FORGEJO_ADMIN_TOKEN)")
+	}
+
+	url, err := seedFile(ctx, newStoreAdapter(st), fj, cfg.Forgejo.PublicURL, seedFileInput{
+		TenantRef: *tenant,
+		Repo:      *repo,
+		Path:      *path,
+		Content:   contentBytes,
+		Branch:    *branch,
 	})
 	if err != nil {
 		return err

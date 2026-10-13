@@ -301,3 +301,50 @@ func (c *Client) CreateFile(ctx context.Context, owner, repo, path string, conte
 	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/contents/" + escapeContentsPath(strings.Trim(path, "/"))
 	return c.do(ctx, http.MethodPost, p, body, nil)
 }
+
+// SeedFile creates or updates the file at path, committing with message. It
+// fetches the current contents first: when the file exists the update is sent
+// as a PUT carrying the existing blob SHA (the API's precondition for a
+// replace); otherwise a POST creates it. branch empty = default branch. It
+// returns the committed blob SHA.
+func (c *Client) SeedFile(ctx context.Context, owner, repo, path, message, branch string, content []byte) (string, error) {
+	clean := strings.Trim(path, "/")
+	contents, err := c.GetContents(ctx, owner, repo, clean, branch)
+	switch {
+	case err == nil && contents.File != nil:
+		body := map[string]any{
+			"message": message,
+			"content": base64.StdEncoding.EncodeToString(content),
+		}
+		if contents.File.SHA != "" {
+			body["sha"] = contents.File.SHA
+		}
+		if branch != "" {
+			body["branch"] = branch
+		}
+		p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/contents/" + escapeContentsPath(clean)
+		var out ContentEntry
+		if err := c.do(ctx, http.MethodPut, p, body, &out); err != nil {
+			return "", fmt.Errorf("update file %s: %w", path, err)
+		}
+		return out.SHA, nil
+	case err == nil:
+		return "", fmt.Errorf("path %s is a directory, not a file", path)
+	case NotFound(err):
+		body := map[string]string{
+			"message": message,
+			"content": base64.StdEncoding.EncodeToString(content),
+		}
+		if branch != "" {
+			body["branch"] = branch
+		}
+		p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/contents/" + escapeContentsPath(clean)
+		var out ContentEntry
+		if err := c.do(ctx, http.MethodPost, p, body, &out); err != nil {
+			return "", fmt.Errorf("create file %s: %w", path, err)
+		}
+		return out.SHA, nil
+	default:
+		return "", fmt.Errorf("lookup file %s: %w", path, err)
+	}
+}
