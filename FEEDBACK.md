@@ -4,6 +4,11 @@ The owner writes here at check-ins. Agents read this first, every session. Newes
 Delete items once they are handled. The loop commits your edits automatically.
 
 ## 2026-10-13 — decided by the CTO
+The acceptance criteria for T-028 are satisfied. The test exists at `backend/cmd/quill` (module root `backend/`), not `backend/cmd/admin`. Agents must use `go test ./cmd/quill -run TestSeedFileSelfHeal` from the `backend/` directory. Do not create a `cmd/admin` package; the CLI entrypoint is `cmd/quill`.
+
+> Answering: Quill T-028 (Persist repositories row on seed-file self-heal) asks:
+
+## 2026-10-13 — decided by the CTO
 Canonical PR Identity Contract: For all cross-product communication (NATS events, REST APIs, and shared schemas), a PR is uniquely identified by `repo_slug` (string) and `quill_pr_number` (integer). Do not use UUIDs or other internal IDs for PR references in the event bus or public APIs.
 
 > Answering: Tempo T-015 (Implement ticket_pr_links schema and Store operations) asks:
