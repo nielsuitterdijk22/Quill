@@ -133,16 +133,8 @@ func newTestForgejo(t *testing.T, createErr error, htmlURL string) (*forgejo.Cli
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/orgs/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusCreated)
-			fmt.Fprint(w, `{"id":1,"username":"acme"}`)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"message":"not found"}`)
-	})
-	mux.HandleFunc("/api/v1/orgs/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/repos") {
+		rest := strings.TrimPrefix(r.URL.Path, "/api/v1/orgs/")
+		if r.Method == http.MethodPost && strings.HasSuffix(rest, "/repos") {
 			if createErr != nil {
 				w.WriteHeader(http.StatusConflict)
 				fmt.Fprint(w, `{"message":"must be unique"}`)
@@ -156,8 +148,13 @@ func newTestForgejo(t *testing.T, createErr error, htmlURL string) (*forgejo.Cli
 			fmt.Fprintf(w, `{"id":42,"name":%q,"full_name":"org/%s","private":true,"default_branch":"main","html_url":%q}`, body.Name, body.Name, htmlURL)
 			return
 		}
-		w.WriteHeader(http.StatusCreated)
-		fmt.Fprint(w, `{"id":1,"username":"org"}`)
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprint(w, `{"id":1,"username":"acme"}`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"message":"not found"}`)
 	})
 	mux.HandleFunc("/api/v1/repos/", func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/repos/"), "/")

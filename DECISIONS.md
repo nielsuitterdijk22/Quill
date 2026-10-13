@@ -20,3 +20,16 @@ Append-only log of design decisions: date, decision, why, alternatives rejected.
   `ALTER TYPE` is awkward in Postgres) and CHECK IN (...) (same rigidity, less
   readable).
 
+- 2026-10-13 — T-021: the `quill admin create-repo` CLI resolves a tenant's
+  Forgejo org as the `forgejo_org_name` of the tenant's first project, falling
+  back to the tenant slug, then self-heals via `forgejo.GetOrCreateOrg`. Why:
+  the `tenants` table has no Forgejo column by design (1:1 tenant→project→org
+  mapping lives on `projects`), and `GetOrCreateOrg` mirrors the existing
+  `platform.ensureForgejoOrg` recovery path. Rejected alternatives: adding a
+  `forgejo_org_name` column to `tenants` (duplicates the project column, breaks
+  the 1:1 invariant when a tenant has multiple projects) and a new
+  `tenant_organizations` join table (over-engineered for the flat MVP model).
+  The tenant→project lookup uses a hand-written `Store.ListProjectsByTenant`
+  (raw SQL in `store.go`, like `ListRunsByCommitSHA`) rather than a sqlc
+  re-run, to keep the change small.
+
