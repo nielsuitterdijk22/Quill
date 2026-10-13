@@ -206,6 +206,44 @@ func TestSeedFileCreatesRepoWhenMissing(t *testing.T) {
 	}
 }
 
+// TestSeedFileSelfHeal verifies that when the repository exists in Forgejo but
+// has no row in the repositories table, seedFile persists the row (with the
+// canonical slug and the forgejo link) before writing the file.
+func TestSeedFileSelfHeal(t *testing.T) {
+	ctx := context.Background()
+	st := newFakeStore()
+	tenant := st.seedTenant("acme", "Acme Corp")
+	project := st.seedProject(tenant.ID, "acme", "acme")
+	// no repository row seeded
+
+	fj := newSeedForgejo()
+	fj.seedRepo("acme", "suite-meta")
+
+	if _, err := seedFile(ctx, st, fj, "http://forge.example", seedFileInput{
+		TenantRef: "acme", Repo: "suite-meta", Path: "README.md", Content: []byte("Hello"),
+	}); err != nil {
+		t.Fatalf("seedFile: %v", err)
+	}
+
+	if len(st.repos) != 1 {
+		t.Fatalf("expected 1 repository row after self-heal, got %d", len(st.repos))
+	}
+	for _, r := range st.repos {
+		if r.Slug != "suite-meta" {
+			t.Fatalf("slug = %q, want %q", r.Slug, "suite-meta")
+		}
+		if r.ProjectID != project.ID {
+			t.Fatalf("project_id = %s, want %s (tenant %s)", r.ProjectID, project.ID, tenant.ID)
+		}
+		if !r.ForgejoOwner.Valid || r.ForgejoOwner.String != "acme" {
+			t.Fatalf("forgejo_owner = %+v, want acme", r.ForgejoOwner)
+		}
+		if !r.ForgejoName.Valid || r.ForgejoName.String != "suite-meta" {
+			t.Fatalf("forgejo_name = %+v, want suite-meta", r.ForgejoName)
+		}
+	}
+}
+
 func TestSeedFileUsesProjectOrgName(t *testing.T) {
 	ctx := context.Background()
 	st := newFakeStore()

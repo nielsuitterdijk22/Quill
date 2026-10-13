@@ -94,6 +94,14 @@ func seedFile(ctx context.Context, st storeLike, fj seedForgejoLike, publicURL s
 		}
 	}
 
+	// Self-heal the Postgres side too: if the repository was never registered
+	// (no row in the repositories table) persist it now, the same way
+	// createRepo does. recordRepo is idempotent — an existing row is updated
+	// in place.
+	if err := recordRepo(ctx, st, st, project, tenant, owner, slug, slug, "", "private", repo); err != nil {
+		return "", err
+	}
+
 	branch := in.Branch
 	if branch == "" {
 		branch = repo.DefaultBranch
