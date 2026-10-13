@@ -146,3 +146,31 @@ attempt 3: stopped: explored only — no file changed in 20 min (the task needs 
 - Follow-ups noticed: - If a tenant has multiple projects, seed-file uses the first project's org. A `--project` flag
   would disambiguate; not required by the task.
 - Consider a `--branch` default surfacing and a `--dry-run` in a later hardening task.
+
+## 2026-10-13 08:28 — T-028: Persist repositories row on seed-file self-heal — merged 13cd2b2 (attempt 1)
+- `backend/cmd/quill/seed_file.go`: `seedFile` now calls the existing
+  `recordRepo` helper after the Forgejo repo is resolved (fetched or
+  created), so a repo that exists in Forgejo but has no `repositories` row
+  is persisted (existing rows are refreshed idempotently). Row uses the
+  canonical slug (`normalizeRepoName` output) for `slug`/`name`,
+  visibility `private`, and records the forgejo owner/name/repo-id link.
+- `backend/cmd/quill/seed_file_test.go`: added `TestSeedFileSelfHeal` —
+  fake store with tenant + project but no repo row, forgejo repo present;
+  asserts exactly one row is created with the correct slug, project (and
+  thus tenant) linkage, and forgejo link.
+- `DECISIONS.md`: recorded the decision and rejected alternatives.
+- Plan written to `.foundry/notes.md`.
+- Verification: `go test ./cmd/quill -run TestSeedFileSelfHeal -v` passes;
+  full `go test ./cmd/quill/...` passes; `./check` exits 0 (all checks
+  passed).
+- Tokens: 97,424 in (+997,718 cached) / 5,031 out, 16 min, 30 steps
+- Questions for owner: - The backlog acceptance line says `go test ./cmd/admin ...`, but the code
+  lives in `backend/cmd/quill` (package `main`, module root `backend/`). I
+  ran the equivalent `go test ./cmd/quill -run TestSeedFileSelfHeal -v`
+  from `backend/`. No `cmd/admin` package exists in this repo.
+- Follow-ups noticed: - If a tenant has multiple projects, seed-file (like create-repo) uses the
+  first project's org; a `--project` flag would disambiguate (noted since
+  T-022, still open).
+- The self-healed row hardcodes visibility `private`; if the real Forgejo
+  repo has a different visibility, a later hardening task could sync it
+  from `repo.Private`.
