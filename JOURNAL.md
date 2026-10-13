@@ -62,3 +62,28 @@ attempt 3: stopped: explored only — no file changed in 20 min (the task needs 
 - Migration files are embedded via `//go:embed *.sql` in `backend/internal/store/migrations/embed.go`; golang-migrate applies them in order.
 - Two earlier attempts failed due to tool-looping (repeated identical grep calls). Avoid repeating the same command.
 - FEEDBACK.md notes: Forge migrated `ten
+
+## 2026-10-13 02:36 — T-026: Add plan column to tenants schema — merged ba9436a (attempt 2)
+- Migration `backend/internal/store/migrations/000019_tenant_plan.{up,down}.sql`: adds
+  `plan TEXT NOT NULL DEFAULT 'internal'` to `tenants` (down drops it). Applied by the
+  embedded-migration runner in tests and on API boot.
+- `db.Tenant` struct gains `Plan string` after `ExternalOrgID` (backend/internal/store/db/models.go:184);
+  all tenant queries in `db/tenants.sql.go` (CreateTenant, CreateOrgTenant, GetTenantByID,
+  GetTenantBySlug) and the hand-rolled `GetOrCreateTenantByExternalOrg` in store.go now
+  return/scan `plan`.
+- New test `TestTenantPlanColumn` in backend/internal/store/store_integration_test.go:
+  asserts the seeded default tenant and a freshly created tenant both carry plan
+  'internal', and the value round-trips through GetTenantByID.
+- Added `backend/cmd/demo-tenant-plan` helper + `.foundry/demo.sh`: applies migrations to
+  the throwaway DB, prints the live `tenants` columns (plan shows with default
+  'internal'), then runs the new test.
+- `./check` exits 0 (gofmt/vet/build/test + frontend lint/build).
+- Tokens: 24,575 in (+1,192,422 cached) / 6,304 out, 9 min, 41 steps
+- Follow-ups noticed: - The sqlc binary is not installed in this sandbox, so `db/tenants.sql.go` was updated
+  by hand to match what sqlc v1.31.1 would emit; a later session with sqlc available
+  should run `sqlc generate` to confirm the generated output is identical.
+- FEEDBACK.md (CTO) asks that Quill's Forge integration send a `tenant_id` UUID rather
+  than `installation_id`; no code in this repo currently references `installation_id`,
+  so that work belongs to the Forge repo / a follow-up Quill task.
+- Plan values are not yet exposed or settable through any API/CLI; billing provisioning
+  of plans is a later task (T-023's CLI/integration split).

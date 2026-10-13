@@ -5,14 +5,6 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
-### T-026: Add plan column to tenants schema
-- Story: (CTO)
-- Accept: go test ./backend/internal/store/... passes; migration 000019_tenant_plan.sql exists and is applied in tests.
-- Tests may change: no
-- Needs: Quill/T-000
-
-1. Create `backend/internal/store/migrations/000019_tenant_plan.sql` containing `ALTER TABLE tenants ADD COLUMN plan TEXT NOT NULL DEFAULT 'internal';`. 2. Update `backend/internal/store/db/models.go` in the `Tenant` struct to add `Plan string` after `ExternalOrgID`. 3. Run `go generate ./...` if sqlc is used, or manually update `backend/internal/store/db/tenants.sql.go` to include `plan` in the `Tenant` struct and any `SELECT *` queries that return it. 4. Ensure `go build ./...` passes.
-
 ### T-027: Update CreateOrgTenant query and add test
 - Story: (CTO)
 - Accept: go test ./backend/internal/store/... -run TestCreateOrgTenant passes.
@@ -267,6 +259,15 @@ Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` 
 - CTO (2026-10-13): superseded by T-026, T-027
 
 ## Done
+
+### T-026: Add plan column to tenants schema
+- Story: (CTO)
+- Accept: go test ./backend/internal/store/... passes; migration 000019_tenant_plan.sql exists and is applied in tests.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Create `backend/internal/store/migrations/000019_tenant_plan.sql` containing `ALTER TABLE tenants ADD COLUMN plan TEXT NOT NULL DEFAULT 'internal';`. 2. Update `backend/internal/store/db/models.go` in the `Tenant` struct to add `Plan string` after `ExternalOrgID`. 3. Run `go generate ./...` if sqlc is used, or manually update `backend/internal/store/db/tenants.sql.go` to include `plan` in the `Tenant` struct and any `SELECT *` queries that return it. 4. Ensure `go build ./...` passes.
+- Done: 2026-10-13 in ba9436a (attempt 2)
 
 ### T-000: Make ./check pass on main
 - Story: (infrastructure)
