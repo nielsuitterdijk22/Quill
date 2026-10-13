@@ -35,18 +35,6 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 3. Run the CLI command and verify a row exists in `tenants` with `kind='org'` and the provided `plan`.
 4. Ensure `./check` passes without requiring Docker.
 
-### T-022: Implement admin seed-file CLI command
-- Story: (CTO)
-- Accept: Running `go run ./cmd/quill admin seed-file --tenant <id> --repo suite-meta --path README.md --content 'Hello'` creates/updates the file in the repo via Forgejo API; `./check` passes.
-- Tests may change: no
-- Needs: Quill/T-000
-
-1. Add `seed-file` subcommand to the `quill admin` CLI.
-2. Accept `--tenant`, `--repo`, `--path`, and `--content` (or `--file` for stdin).
-3. Use Forgejo API to create or update the file at the specified path.
-4. Commit with a message indicating it was seeded by admin.
-5. Add a unit test mocking the Forgejo client.
-
 ### T-016: Implement Quota Calculation and Middleware
 - Story: (CTO)
 - Accept: Run `go test ./internal/quota/... -v` to verify `TestCalculateUsage` and `TestMiddlewareRejects` pass.
@@ -246,6 +234,19 @@ Create `internal/quota` package. Add middleware/handlers to check `tenant.tier` 
 - CTO (2026-10-13): superseded by T-026, T-027
 
 ## Done
+
+### T-022: Implement admin seed-file CLI command
+- Story: (CTO)
+- Accept: Running `go run ./cmd/quill admin seed-file --tenant <id> --repo suite-meta --path README.md --content 'Hello'` creates/updates the file in the repo via Forgejo API; `./check` passes.
+- Tests may change: no
+- Needs: Quill/T-000
+
+1. Add `seed-file` subcommand to the `quill admin` CLI.
+2. Accept `--tenant`, `--repo`, `--path`, and `--content` (or `--file` for stdin).
+3. Use Forgejo API to create or update the file at the specified path.
+4. Commit with a message indicating it was seeded by admin.
+5. Add a unit test mocking the Forgejo client.
+- Done: 2026-10-13 in 2fd1464 (attempt 1)
 
 ### T-021: Implement admin create-repo CLI command
 - Story: (CTO)

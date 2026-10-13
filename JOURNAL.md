@@ -119,3 +119,30 @@ attempt 3: stopped: explored only — no file changed in 20 min (the task needs 
 - Follow-ups noticed: - Wire `create-repo` into any admin UI / onboarding flow once T-024 lands.
 - Consider a `--project` flag to target a specific project's org when a tenant
   has multiple projects (currently uses the first, ordered by slug).
+
+## 2026-10-13 07:01 — T-022: Implement admin seed-file CLI command — merged 2fd1464 (attempt 1)
+- Added `quill admin seed-file` that creates or updates a file in a repository via the
+  Forgejo contents API, committing as an admin seed.
+- New `forgejo.Client.SeedFile` (`backend/internal/forgejo/ops.go`): reads current contents,
+  then PUTs (carrying the existing blob SHA) when the file exists or POSTs when it does not —
+  the contents API has no upsert, so this is the only correct idempotent primitive.
+- New `backend/cmd/quill/seed_file.go` with `seedFile` + a `seedForgejoLike` interface (so the
+  unit test can substitute a double; the real `*forgejo.Client` satisfies it). Reuses
+  create-repo's tenant→org resolution (first project's `forgejo_org_name`, else tenant slug) and
+  self-heals a missing repo/org the same way.
+- `main.go`: `runSeedFile` accepts `--tenant`, `--repo`, `--path`, `--content` (inline) or
+  `--file` (path, or `-` for stdin), and `--branch`; wired into `runAdmin` and `usage()`.
+- Commit message is `Seed <path> (admin seed-file)`.
+- Unit tests in `seed_file_test.go`: create (404→POST), update (exists→PUT), repo-missing→create,
+  project-org-name resolution, validation errors, forgejo-disabled, plus a real-client httptest
+  test asserting the POST/PUT split and base64 encoding.
+- `./check` exits 0 (gofmt/vet/build/test + frontend lint/build all pass).
+- Recorded the design decision in `DECISIONS.md`; demo script in `.foundry/demo.sh`.
+- Tokens: 119,541 in (+1,774,698 cached) / 16,803 out, 36 min, 52 steps
+- Questions for owner: - Should `seed-file` also write/update the `repositories` row in Postgres when it self-heals a
+  missing repo? Currently it only performs the file operation (a file op, not a
+  repo-registration op). The command prints the repo URL but does not persist a row if the repo
+  was never registered. I left it out to keep the diff focused; say the word if you want it.
+- Follow-ups noticed: - If a tenant has multiple projects, seed-file uses the first project's org. A `--project` flag
+  would disambiguate; not required by the task.
+- Consider a `--branch` default surfacing and a `--dry-run` in a later hardening task.
