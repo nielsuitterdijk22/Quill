@@ -28,8 +28,27 @@ Append-only log of design decisions: date, decision, why, alternatives rejected.
   `platform.ensureForgejoOrg` recovery path. Rejected alternatives: adding a
   `forgejo_org_name` column to `tenants` (duplicates the project column, breaks
   the 1:1 invariant when a tenant has multiple projects) and a new
-  `tenant_organizations` join table (over-engineered for the flat MVP model).
-  The tenant→project lookup uses a hand-written `Store.ListProjectsByTenant`
-  (raw SQL in `store.go`, like `ListRunsByCommitSHA`) rather than a sqlc
-  re-run, to keep the change small.
+   `tenant_organizations` join table (over-engineered for the flat MVP model).
+   The tenant→project lookup uses a hand-written `Store.ListProjectsByTenant`
+   (raw SQL in `store.go`, like `ListRunsByCommitSHA`) rather than a sqlc
+   re-run, to keep the change small.
+
+- 2026-10-13 — T-022: `quill admin seed-file` creates-or-updates a file via the
+  Forgejo contents API. The create/update split lives in a new
+  `forgejo.Client.SeedFile`: it fetches the current contents first, then PUTs
+  (carrying the existing blob SHA, the API's precondition for a replace) when
+  the file exists or POSTs when it does not. Why: the contents API has no
+  upsert — a POST on an existing path 409s and a PUT without the current SHA
+  409s — so the read-then-branch is the only correct idempotent primitive, and
+  it lets the same command seed a fresh repo and refresh an existing file.
+  The CLI command (`cmd/quill/seed_file.go`) takes `--content` (inline) or
+  `--file` (path, or `-` for stdin) and commits as "Seed <path> (admin
+  seed-file)". It reuses `create-repo`'s tenant/org resolution (first project's
+  `forgejo_org_name`, else tenant slug) and self-heals a missing repo/org the
+  same way. The command depends on a small `seedForgejoLike` interface (not the
+  concrete client) so the unit test can substitute an in-memory double; the
+  real `*forgejo.Client` satisfies it. Rejected alternatives: a separate
+  `admin create-file` + `admin update-file` pair (two commands for one intent)
+  and a raw `git`-push path (bypasses the Forgejo-API-only golden rule and the
+  admin token).
 
