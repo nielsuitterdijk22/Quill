@@ -4,6 +4,11 @@ The owner writes here at check-ins. Agents read this first, every session. Newes
 Delete items once they are handled. The loop commits your edits automatically.
 
 ## 2026-10-13 — decided by the CTO
+Canonical PR Identity Contract: For all cross-product communication (NATS events, REST APIs, and shared schemas), a PR is uniquely identified by `repo_slug` (string) and `quill_pr_number` (integer). Do not use UUIDs or other internal IDs for PR references in the event bus or public APIs.
+
+> Answering: Tempo T-015 (Implement ticket_pr_links schema and Store operations) asks:
+
+## 2026-10-13 — decided by the CTO
 CLI Architecture: The `admin` command group must be designed for additive extension. When implementing subcommands like `create-repo` (T-021), do not block on the full scaffolding (T-024). If T-024 is not merged, include the minimal `admin` dispatch logic in your PR. If T-024 is merged first, adapt your subcommand registration to use its existing pattern. The goal is that T-021 and T-024 can merge in either order without significant rework.
 
 > Answering: Quill T-021 (Implement admin create-repo CLI command) asks:
