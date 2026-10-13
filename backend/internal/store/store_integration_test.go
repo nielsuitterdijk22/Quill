@@ -35,6 +35,49 @@ func testStore(t *testing.T) *store.Store {
 	return st
 }
 
+// TestTenantPlanColumn asserts migration 000019 added the plan column with the
+// 'internal' default and that the sqlc-generated reads expose it.
+func TestTenantPlanColumn(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+
+	// The seeded default tenant must carry the default plan.
+	tenant, err := st.GetTenantBySlug(ctx, "default")
+	if err != nil {
+		t.Fatalf("get default tenant: %v", err)
+	}
+	if tenant.Plan != "internal" {
+		t.Fatalf("default tenant plan = %q, want %q", tenant.Plan, "internal")
+	}
+
+	// A freshly created tenant inherits the default plan.
+	suffix := uuid.NewString()[:8]
+	created, err := st.CreateTenant(ctx, db.CreateTenantParams{
+		Slug: "plan-" + suffix,
+		Name: "Plan " + suffix,
+	})
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := st.DeleteTenant(context.Background(), created.ID); err != nil {
+			t.Logf("cleanup tenant %v: %v", created.ID, err)
+		}
+	})
+	if created.Plan != "internal" {
+		t.Fatalf("created tenant plan = %q, want %q", created.Plan, "internal")
+	}
+
+	// Read back by id: the plan must round-trip through GetTenantByID.
+	got, err := st.GetTenantByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("get tenant by id: %v", err)
+	}
+	if got.Plan != "internal" {
+		t.Fatalf("tenant plan by id = %q, want %q", got.Plan, "internal")
+	}
+}
+
 // TestStoreRoundTrip creates the ownership chain (user → tenant → project → repo),
 // reads each entity back by id and by slug, and asserts the values persisted.
 func TestStoreRoundTrip(t *testing.T) {
