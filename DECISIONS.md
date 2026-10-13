@@ -52,3 +52,21 @@ Append-only log of design decisions: date, decision, why, alternatives rejected.
   and a raw `git`-push path (bypasses the Forgejo-API-only golden rule and the
   admin token).
 
+
+- 2026-10-13 — T-028: `quill admin seed-file` now persists the `repositories`
+  row when it self-heals. After the Forgejo repo is resolved (fetched or
+  created), `seedFile` calls the existing `recordRepo` helper — the same
+  idempotent upsert `createRepo` uses — so a repo that exists in Forgejo but
+  was never registered in Postgres gets a row (or its existing row is
+  refreshed with the forgejo link). Why: the owner's 2026-10-13 feedback
+  confirmed the open question from T-022; persisting here keeps the
+  `repositories` table as the source of truth without a separate
+  registration step. The row uses `slug` for both `slug` and `name`
+  (seed-file has no display name), visibility `private` (matching the
+  self-healed org default), and the canonical slug form from
+  `normalizeRepoName`, which is the `repo_slug` half of the suite's
+  `(repo_slug, quill_pr_number)` PR identity contract. Rejected
+  alternatives: a dedicated `UpsertRepository` query (duplicates
+  `recordRepo`'s get-then-branch logic) and persisting only when the repo
+  was created (leaves the pre-existing-but-unregistered case broken, which
+  is exactly the reported bug).
