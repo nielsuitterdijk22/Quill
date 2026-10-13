@@ -15,7 +15,7 @@ import (
 const createTenant = `-- name: CreateTenant :one
 INSERT INTO tenants (slug, name)
 VALUES ($1, $2)
-RETURNING id, slug, name, created_at, updated_at
+RETURNING id, slug, name, external_org_id, plan, created_at, updated_at
 `
 
 type CreateTenantParams struct {
@@ -30,6 +30,8 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 		&i.ID,
 		&i.Slug,
 		&i.Name,
+		&i.ExternalOrgID,
+		&i.Plan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -39,7 +41,7 @@ func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (Ten
 const createOrgTenant = `-- name: CreateOrgTenant :one
 INSERT INTO tenants (slug, name, kind)
 VALUES ($1, $2, 'org')
-RETURNING id, slug, name, external_org_id, created_at, updated_at
+RETURNING id, slug, name, external_org_id, plan, created_at, updated_at
 `
 
 type CreateOrgTenantParams struct {
@@ -55,6 +57,7 @@ func (q *Queries) CreateOrgTenant(ctx context.Context, arg CreateOrgTenantParams
 		&i.Slug,
 		&i.Name,
 		&i.ExternalOrgID,
+		&i.Plan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -125,7 +128,7 @@ func (q *Queries) ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) (
 }
 
 const getTenantByID = `-- name: GetTenantByID :one
-SELECT id, slug, name, created_at, updated_at FROM tenants WHERE id = $1
+SELECT id, slug, name, external_org_id, plan, created_at, updated_at FROM tenants WHERE id = $1
 `
 
 func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error) {
@@ -135,6 +138,8 @@ func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, erro
 		&i.ID,
 		&i.Slug,
 		&i.Name,
+		&i.ExternalOrgID,
+		&i.Plan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -142,7 +147,7 @@ func (q *Queries) GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, erro
 }
 
 const getTenantBySlug = `-- name: GetTenantBySlug :one
-SELECT id, slug, name, created_at, updated_at FROM tenants WHERE lower(slug) = lower($1)
+SELECT id, slug, name, external_org_id, plan, created_at, updated_at FROM tenants WHERE lower(slug) = lower($1)
 `
 
 func (q *Queries) GetTenantBySlug(ctx context.Context, lower string) (Tenant, error) {
@@ -152,6 +157,8 @@ func (q *Queries) GetTenantBySlug(ctx context.Context, lower string) (Tenant, er
 		&i.ID,
 		&i.Slug,
 		&i.Name,
+		&i.ExternalOrgID,
+		&i.Plan,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
