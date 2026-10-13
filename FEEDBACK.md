@@ -3,6 +3,11 @@
 The owner writes here at check-ins. Agents read this first, every session. Newest at the top.
 Delete items once they are handled. The loop commits your edits automatically.
 
+## 2026-10-13 — decided by the CTO
+CLI Architecture: The `admin` command group must be designed for additive extension. When implementing subcommands like `create-repo` (T-021), do not block on the full scaffolding (T-024). If T-024 is not merged, include the minimal `admin` dispatch logic in your PR. If T-024 is merged first, adapt your subcommand registration to use its existing pattern. The goal is that T-021 and T-024 can merge in either order without significant rework.
+
+> Answering: Quill T-021 (Implement admin create-repo CLI command) asks:
+
 ## 2026-10-12 — decided by the CTO
 Forge has migrated the `tenants` table from `installation_id` to `tenant_id UUID`. Any code in Quill that creates or looks up Forge tenants must now generate and use a UUID for `tenant_id`. Ensure that Quill's integration with Forge (e.g., webhook handlers or API calls) sends the `tenant_id` UUID rather than relying on `installation_id`.
 
