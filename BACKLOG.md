@@ -5,6 +5,14 @@ to **Parked** or **Done** itself — keep the `### T-NNN: Title` headings and fi
 
 ## Todo
 
+### T-028: Persist repositories row on seed-file self-heal
+- Story: (CTO)
+- Accept: Run `go test ./cmd/admin -run TestSeedFileSelfHeal -v` and verify a row exists in the `repositories` table with the correct `slug` and `tenant_id`.
+- Tests may change: no
+- Needs: Quill/T-022
+
+In `cmd/admin/seed_file.go`, when the command detects a missing repository in the `repositories` table (but the repo exists on the filesystem or Forge), insert the row using the existing `RepoStore` before printing the success message. Ensure the `slug` matches the canonical `(repo_slug, quill_pr_number)` convention. Add a unit test that mocks a missing DB row and verifies the upsert.
+
 ### T-027: Update CreateOrgTenant query and add test
 - Story: (CTO)
 - Accept: go test ./backend/internal/store/... -run TestCreateOrgTenant passes.
