@@ -102,6 +102,21 @@ admin). In the Zitadel console (`https://auth.<domain>`, admin login from
 steps.yaml with forced password change), create the OIDC app and set its
 client/project id as repo vars; re-run the workflow to rebuild the web image.
 
+## DNS records (add these at your registrar for black-tulip.nl)
+
+The external domain validates via a TXT record (see below); the app records can
+be set directly at your current registrar — no need to delegate NS to Scaleway
+(unless you prefer that; then `create_dns_zone=true` and TF manages the zone):
+
+| Record | Type | Value |
+| --- | --- | --- |
+| `_scaleway-challenge.quill` | TXT | the `validation_token` shown in console → Domains → quill.black-tulip.nl |
+| `api.quill` | CNAME | the api container's native domain (`terraform output` / console → Containers → api) |
+| `app.quill` | CNAME | the web container's native domain |
+| `git.quill` | A | `terraform output -raw vm_public_ip` |
+| `ssh.quill` | A | same VM IP |
+| `auth.quill` | A | same VM IP |
+
 ## 4. Verify & backups
 
 ```bash
