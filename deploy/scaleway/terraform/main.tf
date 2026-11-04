@@ -45,39 +45,6 @@ resource "random_password" "zitadel_masterkey" {
   special = false
 }
 
-# ---- IAM: CI deployer ----------------------------------------------------------
-
-resource "scaleway_iam_application" "ci" {
-  name        = "quill-ci-deployer"
-  description = "GitHub Actions deployer: terraform apply, registry push, DNS sync, container logs."
-}
-
-resource "scaleway_iam_policy" "ci" {
-  name           = "quill-ci-deployer-policy"
-  description    = "Rights needed by the deploy workflow (scoped to the Quill project)."
-  application_id = scaleway_iam_application.ci.id
-
-  rule {
-    project_ids = [scaleway_account_project.quill.id]
-    permission_set_names = [
-      "ContainersFullAccess",            # serverless containers (api/web/zitadel)
-      "ServerlessJobsFullAccess",        # backup job
-      "ServerlessSQLDatabaseFullAccess", # serverless SQL databases
-      "ContainerRegistryFullAccess",
-      "DomainsDNSFullAccess",
-      "SecretManagerFullAccess",
-      "ObjectStorageFullAccess",
-      "InstancesReadOnly",
-    ]
-  }
-}
-
-resource "scaleway_iam_api_key" "ci" {
-  application_id     = scaleway_iam_application.ci.id
-  description        = "GitHub Actions key — store as SCW_CI_ACCESS_KEY / SCW_CI_SECRET_KEY repo secrets"
-  default_project_id = scaleway_account_project.quill.id
-}
-
 # ---- IAM: backup writer ----------------------------------------------------------
 
 resource "scaleway_iam_application" "backup" {

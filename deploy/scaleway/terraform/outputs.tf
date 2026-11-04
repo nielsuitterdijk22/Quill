@@ -58,19 +58,6 @@ output "backup_secret_key" {
   sensitive = true
 }
 
-# ---- CI deployer ----
-output "ci_access_key" {
-  description = "Store as GitHub repo secret SCW_CI_ACCESS_KEY."
-  value       = scaleway_iam_api_key.ci.access_key
-  sensitive   = true
-}
-
-output "ci_secret_key" {
-  description = "Store as GitHub repo secret SCW_CI_SECRET_KEY."
-  value       = scaleway_iam_api_key.ci.secret_key
-  sensitive   = true
-}
-
 # ---- Forgejo VM ----
 output "vm_id" {
   value = scaleway_instance_server.forgejo.id

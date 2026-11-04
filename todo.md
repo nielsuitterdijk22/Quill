@@ -9,6 +9,13 @@
   canonical hierarchy and naming, then align UI copy + routes. Don't mass-rename
   until the model is agreed.
 
+## Infra follow-ups (after DNS is live)
+
+- **CI runner off the VM Docker socket** — dispatch currently mounts
+  `/var/run/docker.sock` on the Forgejo VM (pipeline code = root on the VM).
+  First todo once DNS is solved: move runners to Forge (hardened ephemeral
+  runners) or a host-mode runner in the api container.
+
 ## SaaS — must-have before first paying customer
 
 - **Billing.** Stripe + usage-gated plans. Right now every sign-up gets

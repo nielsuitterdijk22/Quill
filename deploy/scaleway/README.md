@@ -77,9 +77,11 @@ Delegate `domain` to the output `dns_name_servers` at your registrar.
 
 ## 2. Configure GitHub (one-time)
 
-Repo **secrets**: `SCW_CI_ACCESS_KEY` / `SCW_CI_SECRET_KEY` (outputs `ci_access_key` /
-`ci_secret_key`), `VM_SSH_KEY` (output `vm_ssh_private_key`), `FORGEJO_ADMIN_TOKEN` and
-`ZITADEL_MANAGEMENT_TOKEN` (filled by provision.sh, then re-apply).
+Repo **secrets**: `SCW_ACCESS_KEY` / `SCW_SECRET_KEY` / `SCW_DEFAULT_ORGANIZATION_ID`
+(your own key — CI runs Terraform and scw with it; it carries the scoped `quill-ci`
+IAM policy), `VM_SSH_KEY` (output `vm_ssh_private_key`), `FORGEJO_ADMIN_TOKEN` and
+`ZITADEL_MANAGEMENT_TOKEN` (filled by provision.sh, then re-apply), `SDB_USER` /
+`SDB_PASSWORD` (your tfvars values).
 Repo **vars**: `QUILL_DOMAIN`, `SCW_REGION`, `SCW_PROJECT_ID`, `BACKUP_BUCKET`,
 `REGISTRY`, `LETSENCRYPT_EMAIL`, `VM_IP`, `NEXT_PUBLIC_ZITADEL_ISSUER` (=`https://auth.<domain>`),
 `NEXT_PUBLIC_ZITADEL_CLIENT_ID`, `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (from the Zitadel console).

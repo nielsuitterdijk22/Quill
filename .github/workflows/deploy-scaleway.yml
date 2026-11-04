@@ -60,13 +60,15 @@ jobs:
 
       - name: Login to Scaleway Container Registry
         run: |
-          echo "${{ secrets.SCW_CI_SECRET_KEY }}" | docker login ${{ vars.REGISTRY }} \
-            -u "${{ secrets.SCW_CI_ACCESS_KEY }}" --password-stdin
+          echo "${{ secrets.SCW_SECRET_KEY }}" | docker login ${{ vars.REGISTRY }} \
+            -u "${{ secrets.SCW_ACCESS_KEY }}" --password-stdin
 
       - name: Build backend image (api + dispatch)
         run: |
           docker build -t ${{ vars.REGISTRY }}/quill-backend:${{ github.sha }} backend/
           docker push ${{ vars.REGISTRY }}/quill-backend:${{ github.sha }}
+          docker tag ${{ vars.REGISTRY }}/quill-backend:${{ github.sha }} ${{ vars.REGISTRY }}/quill-backend:latest
+          docker push ${{ vars.REGISTRY }}/quill-backend:latest
 
       - name: Build web image
         run: |
@@ -77,16 +79,22 @@ jobs:
             --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_PROJECT_ID }} \
             --build-arg QUILL_API_BASE_URL=https://api.${{ vars.QUILL_DOMAIN }}
           docker push ${{ vars.REGISTRY }}/quill-web:${{ github.sha }}
+          docker tag ${{ vars.REGISTRY }}/quill-web:${{ github.sha }} ${{ vars.REGISTRY }}/quill-web:latest
+          docker push ${{ vars.REGISTRY }}/quill-web:latest
 
       - name: Build backup image
         run: |
           docker build -t ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }} deploy/scaleway/docker/
           docker push ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }}
+          docker tag ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }} ${{ vars.REGISTRY }}/quill-backup:latest
+          docker push ${{ vars.REGISTRY }}/quill-backup:latest
 
       - name: Build zitadel image
         run: |
           docker build -t ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }} deploy/scaleway/docker/ \
           docker push ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }}
+          docker tag ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }} ${{ vars.REGISTRY }}/quill-zitadel:latest
+          docker push ${{ vars.REGISTRY }}/quill-zitadel:latest
 
   apply:
     name: Terraform apply (serverless)
@@ -101,16 +109,16 @@ jobs:
       - name: Terraform init (state in Object Storage)
         working-directory: deploy/scaleway/terraform
         env:
-          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
         run: |
           terraform init -input=false \
             -backend-config="endpoint=https://s3.${{ vars.SCW_REGION }}.scw.cloud" \
             -backend-config="bucket=${{ vars.BACKUP_BUCKET }}-tfstate" \
             -backend-config="key=quill.tfstate" \
             -backend-config="region=${{ vars.SCW_REGION }}" \
-            -backend-config="access_key=${{ secrets.SCW_CI_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.SCW_CI_SECRET_KEY }}" \
+            -backend-config="access_key=${{ secrets.SCW_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.SCW_SECRET_KEY }}" \
             -backend-config="skip_credentials_validation=true" \
             -backend-config="skip_region_validation=true" \
             -backend-config="skip_metadata_api_check=true" \
@@ -119,8 +127,8 @@ jobs:
       - name: Terraform apply
         working-directory: deploy/scaleway/terraform
         env:
-          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
         run: |
           terraform apply -auto-approve -input=false \
             -var "image_tag=${{ github.sha }}" \
@@ -166,8 +174,8 @@ jobs:
       - name: Run provision.sh
         env:
           QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
-          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
           SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
         run: deploy/scaleway/scripts/provision.sh
@@ -187,8 +195,8 @@ jobs:
       - name: Sync git/ssh DNS records to the VM IP
         env:
           QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
-          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
           SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
         run: deploy/scaleway/scripts/dns-sync.sh

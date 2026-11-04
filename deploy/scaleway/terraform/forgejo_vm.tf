@@ -61,9 +61,9 @@ resource "scaleway_instance_server" "forgejo" {
     db_user             = local.db_user
     db_password         = local.db_password
     dispatch_secret     = random_password.dispatch_secret.result
-    backup_image        = "${local.registry}/quill-backup:${var.image_tag}"
-    backend_image       = "${local.registry}/quill-backend:${var.image_tag}"
-    zitadel_image       = "${local.registry}/quill-zitadel:${var.image_tag}"
+    backup_image        = "${local.registry}/quill-backup:latest"
+    backend_image       = "${local.registry}/quill-backend:latest"
+    zitadel_image       = "${local.registry}/quill-zitadel:latest"
     zitadel_masterkey   = random_password.zitadel_masterkey.result
     zitadel_db_password = random_password.zitadel_db.result
     s3_endpoint         = "https://s3.${var.region}.scw.cloud"
