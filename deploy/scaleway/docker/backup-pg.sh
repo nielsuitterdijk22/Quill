@@ -1,32 +1,37 @@
 #!/bin/sh
-# backup-pg.sh — dump all Quill databases from the managed RDB instance and
-# upload them to Scaleway Object Storage (S3), pruning old objects.
+# backup-pg.sh — dump every Quill database (connection URIs in *_DATABASE_URL
+# env vars) and upload to Scaleway Object Storage (S3), pruning old objects.
+# Runs as a Serverless Job (cron) — see terraform/serverless.tf.
 #
-# Env: PGHOST PGPORT PGUSER PGPASSWORD PGSSLMODE, S3_ENDPOINT, BACKUP_BUCKET,
-#      AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, BACKUP_RETENTION_DAYS
+# Env: QUILL_DATABASE_URL, FORGEJO_DATABASE_URL, ZITADEL_DATABASE_URL,
+#      S3_ENDPOINT, BACKUP_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+#      BACKUP_RETENTION_DAYS
 set -eu
 
-: "${PGHOST:?PGHOST required}" "${BACKUP_BUCKET:?BACKUP_BUCKET required}"
+: "${BACKUP_BUCKET:?BACKUP_BUCKET required}" "${QUILL_DATABASE_URL:?QUILL_DATABASE_URL required}"
 : "${S3_ENDPOINT:=https://s3.fr-par.scw.cloud}"
 : "${BACKUP_RETENTION_DAYS:=30}"
 RETENTION_DAYS="$BACKUP_RETENTION_DAYS"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
-DATABASES="quill forgejo zitadel"
-
-for db in $DATABASES; do
-  echo "[backup] dumping ${db} at ${STAMP}"
-  tmp="/tmp/${db}-${STAMP}.sql.gz"
-  PGDATABASE="$db" pg_dump --no-owner --format=plain | gzip -9 > "$tmp"
-  aws s3 cp "$tmp" "s3://${BACKUP_BUCKET}/postgres/${db}/${db}-${STAMP}.sql.gz" \
+dump_one() { # dump_one <name> <postgres-uri>
+  name="$1"; url="$2"
+  echo "[backup] dumping ${name} at ${STAMP}"
+  tmp="/tmp/${name}-${STAMP}.sql.gz"
+  pg_dump "$url" --no-owner | gzip -9 > "$tmp"
+  aws s3 cp "$tmp" "s3://${BACKUP_BUCKET}/postgres/${name}/${name}-${STAMP}.sql.gz" \
     --endpoint-url "$S3_ENDPOINT"
   rm -f "$tmp"
-  echo "[backup] uploaded postgres/${db}/${db}-${STAMP}.sql.gz"
-done
+  echo "[backup] uploaded postgres/${name}/${name}-${STAMP}.sql.gz"
+}
+
+dump_one quill "$QUILL_DATABASE_URL"
+dump_one forgejo "$FORGEJO_DATABASE_URL"
+dump_one zitadel "$ZITADEL_DATABASE_URL"
 
 # Prune objects older than the retention window (per database prefix).
 CUTOFF="$(date -u -d "-${RETENTION_DAYS} days" +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -v-${RETENTION_DAYS}d +%Y%m%dT%H%M%SZ)"
-for db in $DATABASES; do
+for db in quill forgejo zitadel; do
   aws s3 ls "s3://${BACKUP_BUCKET}/postgres/${db}/" --endpoint-url "$S3_ENDPOINT" \
     | awk -v cutoff="$CUTOFF" '$2 < cutoff {print $4}' \
     | while read -r key; do

@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: quill
-  labels:
-    app.kubernetes.io/name: quill
-    app.kubernetes.io/part-of: quill-mvp

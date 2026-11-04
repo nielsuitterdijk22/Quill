@@ -1,39 +1,37 @@
 #!/usr/bin/env bash
-# dns-sync.sh — read the actual LB IPs from the cluster and upsert the DNS A
-# records in the Scaleway DNS zone (app/git/auth → ingress LB, ssh → forgejo
-# SSH LB). Uses the `scw` CLI (DNSFullAccess needed; the CI key has it).
-#
-# Alternatively, set terraform vars ingress_lb_ip/ssh_lb_ip and re-apply —
-# this script just automates discovering those values.
+# dns-sync.sh — read the Forgejo VM's public IP and upsert the git/ssh A records
+# in the Scaleway DNS zone (api/app/auth CNAMEs are managed by Terraform).
+# Uses the `scw` CLI (the CI key has DNSFullAccess + InstancesReadOnly).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-NS="${KUBE_NAMESPACE:-quill}"
+TF_DIR="$HERE/../terraform"
 REGION="${SCW_DEFAULT_REGION:-fr-par}"
 PROJECT_ID="${SCW_PROJECT_ID:?set SCW_PROJECT_ID (terraform output project_id)}"
 DOMAIN="${QUILL_DOMAIN:?set QUILL_DOMAIN}"
 
-INGRESS_IP="$(kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
-SSH_IP="$(kubectl -n "$NS" get svc forgejo-ssh -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
-echo "ingress LB IP: ${INGRESS_IP:-<pending>}   ssh LB IP: ${SSH_IP:-<pending>}"
-[ -n "$INGRESS_IP" ] || { echo "ingress LB has no IP yet — is Traefik up?" >&2; exit 1; }
+VM_IP="$(scw instance server list region="$REGION" project-id="$PROJECT_ID" -o json | python3 -c '
+import sys, json
+for s in json.load(sys.stdin):
+    if s.get("name") == "quill-forgejo":
+        print(s["public_ip"]["address"]); break
+')"
+[ -n "$VM_IP" ] || { echo "quill-forgejo VM not found / no IP yet" >&2; exit 1; }
+echo "VM IP: $VM_IP"
 
 ZONE_ID="$(scw domain zone list project-id="$PROJECT_ID" -o json | python3 -c '
 import sys, json
-d = json.load(sys.stdin)
 domain = "'"$DOMAIN"'"
 root = ".".join(domain.split(".")[-2:])
 sub = ".".join(domain.split(".")[:-2])
-for z in d:
+for z in json.load(sys.stdin):
     if z.get("domain") == root and z.get("subdomain") == sub:
         print(z["id"]); break
 ')"
-[ -n "$ZONE_ID" ] || { echo "DNS zone for $DOMAIN not found in project $PROJECT_ID" >&2; exit 1; }
+[ -n "$ZONE_ID" ] || { echo "DNS zone for $DOMAIN not found" >&2; exit 1; }
 
-upsert() { # upsert <name> <ip>
-  local name="$1" ip="$2"
-  [ -n "$ip" ] || return 0
-  local existing
+upsert() {
+  local name="$1" ip="$2" existing
   existing="$(scw domain record list dns-zone="$ZONE_ID" -o json | python3 -c '
 import sys, json
 name = "'"$name"'"
@@ -49,9 +47,6 @@ for r in json.load(sys.stdin):
   echo "A ${name}.${DOMAIN} -> ${ip}"
 }
 
-upsert app "$INGRESS_IP"
-upsert git "$INGRESS_IP"
-upsert auth "$INGRESS_IP"
-upsert ssh "$SSH_IP"
-
+upsert git "$VM_IP"
+upsert ssh "$VM_IP"
 echo "DNS records synced."

@@ -46,5 +46,4 @@ deploy/scaleway/terraform/*.tfstate*
 deploy/scaleway/terraform/terraform.tfvars
 deploy/scaleway/terraform/kubeconfig
 deploy/scaleway/terraform/crash.log
-deploy/scaleway/k8s/.env.k8s
-deploy/scaleway/k8s/rendered/
+deploy/scaleway/.env.scaleway

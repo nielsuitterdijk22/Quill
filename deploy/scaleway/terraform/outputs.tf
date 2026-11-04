@@ -7,48 +7,38 @@ output "region" {
   value = var.region
 }
 
-# ---- cluster ----
-output "cluster_id" {
-  value = scaleway_k8s_cluster.quill.id
+# ---- serverless DBs ----
+output "sdb_endpoints" {
+  description = "Serverless SQL database endpoints (host[:port]) per database."
+  value       = { for n, db in scaleway_sdb_sql_database.dbs : n => db.endpoint }
 }
 
-output "cluster_apiserver_url" {
-  value = scaleway_k8s_cluster.quill.apiserver_url
-}
-
-output "kubeconfig" {
-  description = "Admin kubeconfig (also in Secret Manager at /quill/k8s/kubeconfig)."
-  value       = scaleway_k8s_cluster.quill.kubeconfig[0].config_file
+output "db_urls" {
+  description = "Full postgres:// URLs (also in Secret Manager under /quill/db/*)."
+  value       = local.db_url
   sensitive   = true
+}
+
+# ---- containers ----
+output "container_endpoints" {
+  value = {
+    api     = scaleway_container.api.public_endpoint
+    web     = scaleway_container.web.public_endpoint
+    zitadel = scaleway_container.zitadel.public_endpoint
+  }
+}
+
+output "container_domain_urls" {
+  value = {
+    api  = scaleway_container_domain.api.url
+    app  = scaleway_container_domain.app.url
+    auth = scaleway_container_domain.auth.url
+  }
 }
 
 # ---- registry ----
 output "registry_endpoint" {
-  description = "Push/pull endpoint, e.g. rg.fr-par.scw.cloud/quill"
-  value       = scaleway_registry_namespace.quill.endpoint
-}
-
-output "registry_namespace" {
-  value = scaleway_registry_namespace.quill.name
-}
-
-# ---- database ----
-output "rdb_private_ip" {
-  description = "Private-network IP of the RDB instance (used by in-cluster pods)."
-  value       = scaleway_rdb_instance.quill.private_ip[0].address
-}
-
-output "rdb_public_endpoint_ip" {
-  description = "Public IP for operator access (psql from allowed CIDRs; TLS enforced, port 5432). Visible in the Scaleway console; the provider's endpoint_ip attribute is deprecated, so this reads the same value via the load_balancer/private_network data when present."
-  value       = scaleway_rdb_instance.quill.endpoint_ip
-}
-
-output "rdb_admin_user" {
-  value = scaleway_rdb_instance.quill.user_name
-}
-
-output "rdb_databases" {
-  value = local.rdb_databases
+  value = scaleway_registry_namespace.quill.endpoint
 }
 
 # ---- backups ----
@@ -57,8 +47,7 @@ output "backup_bucket" {
 }
 
 output "backup_s3_endpoint" {
-  description = "S3 endpoint for the backup bucket."
-  value       = "https://s3.${var.region}.scw.cloud"
+  value = "https://s3.${var.region}.scw.cloud"
 }
 
 output "backup_access_key" {
@@ -84,6 +73,22 @@ output "ci_secret_key" {
   sensitive   = true
 }
 
+# ---- Forgejo VM ----
+output "vm_id" {
+  value = scaleway_instance_server.forgejo.id
+}
+
+output "vm_public_ip" {
+  description = "Dynamic public IP of the Forgejo VM (point git/ssh A records here — scripts/dns-sync.sh automates it)."
+  value       = scaleway_instance_server.forgejo.public_ips[0].address
+}
+
+output "vm_ssh_private_key" {
+  description = "SSH private key for the VM (also in Secret Manager at /quill/vm/ssh-private-key)."
+  value       = tls_private_key.vm.private_key_openssh
+  sensitive   = true
+}
+
 # ---- dns ----
 output "dns_zone_id" {
   value = local.dns_zone_id
@@ -95,29 +100,11 @@ output "dns_name_servers" {
 }
 
 output "hosts" {
-  description = "Public hostnames of the deployment."
   value = {
     app  = local.app_host
+    api  = local.api_host
     git  = local.git_host
     auth = local.auth_host
     ssh  = local.ssh_host
-  }
-}
-
-# ---- secret manager paths (values are sensitive; read via `scw secret version get`) ----
-output "secret_paths" {
-  value = {
-    rdb_admin_password    = "${local.secret_path_prefix}/rdb/rdb-admin-password"
-    zitadel_db_password   = "${local.secret_path_prefix}/rdb/zitadel-db-password"
-    jwt_secret            = "${local.secret_path_prefix}/app/jwt-secret"
-    secret_encryption_key = "${local.secret_path_prefix}/app/secret-encryption-key"
-    webhook_secret        = "${local.secret_path_prefix}/app/webhook-secret"
-    dispatch_secret       = "${local.secret_path_prefix}/app/dispatch-secret"
-    forgejo_admin_token   = "${local.secret_path_prefix}/app/forgejo-admin-token"
-    zitadel_masterkey     = "${local.secret_path_prefix}/zitadel/zitadel-masterkey"
-    backup_s3_access_key  = "${local.secret_path_prefix}/backup/s3-access-key"
-    backup_s3_secret_key  = "${local.secret_path_prefix}/backup/s3-secret-key"
-    kubeconfig            = "${local.secret_path_prefix}/k8s/kubeconfig"
-    quill_database_url    = "${local.secret_path_prefix}/app/quill-database-url"
   }
 }

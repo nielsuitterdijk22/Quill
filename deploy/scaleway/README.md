@@ -1,179 +1,123 @@
-# Quill on Scaleway (cloud-native) — runbook
+# Quill on Scaleway — serverless (scale-to-zero) runbook
 
-This directory takes the Quill MVP from a single VM to cloud-native Scaleway:
-managed Kubernetes (Kapsule), managed PostgreSQL (RDB), Object Storage for
-backups, Container Registry for images, DNS, IAM, and Secret Manager — all
-provisioned by Terraform, with the app deployed as Kubernetes manifests by CI.
+Designed for near-zero traffic (hobby/2-user MVP) at **< €20/month**: everything
+that can be serverless is serverless; only Forgejo (git data needs a durable
+disk) and the CI dispatcher (needs a Docker daemon) run on one tiny VM.
 
 ## Architecture
 
 ```text
-                        ┌──────────────────────────────────────────────┐
-   app.<domain> ───────▶ │  Kapsule (Kubernetes, Cilium, Traefik ingress) │
-   git.<domain> ───────▶ │   namespace quill:                            │
-   auth.<domain> ──────▶ │     web (Next.js)        api (Go)             │
-   ssh.<domain>:2222 ──▶ │     forgejo (PVC)        dispatch (+dind)     │
-                        │     zitadel (SSO)        pg-backup CronJob   │
-                        └───────┬──────────────────────────┬───────────┘
-              private network   │                          │
-                        ┌───────▼──────────┐   ┌───────────▼─────────────┐
-                        │  RDB PostgreSQL  │   │  Object Storage (S3)    │
-                        │  quill/forgejo/  │   │  backups bucket         │
-                        │  zitadel         │   │  postgres/ forgejo/     │
-                        └──────────────────┘   └─────────────────────────┘
-   DNS zone (Scaleway DNS) · Container Registry · Secret Manager · IAM apps
+  app.<domain> ──CNAME──▶ Serverless Container: web (Next.js)     min_scale=0
+  api.<domain> ──CNAME──▶ Serverless Container: api (Go)          min_scale=0
+  auth.<domain> ─CNAME──▶ Serverless Container: zitadel (SSO)     min_scale=0
+                                        │
+  git.<domain> ──A──▶ DEV1-S VM: forgejo + caddy(TLS) + dispatch + backup sidecar
+  ssh.<domain> ──A──▶   (git SSH :2222, git HTTP via caddy :443)
+
+  Serverless SQL DBs (PostgreSQL, min_cpu=0 → free when idle):
+     quill · forgejo · zitadel        (7 days of managed backups included free)
+
+  Object Storage: backups bucket (nightly pg-backup Serverless Job + forgejo dump)
+  Container Registry: images · DNS zone · Secret Manager · IAM keys (ci, backup, db)
 ```
 
-| Compose service | Scaleway replacement |
-| --- | --- |
-| `postgres` | RDB PostgreSQL-16 on the VPC private network (databases: `quill`, `forgejo`, `zitadel`), TLS + ACL, managed backups |
-| `forgejo` | Kapsule Deployment + PVC; HTTP via `git.<domain>` ingress, SSH via a `type: LoadBalancer` service on 2222 |
-| `api` | Deployment `api` (1 replica — see note in `k8s/api.yaml`) |
-| `dispatch` | Deployment `dispatch` with a DinD sidecar (MVP trade-off, documented in `k8s/dispatch.yaml`) |
-| `web` | Deployment `web` (2 replicas), `app.<domain>` ingress |
-| `caddy` | Kapsule's built-in Traefik + cert-manager (Let's Encrypt, DNS-01 via Scaleway DNS) |
-| `zitadel` | Deployment `zitadel`, DB on RDB, `auth.<domain>` via h2c IngressRoute |
-| (manual backups) | `pg-backup` CronJob + forgejo dump sidecar → Object Storage, retention-pruned; plus RDB managed backups |
+| Component | Runs as | Why |
+| --- | --- | --- |
+| Quill api / web / zitadel | Serverless Containers, `min_scale=0` | stateless — free when idle |
+| Postgres ×3 | Serverless SQL DB, `min_cpu=0` | free compute when idle; storage only |
+| Forgejo | 1× DEV1-S VM (Docker) | git repos need a persistent disk |
+| dispatch (CI) | same VM | needs the Docker socket |
+| backups | Serverless Job (cron) + VM sidecar | pg_dump → S3; forgejo dump → S3 |
+| TLS | Caddy on the VM (Let's Encrypt HTTP-01) for git; Scaleway edge for container domains | no LB needed |
 
-Region is pinned to `fr-par` (EU/Paris) per SUITE.md EU-residency requirement.
+## Cost estimate (2026 list prices, excl. VAT, fr-par)
 
-## What I need from you (credentials contract)
+| Resource | Qty | /month |
+| --- | --- | --- |
+| DEV1-S VM (2 vCPU / 2 GiB) | 1 | ≈ €7 |
+| VM root volume b_ssd | 20 GB × €0.086 | €1.72 |
+| Serverless SQL DBs — compute | idle (min_cpu=0) | €0 |
+| Serverless SQL DBs — storage (incl. 7d backups) | ~1–3 GB total | ≈ €0.10–0.30 |
+| Serverless Containers api/web/zitadel | scale to zero | €0 when idle, cents when used |
+| Backup job (nightly) + bucket | 30 runs + a few GB | ≈ €0.40 |
+| Registry / DNS / Secret Manager / IAM / dynamic IP | — | ≈ €0 |
+| **Total** | | **≈ €9–10/mo** (well under €20) |
 
-Create one IAM API key in the Scaleway console (or with `scw`) with enough
-rights to run Terraform (e.g. `ScalewayFullAccess` or an equivalent policy on
-the organization), then export:
+When traffic grows: raise `sdb_max_cpu` / `container_max_scale`, or move Forgejo
+back to Kapsule (the previous `deploy/scaleway` revision had full k8s manifests).
+
+## Credentials contract (what I need from you)
 
 ```bash
-export SCW_ACCESS_KEY="SCWXXXXXXXXXXXXXXXX"
-export SCW_SECRET_KEY="11111111-1111-1111-1111-111111111111"
-export SCW_DEFAULT_ORGANIZATION_ID="11111111-1111-1111-1111-111111111111"
+export SCW_ACCESS_KEY="SCW..."
+export SCW_SECRET_KEY="..."
+export SCW_DEFAULT_ORGANIZATION_ID="..."
 export SCW_DEFAULT_REGION="fr-par"
 export SCW_DEFAULT_ZONE="fr-par-1"
 ```
 
-You only need these once — Terraform creates scoped keys for CI and backups
-itself and prints them as outputs.
-
-## 1. Provision the infrastructure
+## 1. Provision
 
 ```bash
 cd deploy/scaleway/terraform
-cp terraform.tfvars.example terraform.tfvars
-$EDITOR terraform.tfvars        # set domain= and backup_bucket_name=
-terraform init
-terraform plan                 # review
-terraform apply                # ~10-15 min (Kapsule + RDB)
+cp terraform.tfvars.example terraform.tfvars   # set domain, letsencrypt_email, backup_bucket_name
+terraform init -backend=false                  # bootstrap: local state first (creates the state bucket too)
+terraform apply -backend=false -auto-approve   # creates bucket, SDBs, containers, VM, DNS...
+# then switch to the shared state bucket (created above) for CI + team use:
+terraform init -backend-config="endpoint=https://s3.fr-par.scw.cloud" \
+  -backend-config="bucket=<backup_bucket_name>-tfstate" -backend-config="key=quill.tfstate" \
+  -backend-config="region=fr-par" -backend-config="access_key=$SCW_ACCESS_KEY" \
+  -backend-config="secret_key=$SCW_SECRET_KEY" -backend-config="skip_credentials_validation=true" \
+  -backend-config="skip_region_validation=true" -backend-config="skip_metadata_api_check=true" \
+  -backend-config="skip_requesting_account_id=true"
+terraform apply -auto-approve                  # migrate state into the bucket
 ```
 
-Outputs include `dns_name_servers` — delegate `domain` to them at your
-registrar. CI/backup credentials: `terraform output ci_access_key` /
-`ci_secret_key` / `backup_access_key` / `backup_secret_key` (sensitive).
+Delegate `domain` to the output `dns_name_servers` at your registrar.
 
 ## 2. Configure GitHub (one-time)
 
-Repo **secrets**:
+Repo **secrets**: `SCW_CI_ACCESS_KEY` / `SCW_CI_SECRET_KEY` (outputs `ci_access_key` /
+`ci_secret_key`), `VM_SSH_KEY` (output `vm_ssh_private_key`), `FORGEJO_ADMIN_TOKEN` and
+`ZITADEL_MANAGEMENT_TOKEN` (filled by provision.sh, then re-apply).
+Repo **vars**: `QUILL_DOMAIN`, `SCW_REGION`, `SCW_PROJECT_ID`, `BACKUP_BUCKET`,
+`REGISTRY`, `LETSENCRYPT_EMAIL`, `VM_IP`, `NEXT_PUBLIC_ZITADEL_ISSUER` (=`https://auth.<domain>`),
+`NEXT_PUBLIC_ZITADEL_CLIENT_ID`, `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (from the Zitadel console).
 
-| Secret | Value |
-| --- | --- |
-| `SCW_CI_ACCESS_KEY` | `terraform output -raw ci_access_key` |
-| `SCW_CI_SECRET_KEY` | `terraform output -raw ci_secret_key` |
-| `KUBE_CONFIG` | `deploy/scaleway/scripts/make-ci-kubeconfig.sh` output (base64) |
+## 3. First deploy + provision
 
-Repo **variables**: `QUILL_DOMAIN`, `SCW_REGION` (`fr-par`), `SCW_PROJECT_ID`
-(`terraform output -raw project_id`), `RDB_HOST` (`rdb_private_ip`),
-`BACKUP_BUCKET` (`backup_bucket`), `REGISTRY` (`registry_endpoint`),
-`LETSENCRYPT_EMAIL`, `NEXT_PUBLIC_ZITADEL_ISSUER` (`https://auth.<domain>`),
-`NEXT_PUBLIC_ZITADEL_CLIENT_ID`, `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (from the
-Zitadel bootstrap, see deploy/compose/ZITADEL-SSO.md).
+Push to `main` (or run **Deploy to Scaleway (serverless)** manually with
+`provision=true` on the first run). The workflow:
 
-## 3. Bootstrap the cluster (one-time, needs admin kubeconfig)
+1. builds + pushes `quill-backend`, `quill-web`, `quill-backup`, `quill-zitadel` images
+2. `terraform apply -var image_tag=<sha> ...` → serverless containers/job redeploy with the new image
+3. SSH-deploys the VM compose stack when `deploy/scaleway/vm/**` changes
+4. `provision.sh` (first boot): Forgejo admin + token + system webhook → `https://api.<domain>/api/v1/webhooks/forgejo`, Zitadel machine PAT harvested from container logs → Secret Manager; then re-apply TF with the tokens
+5. `dns-sync.sh`: git/ssh A records → VM IP; health-checks `https://app.<domain>/login` and `https://git.<domain>/api/healthz`
 
-```bash
-export KUBECONFIG=deploy/scaleway/terraform/kubeconfig   # set kubeconfig_path in tfvars first
-deploy/scaleway/scripts/sync-config.sh                   # writes k8s/.env.k8s from TF outputs
-set -a; source deploy/scaleway/k8s/.env.k8s; set +a
-export SCW_CI_ACCESS_KEY=$(terraform -chdir=deploy/scaleway/terraform output -raw ci_access_key)
-export SCW_CI_SECRET_KEY=$(terraform -chdir=deploy/scaleway/terraform output -raw ci_secret_key)
-export SCW_PROJECT_ID=$(terraform -chdir=deploy/scaleway/terraform output -raw project_id)
-deploy/scaleway/scripts/bootstrap-cluster.sh             # cert-manager + SCW DNS-01 webhook + ClusterIssuer
-deploy/scaleway/scripts/sync-secrets.sh                  # push Secret Manager values into the k8s Secret
-export IMAGE_TAG=bootstrap
-deploy/scaleway/scripts/render.sh
-kubectl apply -f deploy/scaleway/k8s/rendered/
-```
+Then register the first user at `https://app.<domain>` (first account = platform
+admin). In the Zitadel console (`https://auth.<domain>`, admin login from
+steps.yaml with forced password change), create the OIDC app and set its
+client/project id as repo vars; re-run the workflow to rebuild the web image.
 
-## 4. First deploy + provision
-
-Push to `main` (or run **Deploy to Scaleway (Kapsule)** manually with
-`provision=true` on the first run). The workflow builds and pushes the
-images, applies the manifests, runs `k8s-provision.sh` (mints the Forgejo
-admin token into the k8s Secret + Secret Manager), syncs DNS A records to the
-LB IPs, and health-checks `https://app.<domain>/login`.
-
-Then register the first user at `https://app.<domain>` — the first account
-becomes the platform admin.
-
-## 5. Verify
+## 4. Verify & backups
 
 ```bash
-kubectl -n quill get pods,svc,ingress,certificate,cronjob
-curl -fsS https://app.${QUILL_DOMAIN}/login          # web
-curl -fsS https://git.${QUILL_DOMAIN}/api/healthz    # forgejo
-# backups:
-aws s3 ls s3://$BACKUP_BUCKET/postgres/quill/ --endpoint-url https://s3.fr-par.scw.cloud
-aws s3 ls s3://$BACKUP_BUCKET/forgejo/ --endpoint-url https://s3.fr-par.scw.cloud
+curl -fsS https://app.${QUILL_DOMAIN}/login
+curl -fsS https://git.${QUILL_DOMAIN}/api/healthz
+aws s3 ls s3://$BACKUP_BUCKET/postgres/ --endpoint-url https://s3.fr-par.scw.cloud
+aws s3 ls s3://$BACKUP_BUCKET/forgejo/  --endpoint-url https://s3.fr-par.scw.cloud
 ```
 
-## Backup & restore
-
-Three layers:
-
-1. **Object Storage dumps** (portable, off-cluster): nightly `pg-backup`
-   CronJob dumps `quill`, `forgejo`, `zitadel` from RDB →
-   `s3://<bucket>/postgres/<db>/<db>-<ts>.sql.gz`; the forgejo pod sidecar
-   runs `forgejo dump` daily → `s3://<bucket>/forgejo/forgejo-dump-<ts>.zip`.
-   Objects older than `backup_retention_days` (default 30) are pruned by the
-   same jobs; bucket versioning is on.
-2. **RDB managed backups**: Scaleway-side snapshots on `rdb_backup_schedule`
-   (daily 02:00 UTC, retention 30d) — restore via console/`scw rdb backup`.
-3. **Forgejo PVC**: covered by the dump in layer 1 (git data is in the dump).
-
-Restore (disaster recovery):
-
-```bash
-# 1. terraform apply (recreates infra) or reuse the running cluster
-# 2. restore Postgres from the newest dump:
-aws s3 cp s3://$BACKUP_BUCKET/postgres/quill/quill-<ts>.sql.gz - --endpoint-url https://s3.fr-par.scw.cloud | gunzip | \
-  psql "postgres://quill:$RDB_ADMIN_PASSWORD@$RDB_HOST:5432/quill?sslmode=require"
-#    (repeat for forgejo, zitadel; drop & recreate the DBs first if they exist)
-# 3. restore Forgejo git data: kubectl -n quill exec deploy/forgejo -- \
-#      forgejo dump -c /data/forgejo/conf/app.ini   # no — restore via:
-#    download the dump and run `forgejo restore` / unzip over /data, or use an
-#    RDB-independent path: aws s3 cp s3://$BACKUP_BUCKET/forgejo/forgejo-dump-<ts>.zip /tmp/ &&
-#    kubectl -n quill exec deploy/forgejo -c forgejo -- sh -c 'cd /data && unzip -o /tmp/dump.zip'
-# 4. redeploy the app (CI workflow), re-run k8s-provision if the token changed
-```
+Restore: SDB has 7 days of managed backups built in; for older/point-in-time,
+`aws s3 cp s3://$BUCKET/postgres/quill/quill-<ts>.sql.gz - | gunzip | psql "$QUILL_DB_URL"`;
+Forgejo git data: download `forgejo/forgejo-dump-<ts>.zip`, `docker compose exec forgejo sh -c 'cd /data && unzip -o /tmp/dump.zip'`.
 
 ## Operating
 
-- **Deploy**: push to `main` (paths `backend/**`, `frontend/**`,
-  `deploy/scaleway/**`) or run the workflow manually.
-- **Scale**: `terraform apply -var node_max_size=8` (autoscaler on), or bump
-  `replicas` in the manifests. `api` stays at 1 replica until webhook-trigger
-  idempotency lands.
-- **Secrets rotation**: update the value in Secret Manager, re-run
-  `sync-secrets.sh`, then `kubectl -n quill rollout restart deploy/api deploy/web`.
-- **Cost knobs**: `node_type`/`node_count` (Kapsule), `rdb_node_type`,
-  `rdb_is_ha`, PVC size. All are TF variables.
-
-## Security notes
-
-- RDB is on the private network; the public endpoint is TLS + ACL-gated
-  (`deploy_cidrs` — tighten to your egress IPs when known).
-- The dispatch pod runs a privileged DinD sidecar (MVP trade-off, same as the
-  compose stack's socket mount). Only trusted users may trigger pipelines;
-  move runners to Forge when available.
-- All app secrets live in Secret Manager; the k8s Secret is synced from it
-  (`sync-secrets.sh`), never committed.
-- TLS everywhere via Let's Encrypt (DNS-01 on Scaleway DNS); `QUILL_ENV=production`
-  enforces Secure cookies.
+- Deploys: push to `main` (paths `backend/**`, `frontend/**`, `deploy/scaleway/**`) or manual dispatch.
+- Cost knobs (TF vars): `vm_type`, `vm_root_volume_gb`, `sdb_max_cpu`, `container_cpu`,
+  `container_memory_mb`, `container_max_scale`, `backup_retention_days`.
+- Secrets rotation: update in Secret Manager, re-apply TF (containers/job get new env).
+- The dispatch API (VM :8090) is internet-exposed but HMAC-protected; the SSH
+  port is restricted via `ssh_cidrs`. Tighten both when you have stable egress IPs.

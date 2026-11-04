@@ -1,0 +1,23 @@
+# Zitadel FirstInstance bootstrap — runs once on first boot to seed the instance.
+# Creates a machine user whose Personal Access Token is written to /output (read
+# by bootstrap.sh) and an admin human who MUST change the placeholder password on
+# first login. No real secrets live here: set ZITADEL_MASTERKEY and your admin
+# password out of band, and the machine PAT is generated fresh per instance.
+FirstInstance:
+  InstanceName: quill
+  PatPath: /output/quill-api.pat
+  Org:
+    Name: Quill
+    Human:
+      UserName: admin
+      Email:
+        Address: admin@example.com
+        Verified: true
+      Password: ChangeMeOnFirstLogin1!
+      PasswordChangeRequired: true
+    Machine:
+      Machine:
+        Username: quill-api
+        Name: quill-api
+      Pat:
+        ExpirationDate: "2035-01-01T00:00:00Z"

@@ -6,7 +6,7 @@ variable "region" {
 }
 
 variable "zone" {
-  description = "Scaleway zone for zonal resources (node pools, RDB)."
+  description = "Scaleway zone for zonal resources (the Forgejo VM)."
   type        = string
   default     = "fr-par-1"
 }
@@ -19,112 +19,151 @@ variable "project_name" {
 
 # ---- DNS ---------------------------------------------------------------------
 variable "domain" {
-  description = "Root domain for the deployment (e.g. quill.example.com). A DNS zone for this domain is created in Scaleway DNS. Subdomains: app (web UI), git (Forgejo), auth (Zitadel)."
+  description = "Root domain for the deployment (e.g. quill.example.com). Subdomains: app (web), api (backend), git (Forgejo HTTP), auth (Zitadel), ssh (git SSH)."
   type        = string
 }
 
 variable "create_dns_zone" {
-  description = "Create and manage the Scaleway DNS zone for `domain`. Set false if the zone already exists (e.g. domain hosted elsewhere)."
+  description = "Create and manage the Scaleway DNS zone for `domain`. Set false if the zone already exists."
   type        = bool
   default     = true
 }
 
-# Optional: after the first apply, set these to the load-balancer IPs so
-# Terraform manages the A records (see scripts/dns-sync.sh for the automated path).
-variable "ingress_lb_ip" {
-  description = "Public IP of the Kapsule ingress load balancer (Traefik). When set, A records for app/git/auth are created."
+variable "existing_dns_zone_id" {
+  description = "Use an existing Scaleway DNS zone instead of creating one (set create_dns_zone=false)."
   type        = string
   default     = ""
 }
 
-variable "ssh_lb_ip" {
-  description = "Public IP of the Forgejo SSH load balancer (Service type=LoadBalancer). When set, the ssh.<domain> A record is created."
+# ---- DNS for the Forgejo VM ----------------------------------------------------
+variable "vm_ip" {
+  description = "Public IP of the Forgejo VM. Empty on first apply; scripts/dns-sync.sh fills the git/ssh A records from the instance after creation (or re-apply with this var set)."
   type        = string
   default     = ""
 }
 
-# ---- Kapsule (Kubernetes) -----------------------------------------------------
-variable "k8s_version" {
-  description = "Kubernetes version for the Kapsule cluster."
-  type        = string
-  default     = "1.33"
-}
-
-variable "node_type" {
-  description = "Instance type for the Kapsule node pool. DEV1-M (3 vCPU / 4 GB) fits the MVP stack."
-  type        = string
-  default     = "DEV1-M"
-}
-
-variable "node_count" {
-  description = "Number of nodes in the default pool (minimum for the MVP)."
-  type        = number
-  default     = 2
-}
-
-variable "node_autoscaling" {
-  description = "Enable cluster autoscaler on the default pool."
-  type        = bool
-  default     = true
-}
-
-variable "node_min_size" {
-  type    = number
-  default = 2
-}
-
-variable "node_max_size" {
-  type    = number
-  default = 5
-}
-
-# ---- RDB (managed PostgreSQL) --------------------------------------------------
-variable "rdb_node_type" {
-  description = "RDB instance node type. db-dev1-m is the smallest production-acceptable size."
-  type        = string
-  default     = "db-dev1-m"
-}
-
-variable "rdb_is_ha" {
-  description = "Enable high availability for the RDB instance (doubles cost; off for MVP)."
-  type        = bool
-  default     = false
-}
-
-variable "rdb_backup_schedule" {
-  description = "Managed RDB backup schedule (Scaleway-side backups, in addition to the S3 CronJob dumps)."
-  type        = string
-  default     = "0 2 * * *" # daily 02:00 UTC
-}
-
-# ---- Object Storage (backups) ---------------------------------------------------
+# ---- Backup --------------------------------------------------------------------
 variable "backup_bucket_name" {
-  description = "S3-compatible bucket for Postgres dumps and Forgejo dumps. Must be globally unique within the region."
+  description = "S3-compatible bucket for backups. Must be unique within the region."
   type        = string
 }
 
 variable "backup_retention_days" {
-  description = "Days to keep backups in the bucket (enforced by the backup CronJob prune)."
+  description = "Days to keep backups in the bucket (pruned by the backup job) and SDB's own 7-day managed backups are included free."
   type        = number
   default     = 30
 }
 
-# ---- Container registry ----------------------------------------------------------
+variable "backup_schedule" {
+  description = "Cron schedule (UTC) for the pg_dump backup job."
+  type        = string
+  default     = "0 3 * * *"
+}
+
+# ---- Registry / images -----------------------------------------------------------
 variable "registry_namespace" {
-  description = "Container registry namespace for Quill images (rg.<region>.scw.cloud/<namespace>)."
+  description = "Container registry namespace (rg.<region>.scw.cloud/<namespace>)."
   type        = string
   default     = "quill"
 }
 
-# ---- Kubernetes access ------------------------------------------------------------
-variable "kubeconfig_path" {
-  description = "Local path to write the Kapsule kubeconfig to (also stored in Secret Manager). Empty = do not write a local file."
+variable "image_tag" {
+  description = "Image tag for the Quill containers/job. CI sets this to the git SHA on every deploy."
   type        = string
-  default     = ""
+  default     = "latest"
 }
 
-variable "deploy_cidrs" {
-  description = "CIDRs allowed to reach the RDB public endpoint (TLS enforced). Restrict to your office/CI egress IPs when known; the Kapsule nodes use dynamic egress IPs, so 0.0.0.0/0 is the MVP default."
+# ---- Serverless SQL databases -----------------------------------------------------
+variable "sdb_version" {
+  description = "PostgreSQL major version for the serverless databases."
+  type        = string
+  default     = "16"
+}
+
+variable "sdb_min_cpu" {
+  description = "Min vCPU for each serverless DB. 0 = scales to zero when idle (no compute charge)."
+  type        = number
+  default     = 0
+}
+
+variable "sdb_max_cpu" {
+  description = "Max vCPU for each serverless DB (bounds the bill under load)."
+  type        = number
+  default     = 4
+}
+
+# ---- Serverless containers (api, web, zitadel) ------------------------------------
+variable "container_cpu" {
+  description = "vCPU (mCPU) limit per container instance."
+  type        = number
+  default     = 1000
+}
+
+variable "container_memory_mb" {
+  description = "Memory limit per container instance, in MB."
+  type        = number
+  default     = 1024
+}
+
+variable "container_max_scale" {
+  description = "Max instances per container. min_scale is always 0 (scale to zero)."
+  type        = number
+  default     = 2
+}
+
+# ---- Forgejo VM --------------------------------------------------------------------
+variable "vm_type" {
+  description = "Instance type for the single Forgejo/dispatch VM. DEV1-S (2 vCPU / 2 GB) is enough for a hobby instance; git data needs a real disk, so Forgejo can't be serverless."
+  type        = string
+  default     = "DEV1-S"
+}
+
+variable "vm_image" {
+  description = "Instance image label (Ubuntu 24.04)."
+  type        = string
+  default     = "ubuntu_noble"
+}
+
+variable "vm_root_volume_gb" {
+  description = "Root volume size for the Forgejo VM (holds git data)."
+  type        = number
+  default     = 20
+}
+
+variable "ssh_cidrs" {
+  description = "CIDRs allowed to SSH (port 22) into the Forgejo VM. Tighten to your egress IPs."
   type        = list(string)
   default     = ["0.0.0.0/0"]
+}
+
+# ---- App secrets provided out-of-band (post-provision) ------------------------------
+variable "forgejo_admin_token" {
+  description = "Forgejo admin token. Empty on first apply; scripts/provision.sh mints it on the VM and you re-apply with -var forgejo_admin_token=... (also stored in Secret Manager)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "zitadel_management_token" {
+  description = "Zitadel machine-user PAT for the Management API. Retrieved from the zitadel container logs on first boot (scripts/provision.sh)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_client_id" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "github_client_secret" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "letsencrypt_email" {
+  description = "ACME account email (Caddy on the VM issues Let's Encrypt certs for git.<domain> via HTTP-01)."
+  type        = string
 }

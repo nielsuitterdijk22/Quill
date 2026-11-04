@@ -1,12 +1,15 @@
-name: Deploy to Scaleway (Kapsule)
+name: Deploy to Scaleway (serverless)
 
-# Cloud-native deploy: build images, push to the Scaleway Container Registry,
-# render + apply the k8s manifests to the Kapsule cluster, verify health.
+# Serverless deploy: build + push images to the Scaleway Container Registry,
+# terraform apply (serverless containers/job get the new image tag), SSH-deploy
+# the Forgejo VM stack when vm files change, sync DNS, health-check.
 #
 # Required GitHub repo secrets/variables (see deploy/scaleway/README.md):
-#   secrets: SCW_CI_ACCESS_KEY, SCW_CI_SECRET_KEY, KUBE_CONFIG
-#   vars:    QUILL_DOMAIN, SCW_REGION, SCW_PROJECT_ID, RDB_HOST, BACKUP_BUCKET,
-#            REGISTRY, LETSENCRYPT_EMAIL, NEXT_PUBLIC_ZITADEL_ISSUER,
+#   secrets: SCW_CI_ACCESS_KEY, SCW_CI_SECRET_KEY, VM_SSH_KEY, TFSTATE_* (or use
+#            SCW_CI_* for the state bucket), FORGEJO_ADMIN_TOKEN,
+#            ZITADEL_MANAGEMENT_TOKEN
+#   vars:    QUILL_DOMAIN, SCW_REGION, SCW_PROJECT_ID, BACKUP_BUCKET, REGISTRY,
+#            LETSENCRYPT_EMAIL, NEXT_PUBLIC_ZITADEL_ISSUER,
 #            NEXT_PUBLIC_ZITADEL_CLIENT_ID, NEXT_PUBLIC_ZITADEL_PROJECT_ID
 
 on:
@@ -20,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       provision:
-        description: "First boot only: run k8s-provision.sh (Forgejo admin + token)"
+        description: "First boot only: run scripts/provision.sh (Forgejo admin + token + webhook, Zitadel PAT)"
         type: boolean
         default: false
 
@@ -28,21 +31,32 @@ permissions:
   contents: read
 
 env:
-  IMAGE_TAG: ${{ github.sha }}
   SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
   SCW_DEFAULT_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+  TF_IN_AUTOMATION: "1"
 
 jobs:
   # The Scaleway deploy only runs once the repo vars below are configured (they
   # come from `terraform apply` outputs — see deploy/scaleway/README.md). Until
-  # then the workflow is skipped so main stays green; workflow_dispatch always
-  # runs (useful for the first boot with provision=true).
+  # then the workflow is skipped so main stays green; workflow_dispatch always runs.
   build:
     name: Build & push images
     if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
     runs-on: ubuntu-24.04
+    outputs:
+      vm_changed: ${{ steps.changes.outputs.vm }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            vm:
+              - "deploy/scaleway/vm/**"
+              - "deploy/compose/**"
 
       - name: Login to Scaleway Container Registry
         run: |
@@ -61,7 +75,7 @@ jobs:
             --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=${{ vars.NEXT_PUBLIC_ZITADEL_ISSUER }} \
             --build-arg NEXT_PUBLIC_ZITADEL_CLIENT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_CLIENT_ID }} \
             --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_PROJECT_ID }} \
-            --build-arg QUILL_API_BASE_URL=http://api:8080
+            --build-arg QUILL_API_BASE_URL=https://api.${{ vars.QUILL_DOMAIN }}
           docker push ${{ vars.REGISTRY }}/quill-web:${{ github.sha }}
 
       - name: Build backup image
@@ -69,85 +83,125 @@ jobs:
           docker build -t ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }} deploy/scaleway/docker/
           docker push ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }}
 
-  deploy:
-    name: Deploy to Kapsule
+      - name: Build zitadel image
+        run: |
+          docker build -t ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }} deploy/scaleway/docker/ \
+          docker push ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }}
+
+  apply:
+    name: Terraform apply (serverless)
     needs: build
     if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install kubectl + scw CLI
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init (state in Object Storage)
+        working-directory: deploy/scaleway/terraform
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
         run: |
-          curl -LO "https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kubectl"
-          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+          terraform init -input=false \
+            -backend-config="endpoint=https://s3.${{ vars.SCW_REGION }}.scw.cloud" \
+            -backend-config="bucket=${{ vars.BACKUP_BUCKET }}-tfstate" \
+            -backend-config="key=quill.tfstate" \
+            -backend-config="region=${{ vars.SCW_REGION }}" \
+            -backend-config="access_key=${{ secrets.SCW_CI_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.SCW_CI_SECRET_KEY }}" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_metadata_api_check=true" \
+            -backend-config="skip_requesting_account_id=true"
+
+      - name: Terraform apply
+        working-directory: deploy/scaleway/terraform
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var "image_tag=${{ github.sha }}" \
+            -var "domain=${{ vars.QUILL_DOMAIN }}" \
+            -var "backup_bucket_name=${{ vars.BACKUP_BUCKET }}" \
+            -var "letsencrypt_email=${{ vars.LETSENCRYPT_EMAIL }}" \
+            -var "forgejo_admin_token=${{ secrets.FORGEJO_ADMIN_TOKEN }}" \
+            -var "zitadel_management_token=${{ secrets.ZITADEL_MANAGEMENT_TOKEN }}"
+
+  vm-deploy:
+    name: Deploy Forgejo VM stack (SSH)
+    needs: [build, apply]
+    if: ${{ needs.build.outputs.vm_changed == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH deploy to the Forgejo VM
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.VM_IP }}
+          username: ubuntu
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/quill
+            docker compose pull
+            docker compose up -d
+            docker image prune -f >/dev/null 2>&1 || true
+
+  provision:
+    name: First-boot provision
+    needs: [build, apply]
+    if: ${{ inputs.provision == true }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install scw CLI
+        run: |
           curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.42.0/scaleway-cli_2.42.0_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin scw
 
-      - name: Configure kubeconfig
-        run: echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$RUNNER_TEMP/kubeconfig"
-
-      - name: Sync app secrets from Secret Manager
+      - name: Run provision.sh
         env:
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
+          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
           SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
-        run: deploy/scaleway/scripts/sync-secrets.sh
+          SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
+        run: deploy/scaleway/scripts/provision.sh
 
-      - name: Render manifests
-        env:
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
-          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
-          SCW_REGION: ${{ vars.SCW_REGION }}
-          RDB_HOST: ${{ vars.RDB_HOST }}
-          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
-          REGISTRY: ${{ vars.REGISTRY }}
-          LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
-          BACKUP_RETENTION_DAYS: "30"
-        run: deploy/scaleway/scripts/render.sh "$RUNNER_TEMP/rendered"
+  post:
+    name: DNS sync + health check
+    needs: [build, apply]
+    if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Apply manifests
-        env:
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
-        run: kubectl apply -f "$RUNNER_TEMP/rendered/"
-
-      - name: Rollout
-        env:
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
+      - name: Install scw CLI
         run: |
-          for d in forgejo api web dispatch zitadel; do
-            kubectl -n quill rollout status "deploy/$d" --timeout=600s || true
-          done
-          kubectl -n quill get pods -o wide
+          curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.42.0/scaleway-cli_2.42.0_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin scw
 
-      - name: First-boot provision (Forgejo admin token) — opt-in
-        if: inputs.provision == true
+      - name: Sync git/ssh DNS records to the VM IP
         env:
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
           QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
           SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
-          STORE_IN_SECRET_MANAGER: "1"
-        run: deploy/scaleway/scripts/k8s-provision.sh
-
-      - name: Sync DNS records to the LB IPs
-        env:
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
-          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
-          SCW_ACCESS_KEY: ${{ secrets.SCW_CI_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_CI_SECRET_KEY }}
-          SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+          SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
         run: deploy/scaleway/scripts/dns-sync.sh
 
       - name: Health check
         run: |
           for i in $(seq 1 40); do
-            if curl -fsS -o /dev/null "https://app.${{ vars.QUILL_DOMAIN }}/login"; then
-              echo "app.${{ vars.QUILL_DOMAIN }} is serving"
+            if curl -fsS -o /dev/null "https://app.${{ vars.QUILL_DOMAIN }}/login" \
+               && curl -fsS -o /dev/null "https://git.${{ vars.QUILL_DOMAIN }}/api/healthz"; then
+              echo "app + git are serving"
               exit 0
             fi
             sleep 15
           done
-          echo "::error::app not reachable after 10 min" >&2
+          echo "::error::app/git not reachable after 10 min" >&2
           exit 1
