@@ -8,12 +8,10 @@
 #   api       8080  Quill Go backend
 #   dispatch  8090  Pipeline dispatcher + Docker-backed runner
 #   web       3001  Quill Next.js frontend
-#   caddy     80/443  Reverse proxy (production profile only)
 #
-# After first boot run `make provision` to create the Forgejo admin account and
-# generate FORGEJO_ADMIN_TOKEN automatically — see deploy/compose/README.md.
-#
-# Production: add --profile production to enable the Caddy reverse proxy.
+# Local development stack only — production runs on Scaleway (see
+# deploy/scaleway/README.md). After first boot run `make provision` to create
+# the Forgejo admin account and generate FORGEJO_ADMIN_TOKEN automatically.
 
 name: quill
 
@@ -235,29 +233,7 @@ services:
       timeout: 5s
       retries: 40
 
-  caddy:
-    image: caddy:2-alpine
-    profiles: [production]
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    environment:
-      QUILL_DOMAIN: ${QUILL_DOMAIN}
-      # Public host for the Zitadel vhost — same value Zitadel is initialised with.
-      ZITADEL_EXTERNALDOMAIN: ${ZITADEL_EXTERNALDOMAIN:-auth.localhost}
-    depends_on:
-      - web
-      - forgejo
-    restart: unless-stopped
-
 volumes:
   pgdata:
   forgejo-data:
-  caddy-data:
-  caddy-config:
   zitadel-pgdata:

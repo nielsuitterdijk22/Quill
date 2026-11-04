@@ -105,6 +105,12 @@ make logs
 make down
 ```
 
+### Production
+
+Quill runs as a managed SaaS on Scaleway (EU, fr-par) — serverless containers +
+serverless PostgreSQL + one small Forgejo VM, ≈ €10/mo at hobby scale, deployed by
+CI on every push to `main`. See [deploy/scaleway/README.md](deploy/scaleway/README.md).
+
 ### Run pieces natively
 
 ```bash
@@ -154,15 +160,13 @@ Foundation-first; each item is one focused PR.
 
 ## Why Quill?
 
-Quill is built for developers and teams who want to own their infrastructure.
-There is no vendor behind a paywall, no account required on a third-party
-service, and no code leaving your server. Deploy it on a €5/month VPS or an
-air-gapped machine — the choice is yours.
+Quill is a hosted, EU-resident SaaS: your code stays on European
+infrastructure (Scaleway, Paris region), with no US hyperscaler in the path.
+There is no account required on a third-party service.
 
 Quill makes no call-home requests and collects no usage telemetry by default.
 There are no analytics, no tracking pixels, and no external fonts or scripts
-served from third-party CDNs. Your users' IP addresses and code stay on your
-hardware.
+served from third-party CDNs.
 
 ## License
 

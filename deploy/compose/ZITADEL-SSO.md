@@ -65,8 +65,7 @@ Tenant-wide policies you set under **Policies** then apply to everyone in that o
 
 - **Email/SMTP**: invites and email verification need a working SMTP config
   (Console → Settings → SMTP). On Scaleway use a relay port that isn't blocked —
-  e.g. Brevo on **2525** (25/465/587 are blocked outbound). See the SMTP section
-  of `ZITADEL-GO-LIVE.md`.
+  e.g. Brevo on **2525** (25/465/587 are blocked outbound).
 - **Testing without a corporate IdP**: use Google as the IdP — most people have a
   Google account, and it proves the full federation flow end to end.
 - **SCIM (directory sync)** is a separate, later step: Zitadel exposes a SCIM v2

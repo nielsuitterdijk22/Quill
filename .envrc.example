@@ -38,8 +38,6 @@ export GITHUB_CLIENT_SECRET=          # CHANGE ME
 export ZITADEL_MANAGEMENT_TOKEN=      # CHANGE ME (machine-user PAT)
 export ZITADEL_ISSUER=https://auth.example.com
 
-export DEPLOY_EXTRA_PROFILES=zitadel
-
 # --- Frontend (Next.js, inlined at build time) -------------------------------
 # Sibling app URLs for the top-left app switcher. Leave any of them blank to
 # show that tile disabled instead of linking out.

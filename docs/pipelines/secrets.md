@@ -97,8 +97,8 @@ in memory when a run is dispatched.
 
 ## Operator note: the encryption key
 
-Self-hosted instances set `QUILL_SECRET_ENCRYPTION_KEY` (see
-[Self-hosting](../../SELF_HOSTING.md)). It is **required in production**; local
+Production sets `QUILL_SECRET_ENCRYPTION_KEY` (see
+[the Scaleway runbook](../../deploy/scaleway/README.md)). It is **required in production**; local
 development falls back to a built-in insecure key. Treat the key as durable:
 changing it makes every existing secret undecryptable, and affected runs will
 fail rather than silently drop the secret — rotate the secrets themselves after
