@@ -33,8 +33,13 @@ env:
   SCW_DEFAULT_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
 
 jobs:
+  # The Scaleway deploy only runs once the repo vars below are configured (they
+  # come from `terraform apply` outputs — see deploy/scaleway/README.md). Until
+  # then the workflow is skipped so main stays green; workflow_dispatch always
+  # runs (useful for the first boot with provision=true).
   build:
     name: Build & push images
+    if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +72,7 @@ jobs:
   deploy:
     name: Deploy to Kapsule
     needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
