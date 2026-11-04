@@ -1,0 +1,48 @@
+# Nightly Postgres backup: pg_dump all three databases (quill, forgejo, zitadel)
+# from the RDB private endpoint, gzip, upload to Object Storage, prune objects
+# older than BACKUP_RETENTION_DAYS. Forgejo git data is backed up separately by
+# the backup sidecar in the forgejo Deployment (same bucket, forgejo/ prefix).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+  namespace: quill
+  labels: { app: backup }
+spec:
+  schedule: "0 3 * * *"  # 03:00 UTC daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-backup
+              image: "${REGISTRY}/quill-backup:${IMAGE_TAG}"
+              imagePullPolicy: IfNotPresent
+              command: ["/usr/local/bin/backup-pg.sh"]
+              envFrom:
+                - configMapRef: { name: quill-config }
+              env:
+                - name: PGHOST
+                  valueFrom: { configMapKeyRef: { name: quill-config, key: RDB_HOST } }
+                - name: PGPORT
+                  valueFrom: { configMapKeyRef: { name: quill-config, key: RDB_PORT } }
+                - name: PGUSER
+                  value: "quill"
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: quill-app-secrets, key: RDB_ADMIN_PASSWORD } }
+                - name: PGSSLMODE
+                  value: "require"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom: { secretKeyRef: { name: quill-app-secrets, key: AWS_ACCESS_KEY_ID } }
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: quill-app-secrets, key: AWS_SECRET_ACCESS_KEY } }
+                - name: BACKUP_RETENTION_DAYS
+                  value: "${BACKUP_RETENTION_DAYS}"
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }

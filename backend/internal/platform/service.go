@@ -130,43 +130,31 @@ func (s *Service) forgejoEnabled() bool {
 	return s.forgejo != nil && s.forgejo.Enabled()
 }
 
-// authorizeProjectMember returns nil when the actor is a platform admin or a
-// member of projectID, and ErrForbidden otherwise. Membership is read from the
-// project roster; rosters are small, so a full read is acceptable here.
+// authorizeProjectMember returns nil when the actor is a platform admin or has
+// any effective role on projectID — direct membership or one inherited from a
+// (nested) group — and ErrForbidden otherwise.
 func (s *Service) authorizeProjectMember(ctx context.Context, actor Actor, projectID uuid.UUID) error {
-	if actor.IsAdmin {
-		return nil
-	}
-	members, err := s.store.ListProjectMembers(ctx, projectID)
+	role, err := s.effectiveProjectRole(ctx, actor, projectID)
 	if err != nil {
-		return fmt.Errorf("check project membership: %w", err)
+		return err
 	}
-	for _, m := range members {
-		if m.ID == actor.UserID {
-			return nil
-		}
+	if role == "" {
+		return ErrForbidden
 	}
-	return ErrForbidden
+	return nil
 }
 
 // authorizeProjectAdmin returns nil when the actor is a platform admin or an
-// owner of projectID, and ErrForbidden otherwise. It gates configuration changes
-// (such as editing branch policies) that ordinary members may not perform.
+// effective owner of projectID (directly or via a group grant), and
+// ErrForbidden otherwise. It gates configuration changes (such as editing
+// branch policies) that ordinary members may not perform.
 func (s *Service) authorizeProjectAdmin(ctx context.Context, actor Actor, projectID uuid.UUID) error {
-	if actor.IsAdmin {
-		return nil
-	}
-	members, err := s.store.ListProjectMembers(ctx, projectID)
+	role, err := s.effectiveProjectRole(ctx, actor, projectID)
 	if err != nil {
-		return fmt.Errorf("check project membership: %w", err)
+		return err
 	}
-	for _, m := range members {
-		if m.ID == actor.UserID {
-			if m.MemberRole == "owner" {
-				return nil
-			}
-			return ErrForbidden
-		}
+	if role == "owner" {
+		return nil
 	}
 	return ErrForbidden
 }

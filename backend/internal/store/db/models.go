@@ -142,6 +142,30 @@ type Project struct {
 	UpdatedAt      time.Time   `json:"updatedAt"`
 }
 
+type Group struct {
+	ID        uuid.UUID   `json:"id"`
+	TenantID  uuid.UUID   `json:"tenantId"`
+	ParentID  pgtype.UUID `json:"parentId"`
+	Slug      string      `json:"slug"`
+	Name      string      `json:"name"`
+	Depth     int32       `json:"depth"`
+	CreatedAt time.Time   `json:"createdAt"`
+	UpdatedAt time.Time   `json:"updatedAt"`
+}
+
+type GroupMember struct {
+	GroupID   uuid.UUID `json:"groupId"`
+	UserID    uuid.UUID `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type GroupProjectRole struct {
+	GroupID   uuid.UUID `json:"groupId"`
+	ProjectID uuid.UUID `json:"projectId"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type ProjectMember struct {
 	ProjectID uuid.UUID `json:"projectId"`
 	UserID    uuid.UUID `json:"userId"`

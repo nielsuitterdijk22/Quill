@@ -523,6 +523,11 @@ func toTS(t time.Time) pgtype.Timestamptz {
 // the repos in each project because Forgejo's owner is a project-level name; the set of
 // projects/repos is small for the PoC.
 func (s *Service) resolveRepoForWebhook(ctx context.Context, owner, name string) (db.Repository, string, string, error) {
+	// A Service built without a store (handler-level tests) cannot resolve
+	// repos; report unavailable instead of dereferencing a nil store.
+	if s.store == nil {
+		return db.Repository{}, "", "", ErrUnavailable
+	}
 	projects, err := s.store.ListProjects(ctx, db.ListProjectsParams{Limit: 500, Offset: 0})
 	if err != nil {
 		return db.Repository{}, "", "", fmt.Errorf("list projects: %w", err)

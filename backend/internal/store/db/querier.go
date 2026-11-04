@@ -11,9 +11,12 @@ import (
 )
 
 type Querier interface {
+	AddGroupMember(ctx context.Context, arg AddGroupMemberParams) error
 	AddProjectMember(ctx context.Context, arg AddProjectMemberParams) error
 	CountProjects(ctx context.Context) (int64, error)
+	CountRepositoriesByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
 	CreateAuthIdentity(ctx context.Context, arg CreateAuthIdentityParams) (AuthIdentity, error)
 	CreateEnvironment(ctx context.Context, arg CreateEnvironmentParams) (Environment, error)
 	CreateGitToken(ctx context.Context, arg CreateGitTokenParams) (GitToken, error)
@@ -29,11 +32,16 @@ type Querier interface {
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteEnvironment(ctx context.Context, id uuid.UUID) error
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteTenant(ctx context.Context, id uuid.UUID) error
 	DeleteTenantSSO(ctx context.Context, tenantID uuid.UUID) error
 	GetInviteByTokenHash(ctx context.Context, tokenHash string) (OrgInvite, error)
 	GetTenantSSO(ctx context.Context, tenantID uuid.UUID) (TenantSsoConfig, error)
 	GetTenantMember(ctx context.Context, arg GetTenantMemberParams) (TenantMember, error)
+	ListGroupMembers(ctx context.Context, groupID uuid.UUID) ([]ListGroupMembersRow, error)
+	ListGroupProjectRoles(ctx context.Context, groupID uuid.UUID) ([]ListGroupProjectRolesRow, error)
+	ListGroupsByTenant(ctx context.Context, tenantID uuid.UUID) ([]Group, error)
+	ListGroupsForUser(ctx context.Context, arg ListGroupsForUserParams) ([]Group, error)
 	ListOrgTenantsForUser(ctx context.Context, userID uuid.UUID) ([]ListOrgTenantsForUserRow, error)
 	ListPendingInvitesByTenant(ctx context.Context, tenantID uuid.UUID) ([]OrgInvite, error)
 	ListTenantMembers(ctx context.Context, tenantID uuid.UUID) ([]ListTenantMembersRow, error)
@@ -41,7 +49,9 @@ type Querier interface {
 	RemoveTenantMember(ctx context.Context, arg RemoveTenantMemberParams) error
 	RevokeInvite(ctx context.Context, arg RevokeInviteParams) (int64, error)
 	RevokePendingInvitesByEmail(ctx context.Context, arg RevokePendingInvitesByEmailParams) error
+	SetGroupProjectRole(ctx context.Context, arg SetGroupProjectRoleParams) error
 	SetTenantExternalOrg(ctx context.Context, arg SetTenantExternalOrgParams) error
+	SetTenantPlan(ctx context.Context, arg SetTenantPlanParams) error
 	UpsertTenantSSO(ctx context.Context, arg UpsertTenantSSOParams) (TenantSsoConfig, error)
 	DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) error
 	// Remove all policies attached to a scope (used when the scope is deleted, since
@@ -61,6 +71,9 @@ type Querier interface {
 	GetProjectBySlug(ctx context.Context, lower string) (Project, error)
 	GetRepositoryByID(ctx context.Context, id uuid.UUID) (Repository, error)
 	GetRepositoryBySlug(ctx context.Context, arg GetRepositoryBySlugParams) (Repository, error)
+	GetEffectiveProjectRole(ctx context.Context, arg GetEffectiveProjectRoleParams) (string, error)
+	GetGroupByID(ctx context.Context, id uuid.UUID) (Group, error)
+	GetGroupBySlug(ctx context.Context, arg GetGroupBySlugParams) (Group, error)
 	GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error)
 	GetTenantBySlug(ctx context.Context, lower string) (Tenant, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
@@ -81,6 +94,7 @@ type Querier interface {
 	// Policies declared directly at one scope for a kind (e.g. a repo's own branch
 	// policies). Used to render and edit what a scope owns, before inheritance.
 	ListPoliciesByScope(ctx context.Context, arg ListPoliciesByScopeParams) ([]Policy, error)
+	ListProjectGroupRoles(ctx context.Context, projectID uuid.UUID) ([]ListProjectGroupRolesRow, error)
 	ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ListProjectMembersRow, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	ListProjectsByUser(ctx context.Context, userID uuid.UUID) ([]ListProjectsByUserRow, error)
@@ -90,12 +104,16 @@ type Querier interface {
 	ListStepsByJob(ctx context.Context, jobID uuid.UUID) ([]PipelineStep, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	NextRunNumber(ctx context.Context, pipelineID uuid.UUID) (int32, error)
+	RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberParams) error
+	RemoveGroupProjectRole(ctx context.Context, arg RemoveGroupProjectRoleParams) error
 	RemoveProjectMember(ctx context.Context, arg RemoveProjectMemberParams) error
 	SetProjectForgejoName(ctx context.Context, arg SetProjectForgejoNameParams) (Project, error)
 	SetRepositoryArchived(ctx context.Context, arg SetRepositoryArchivedParams) (Repository, error)
 	SetRepositoryForgejoLink(ctx context.Context, arg SetRepositoryForgejoLinkParams) (Repository, error)
 	SetUserForgejoLink(ctx context.Context, arg SetUserForgejoLinkParams) (User, error)
 	SetUserTenant(ctx context.Context, arg SetUserTenantParams) (User, error)
+	SumPipelineMinutesByTenant(ctx context.Context, tenantID uuid.UUID) (float64, error)
+	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (Group, error)
 	UpdateAuthIdentitySecret(ctx context.Context, arg UpdateAuthIdentitySecretParams) error
 	UpdateEnvironment(ctx context.Context, arg UpdateEnvironmentParams) (Environment, error)
 	UpdatePipelineRunStatus(ctx context.Context, arg UpdatePipelineRunStatusParams) (PipelineRun, error)

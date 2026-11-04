@@ -1,0 +1,115 @@
+# Forgejo — git backend that Quill wraps via REST.
+#   - git data + LFS live on a PVC (Block Storage); a sidecar dumps it daily to
+#     Object Storage (see docker/backup.Dockerfile + scripts inside the image).
+#   - HTTP is exposed via the git.<domain> ingress (ingress.yaml).
+#   - SSH (port 2222) is exposed via a dedicated LoadBalancer service, because
+#     Kapsule's Traefik ingress is HTTP(S)-only.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-data
+  namespace: quill
+spec:
+  accessModes: ["ReadWriteOnce"]
+  # storageClassName omitted on purpose: use the cluster's default Scaleway
+  # Block Storage class (bssd) so the PVC binds regardless of exact class name.
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo
+  namespace: quill
+  labels: { app: forgejo }
+spec:
+  replicas: 1  # PVC is ReadWriteOnce — scale out only with shared storage
+  selector:
+    matchLabels: { app: forgejo }
+  template:
+    metadata:
+      labels: { app: forgejo }
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: forgejo
+          image: codeberg.org/forgejo/forgejo:15
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 3000 }
+            - { name: ssh, containerPort: 2222 }
+          envFrom:
+            - configMapRef: { name: quill-config }
+          env:
+            - name: USER_UID
+              value: "1000"
+            - name: USER_GID
+              value: "1000"
+            - name: FORGEJO__database__PASSWD
+              valueFrom:
+                secretKeyRef: { name: quill-app-secrets, key: RDB_ADMIN_PASSWORD }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            httpGet: { path: /api/healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/healthz, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "2", memory: 2Gi }
+        # Daily `forgejo dump` + upload to Object Storage. Shares the PVC with
+        # the main container (same pod, so RWO is fine).
+        - name: backup
+          image: "${REGISTRY}/quill-backup:${IMAGE_TAG}"
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/backup-forgejo.sh"]
+          envFrom:
+            - configMapRef: { name: quill-config }
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: quill-app-secrets, key: AWS_ACCESS_KEY_ID } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: quill-app-secrets, key: AWS_SECRET_ACCESS_KEY } }
+            - name: BACKUP_RETENTION_DAYS
+              value: "${BACKUP_RETENTION_DAYS}"
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: forgejo-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo
+  namespace: quill
+  labels: { app: forgejo }
+spec:
+  selector: { app: forgejo }
+  ports:
+    - { name: http, port: 3000, targetPort: http }
+---
+# Dedicated Load Balancer for git-over-SSH (Traefik ingress is HTTP-only).
+# Its external IP is read by scripts/dns-sync.sh for the ssh.<domain> A record.
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo-ssh
+  namespace: quill
+  labels: { app: forgejo }
+  annotations:
+    service.beta.kubernetes.io/scw-loadbalancer-use-hostname: "false"
+spec:
+  type: LoadBalancer
+  selector: { app: forgejo }
+  ports:
+    - { name: ssh, port: 2222, targetPort: ssh }

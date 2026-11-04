@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  getOrgBilling,
+  getOrgGroups,
   getOrgInvites,
   getOrgMembers,
   getOrgSSO,
@@ -9,8 +11,10 @@ import {
   getTenantPolicies,
   listOrgs,
 } from "../../../../lib/api";
-import type { SSOConfig } from "../../../../lib/api";
+import type { BillingView, SSOConfig } from "../../../../lib/api";
 import { getToken } from "../../../../lib/session";
+import { OrgBilling } from "../../../../components/organization/OrgBilling";
+import { OrgGroups } from "../../../../components/organization/OrgGroups";
 import { OrgMembers } from "../../../../components/organization/OrgMembers";
 import { OrgSSO } from "../../../../components/organization/OrgSSO";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
@@ -34,17 +38,22 @@ export default async function OrgSettingsPage({
   if (!org) notFound();
   const canEdit = org.role === "admin";
 
-  const [branchRes, envRes, membersRes, invitesRes] = await Promise.all([
+  const [branchRes, envRes, membersRes, invitesRes, groupsRes, billingRes] = await Promise.all([
     getTenantPolicies(token, params.org),
     getTenantEnvironmentPolicies(token, params.org),
     getOrgMembers(token, params.org),
     // Invites are admin-only; a plain member's 403 degrades to an empty list.
     canEdit ? getOrgInvites(token, params.org) : Promise.resolve({ ok: false as const }),
+    getOrgGroups(token, params.org),
+    // Billing is admin-only; a plain member's 403 degrades to undefined.
+    canEdit ? getOrgBilling(token, params.org) : Promise.resolve({ ok: false as const }),
   ]);
   const branchPolicies = branchRes.ok ? branchRes.data.policies : [];
   const envPolicies = envRes.ok ? envRes.data.policies : [];
   const members = membersRes.ok ? membersRes.data.members : [];
   const invites = invitesRes.ok ? invitesRes.data.invites : [];
+  const groups = groupsRes.ok ? groupsRes.data.groups : [];
+  const billing: BillingView | undefined = billingRes.ok ? billingRes.data : undefined;
 
   // SSO is admin-only; default to an empty (unconfigured) view for members.
   const ssoRes = canEdit
@@ -111,6 +120,31 @@ export default async function OrgSettingsPage({
             </p>
           </div>
           <OrgSSO org={org.slug} config={sso} />
+        </section>
+      )}
+
+      <section className="settings-section settings-card">
+        <div className="settings-head">
+          <h2 className="settings-title">Groups</h2>
+          <p className="subtle">
+            Departments and teams as a nested hierarchy (max depth 5). Grant a
+            group a role on a project and every member — including members of
+            its subgroups — inherits that access.
+          </p>
+        </div>
+        <OrgGroups org={org.slug} canEdit={canEdit} groups={groups} members={members} />
+      </section>
+
+      {billing && (
+        <section className="settings-section settings-card">
+          <div className="settings-head">
+            <h2 className="settings-title">Billing &amp; usage</h2>
+            <p className="subtle">
+              Your plan and metered usage. The plan is set by the platform
+              operator; overage and invoicing follow the plan.
+            </p>
+          </div>
+          <OrgBilling billing={billing} />
         </section>
       )}
 

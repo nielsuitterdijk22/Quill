@@ -46,6 +46,9 @@ type Repo struct {
 	DefaultBranch string `json:"default_branch"`
 	HTMLURL       string `json:"html_url"`
 	CloneURL      string `json:"clone_url"`
+	// Size is the git repository size in bytes (Forgejo `size` field), used for
+	// storage metering in billing.
+	Size int64 `json:"size"`
 }
 
 // ---- options ---------------------------------------------------------------

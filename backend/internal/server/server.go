@@ -283,6 +283,23 @@ func (s *Server) setupRoutes() {
 				r.Get("/sso", s.handleGetOrgSSO)
 				r.Put("/sso", s.handleSetOrgSSO)
 				r.Delete("/sso", s.handleDeleteOrgSSO)
+				r.Route("/groups", func(r chi.Router) {
+					r.Get("/", handleGroupsList(s))
+					r.Post("/", handleGroupsCreate(s))
+					r.Route("/{group}", func(r chi.Router) {
+						r.Patch("/", handleGroupsUpdate(s))
+						r.Delete("/", handleGroupsDelete(s))
+						r.Get("/members", handleGroupMembersList(s))
+						r.Post("/members", handleGroupMembersAdd(s))
+						r.Delete("/members/{userId}", handleGroupMembersRemove(s))
+						r.Put("/projects/{project}", handleGroupProjectRoleSet(s))
+						r.Delete("/projects/{project}", handleGroupProjectRoleRemove(s))
+					})
+				})
+				r.Route("/billing", func(r chi.Router) {
+					r.Get("/", handleBillingGet(s))
+					r.Put("/plan", handleBillingSetPlan(s))
+				})
 			})
 			r.Post("/invites/{token}/accept", s.handleAcceptInvite)
 			r.Route("/projects", func(r chi.Router) {

@@ -3,10 +3,14 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  addGroupMember,
+  createOrgGroup,
   createOrgInvite,
+  deleteOrgGroup,
   deleteOrgSSO,
   removeOrgMember,
   revokeOrgInvite,
+  setGroupProjectRole,
   setOrgMemberRole,
   setOrgSSO,
   type SetSSOInput,
@@ -82,6 +86,58 @@ export async function removeSSOAction(org: string): Promise<ActionResult> {
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
   const res = await deleteOrgSSO(token, org);
   if (!res.ok) return res;
+  revalidate(org);
+  return { ok: true };
+}
+
+// ---- groups (nested departments/teams) --------------------------------------
+
+export async function createGroupAction(
+  org: string,
+  slug: string,
+  name: string,
+  parentSlug: string,
+): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await createOrgGroup(token, org, slug, name, parentSlug);
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function deleteGroupAction(org: string, group: string): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await deleteOrgGroup(token, org, group);
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function addGroupMemberAction(
+  org: string,
+  group: string,
+  userId: string,
+): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await addGroupMember(token, org, group, userId);
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function setGroupProjectRoleAction(
+  org: string,
+  group: string,
+  project: string,
+  role: string,
+): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await setGroupProjectRole(token, org, group, project, role);
+  if (!res.ok) return { ok: false, error: res.error };
   revalidate(org);
   return { ok: true };
 }
