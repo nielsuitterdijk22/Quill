@@ -15,7 +15,7 @@ terraform {
   #     -backend-config="skip_region_validation=true" \
   #     -backend-config="skip_metadata_api_check=true" \
   #     -backend-config="skip_requesting_account_id=true"
-  backend "s3" {}
+  # backend "s3" {}  # disabled for bootstrap apply
 
   required_providers {
     scaleway = {

@@ -73,6 +73,22 @@ variable "image_tag" {
   default     = "latest"
 }
 
+# ---- Serverless SQL database credentials -------------------------------------------
+# SDB authenticates IAM principals: username = the IAM user ID, password = an API
+# key secret of that user. Create the key for your own user (console: IAM & API
+# keys -> generate for yourself) and pass both here / via -var (CI: GH secrets
+# SDB_USER / SDB_PASSWORD).
+variable "sdb_user" {
+  description = "IAM user ID used as the username for the serverless SQL databases."
+  type        = string
+}
+
+variable "sdb_password" {
+  description = "API key secret of sdb_user, used as the SDB password."
+  type        = string
+  sensitive   = true
+}
+
 # ---- Serverless SQL databases -----------------------------------------------------
 variable "sdb_version" {
   description = "PostgreSQL major version for the serverless databases."
@@ -138,28 +154,28 @@ variable "ssh_cidrs" {
 
 # ---- App secrets provided out-of-band (post-provision) ------------------------------
 variable "forgejo_admin_token" {
-  description = "Forgejo admin token. Empty on first apply; scripts/provision.sh mints it on the VM and you re-apply with -var forgejo_admin_token=... (also stored in Secret Manager)."
+  description = "Forgejo admin token. Placeholder on first apply; scripts/provision.sh mints it on the VM and you re-apply with -var forgejo_admin_token=... (also stored in Secret Manager)."
   type        = string
-  default     = ""
+  default     = "pending-provision"
   sensitive   = true
 }
 
 variable "zitadel_management_token" {
   description = "Zitadel machine-user PAT for the Management API. Retrieved from the zitadel container logs on first boot (scripts/provision.sh)."
   type        = string
-  default     = ""
+  default     = "pending-provision"
   sensitive   = true
 }
 
 variable "github_client_id" {
   type      = string
-  default   = ""
+  default   = "unset"
   sensitive = true
 }
 
 variable "github_client_secret" {
   type      = string
-  default   = ""
+  default   = "unset"
   sensitive = true
 }
 

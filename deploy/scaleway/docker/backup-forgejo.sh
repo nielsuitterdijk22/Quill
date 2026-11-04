@@ -17,6 +17,7 @@ INTERVAL_SECONDS=86400
 while true; do
   STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
   tmp="/tmp/forgejo-dump-${STAMP}.zip"
+  mkdir -p /data/git/repositories 2>/dev/null || true
   echo "[backup] forgejo dump at ${STAMP}"
   if forgejo dump --config "$FORGEJO_CONF" --file "$tmp" --type zip; then
     aws s3 cp "$tmp" "s3://${BACKUP_BUCKET}/forgejo/forgejo-dump-${STAMP}.zip" \
@@ -27,16 +28,6 @@ while true; do
     echo "[backup] forgejo dump FAILED at ${STAMP}" >&2
     rm -f "$tmp"
   fi
-
-  # Prune old dumps.
-  CUTOFF="$(date -u -d "-${BACKUP_RETENTION_DAYS} days" +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -v-${BACKUP_RETENTION_DAYS}d +%Y%m%dT%H%M%SZ)"
-  aws s3 ls "s3://${BACKUP_BUCKET}/forgejo/" --endpoint-url "$S3_ENDPOINT" \
-    | awk -v cutoff="$CUTOFF" '$2 < cutoff {print $4}' \
-    | while read -r key; do
-        [ -n "$key" ] || continue
-        echo "[backup] pruning s3://${BACKUP_BUCKET}/${key}"
-        aws s3 rm "s3://${BACKUP_BUCKET}/${key}" --endpoint-url "$S3_ENDPOINT"
-      done
 
   sleep "$INTERVAL_SECONDS"
 done

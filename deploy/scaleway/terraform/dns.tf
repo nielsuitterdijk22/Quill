@@ -12,10 +12,12 @@ resource "scaleway_domain_zone" "quill" {
 
 locals {
   dns_zone_id = var.create_dns_zone ? scaleway_domain_zone.quill[0].id : var.existing_dns_zone_id
+  # count must depend only on variables (not on computed resource attrs)
+  have_zone = var.create_dns_zone || var.existing_dns_zone_id != ""
 }
 
 resource "scaleway_domain_record" "api" {
-  count      = local.dns_zone_id != "" ? 1 : 0
+  count      = local.have_zone ? 1 : 0
   dns_zone   = local.dns_zone_id
   name       = "api"
   type       = "CNAME"
@@ -25,7 +27,7 @@ resource "scaleway_domain_record" "api" {
 }
 
 resource "scaleway_domain_record" "app" {
-  count      = local.dns_zone_id != "" ? 1 : 0
+  count      = local.have_zone ? 1 : 0
   dns_zone   = local.dns_zone_id
   name       = "app"
   type       = "CNAME"
@@ -34,18 +36,19 @@ resource "scaleway_domain_record" "app" {
   project_id = scaleway_account_project.quill.id
 }
 
+# auth.<domain> is served by Zitadel on the Forgejo VM (Caddy h2c vhost).
 resource "scaleway_domain_record" "auth" {
-  count      = local.dns_zone_id != "" ? 1 : 0
+  count      = local.have_zone && var.vm_ip != "" ? 1 : 0
   dns_zone   = local.dns_zone_id
   name       = "auth"
-  type       = "CNAME"
-  data       = local.container_cname["auth"]
+  type       = "A"
+  data       = var.vm_ip
   ttl        = 300
   project_id = scaleway_account_project.quill.id
 }
 
 resource "scaleway_domain_record" "git" {
-  count      = var.vm_ip != "" && local.dns_zone_id != "" ? 1 : 0
+  count      = local.have_zone && var.vm_ip != "" ? 1 : 0
   dns_zone   = local.dns_zone_id
   name       = "git"
   type       = "A"
@@ -55,7 +58,7 @@ resource "scaleway_domain_record" "git" {
 }
 
 resource "scaleway_domain_record" "ssh" {
-  count      = var.vm_ip != "" && local.dns_zone_id != "" ? 1 : 0
+  count      = local.have_zone && var.vm_ip != "" ? 1 : 0
   dns_zone   = local.dns_zone_id
   name       = "ssh"
   type       = "A"

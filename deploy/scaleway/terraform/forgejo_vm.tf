@@ -49,26 +49,23 @@ resource "scaleway_instance_server" "forgejo" {
 
   root_volume {
     size_in_gb            = var.vm_root_volume_gb
-    volume_type           = "b_ssd"
     delete_on_termination = false # never destroy git data on VM replacement
+    # volume_type omitted: b_ssd is retired for instance volumes; the default applies
   }
 
   cloud_init = templatefile("${path.module}/../vm/cloud-init.yml", {
     domain              = var.domain
     git_host            = local.git_host
-    api_host            = local.api_host
-    forgejo_db_url      = local.db_url["forgejo"]
     forgejo_db_host     = local.sdb_host["forgejo"]
     forgejo_db_port     = local.sdb_port["forgejo"]
     db_user             = local.db_user
     db_password         = local.db_password
-    webhook_secret      = random_password.webhook_secret.result
     dispatch_secret     = random_password.dispatch_secret.result
-    jwt_secret          = random_password.jwt_secret.result
-    enc_key             = base64encode(random_password.secret_encryption_key.result)
-    forgejo_admin_token = var.forgejo_admin_token
     backup_image        = "${local.registry}/quill-backup:${var.image_tag}"
     backend_image       = "${local.registry}/quill-backend:${var.image_tag}"
+    zitadel_image       = "${local.registry}/quill-zitadel:${var.image_tag}"
+    zitadel_masterkey   = random_password.zitadel_masterkey.result
+    zitadel_db_password = random_password.zitadel_db.result
     s3_endpoint         = "https://s3.${var.region}.scw.cloud"
     backup_bucket       = scaleway_object_bucket.backups.name
     aws_access_key      = scaleway_iam_api_key.backup.access_key

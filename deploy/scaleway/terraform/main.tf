@@ -33,6 +33,12 @@ resource "random_password" "dispatch_secret" {
   special = false
 }
 
+resource "random_password" "zitadel_db" {
+  length           = 32
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>?"
+}
+
 # Zitadel masterkey must be exactly 32 characters.
 resource "random_password" "zitadel_masterkey" {
   length  = 32
@@ -54,14 +60,14 @@ resource "scaleway_iam_policy" "ci" {
   rule {
     project_ids = [scaleway_account_project.quill.id]
     permission_set_names = [
+      "ContainersFullAccess",            # serverless containers (api/web/zitadel)
+      "ServerlessJobsFullAccess",        # backup job
+      "ServerlessSQLDatabaseFullAccess", # serverless SQL databases
       "ContainerRegistryFullAccess",
-      "ServerlessContainersFullAccess",
-      "ServerlessJobsFullAccess",
-      "ServerlessSQLFullAccess",
-      "DNSFullAccess",
-      "SecretManagerReadOnly",
+      "DomainsDNSFullAccess",
+      "SecretManagerFullAccess",
+      "ObjectStorageFullAccess",
       "InstancesReadOnly",
-      "ObjectStorageReadWriteAccess",
     ]
   }
 }
@@ -86,28 +92,13 @@ resource "scaleway_iam_policy" "backup" {
 
   rule {
     project_ids          = [scaleway_account_project.quill.id]
-    permission_set_names = ["ObjectStorageReadWriteAccess"]
+    permission_set_names = ["ObjectStorageFullAccess"]
   }
 }
 
 resource "scaleway_iam_api_key" "backup" {
   application_id     = scaleway_iam_application.backup.id
   description        = "S3 credentials for the backup job + Forgejo VM backup sidecar"
-  default_project_id = scaleway_account_project.quill.id
-}
-
-# ---- IAM: database user -----------------------------------------------------------
-# Serverless SQL databases authenticate with an IAM identity: the username is the
-# IAM user id and the password is one of its API keys' secret key.
-
-resource "scaleway_iam_user" "db" {
-  username = "quill-db"
-  email    = "db@${var.domain}"
-}
-
-resource "scaleway_iam_api_key" "db" {
-  user_id            = scaleway_iam_user.db.id
-  description        = "Credentials for the serverless SQL databases (username = user id, password = secret key)"
   default_project_id = scaleway_account_project.quill.id
 }
 

@@ -22,17 +22,15 @@ output "db_urls" {
 # ---- containers ----
 output "container_endpoints" {
   value = {
-    api     = scaleway_container.api.public_endpoint
-    web     = scaleway_container.web.public_endpoint
-    zitadel = scaleway_container.zitadel.public_endpoint
+    api = scaleway_container.api.public_endpoint
+    web = scaleway_container.web.public_endpoint
   }
 }
 
 output "container_domain_urls" {
   value = {
-    api  = scaleway_container_domain.api.url
-    app  = scaleway_container_domain.app.url
-    auth = scaleway_container_domain.auth.url
+    api = scaleway_container_domain.api.url
+    app = scaleway_container_domain.app.url
   }
 }
 

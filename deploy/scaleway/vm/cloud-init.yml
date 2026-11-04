@@ -11,6 +11,10 @@ write_files:
       ${git_host} {
         reverse_proxy forgejo:3000
       }
+
+      auth.${domain} {
+        reverse_proxy h2c://zitadel:8080
+      }
   - path: /opt/quill/docker-compose.yml
     content: |
       name: quill-vm
@@ -76,9 +80,58 @@ write_files:
             AWS_ACCESS_KEY_ID: ${aws_access_key}
             AWS_SECRET_ACCESS_KEY: ${aws_secret_key}
             BACKUP_RETENTION_DAYS: "${backup_retention}"
-            FORGEJO_CONF: /data/forgejo/conf/app.ini
+            FORGEJO_CONF: /data/gitea/conf/app.ini
           volumes:
             - forgejo-data:/data
+
+        zitadel-db:
+          image: postgres:16-alpine
+          restart: unless-stopped
+          environment:
+            POSTGRES_USER: zitadel
+            POSTGRES_PASSWORD: ${zitadel_db_password}
+            POSTGRES_DB: zitadel
+          volumes:
+            - zitadel-pgdata:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U zitadel"]
+            interval: 5s
+            timeout: 5s
+            retries: 12
+
+        zitadel:
+          image: ${zitadel_image}
+          restart: unless-stopped
+          environment:
+            ZITADEL_MASTERKEY: ${zitadel_masterkey}
+            ZITADEL_EXTERNALDOMAIN: auth.${domain}
+            ZITADEL_EXTERNALPORT: "443"
+            ZITADEL_EXTERNALSECURE: "true"
+            ZITADEL_TLS_MODE: external
+            ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
+            ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+            ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+            ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+            ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${zitadel_db_password}
+            ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+            ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: zitadel
+            ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${zitadel_db_password}
+            ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+          volumes:
+            - zitadel-out:/output
+          depends_on:
+            zitadel-db:
+              condition: service_healthy
+
+        # Daily pg_dump of the VM-local zitadel DB -> Object Storage.
+        zitadel-backup:
+          image: ${backup_image}
+          restart: unless-stopped
+          command: ["/bin/sh", "-c", "while true; do sleep 3600; STAMP=$(date -u +%Y%m%dT%H%M%SZ); pg_dump -h zitadel-db -U zitadel zitadel | gzip -9 | aws s3 cp - s3://${backup_bucket}/postgres/zitadel/zitadel-$STAMP.sql.gz --endpoint-url ${s3_endpoint}; done"]
+          environment:
+            PGPASSWORD: ${zitadel_db_password}
+            AWS_ACCESS_KEY_ID: ${aws_access_key}
+            AWS_SECRET_ACCESS_KEY: ${aws_secret_key}
 
         caddy:
           image: caddy:2-alpine
@@ -100,6 +153,8 @@ write_files:
         forgejo-data:
         caddy-data:
         caddy-config:
+        zitadel-pgdata:
+        zitadel-out:
 
 runcmd:
   - apt-get update

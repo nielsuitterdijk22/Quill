@@ -3,7 +3,7 @@
 # env vars) and upload to Scaleway Object Storage (S3), pruning old objects.
 # Runs as a Serverless Job (cron) — see terraform/serverless.tf.
 #
-# Env: QUILL_DATABASE_URL, FORGEJO_DATABASE_URL, ZITADEL_DATABASE_URL,
+# Env: QUILL_DATABASE_URL, FORGEJO_DATABASE_URL,
 #      S3_ENDPOINT, BACKUP_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
 #      BACKUP_RETENTION_DAYS
 set -eu
@@ -27,18 +27,6 @@ dump_one() { # dump_one <name> <postgres-uri>
 
 dump_one quill "$QUILL_DATABASE_URL"
 dump_one forgejo "$FORGEJO_DATABASE_URL"
-dump_one zitadel "$ZITADEL_DATABASE_URL"
 
-# Prune objects older than the retention window (per database prefix).
-CUTOFF="$(date -u -d "-${RETENTION_DAYS} days" +%Y%m%dT%H%M%SZ 2>/dev/null || date -u -v-${RETENTION_DAYS}d +%Y%m%dT%H%M%SZ)"
-for db in quill forgejo zitadel; do
-  aws s3 ls "s3://${BACKUP_BUCKET}/postgres/${db}/" --endpoint-url "$S3_ENDPOINT" \
-    | awk -v cutoff="$CUTOFF" '$2 < cutoff {print $4}' \
-    | while read -r key; do
-        [ -n "$key" ] || continue
-        echo "[backup] pruning s3://${BACKUP_BUCKET}/${key}"
-        aws s3 rm "s3://${BACKUP_BUCKET}/${key}" --endpoint-url "$S3_ENDPOINT"
-      done
-done
 
-echo "[backup] done"
+echo "[backup] done (retention via bucket lifecycle rule)"

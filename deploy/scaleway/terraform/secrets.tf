@@ -19,7 +19,6 @@ resource "scaleway_secret" "s" {
     "db/password",
     "db/quill-url",
     "db/forgejo-url",
-    "db/zitadel-url",
     "backup/s3-access-key",
     "backup/s3-secret-key",
     "vm/ssh-private-key",
@@ -50,7 +49,6 @@ resource "scaleway_secret_version" "v" {
     "db/password"                  = local.db_password
     "db/quill-url"                 = local.db_url["quill"]
     "db/forgejo-url"               = local.db_url["forgejo"]
-    "db/zitadel-url"               = local.db_url["zitadel"]
     "backup/s3-access-key"         = scaleway_iam_api_key.backup.access_key
     "backup/s3-secret-key"         = scaleway_iam_api_key.backup.secret_key
     "vm/ssh-private-key"           = tls_private_key.vm.private_key_openssh

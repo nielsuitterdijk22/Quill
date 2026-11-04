@@ -99,7 +99,6 @@ resource "scaleway_container" "web" {
 
   environment_variables = {
     NODE_ENV           = "production"
-    PORT               = "3001"
     HOSTNAME           = "0.0.0.0"
     QUILL_API_BASE_URL = "https://${local.api_host}" # server components call the api container
     AUTH_URL           = "https://${local.app_host}"
@@ -116,67 +115,6 @@ resource "scaleway_container" "web" {
   }
 }
 
-# ---- zitadel (SSO/SCIM IdP) -------------------------------------------------------------
-# Custom image bakes steps.yaml in (deploy/scaleway/docker/zitadel.Dockerfile);
-# the wrapper prints the machine PAT to the container logs on first boot so
-# scripts/provision.sh can harvest it (`scw container logs`).
-
-resource "scaleway_container" "zitadel" {
-  namespace_id   = scaleway_container_namespace.quill.id
-  name           = "zitadel"
-  region         = var.region
-  registry_image = "${local.registry}/quill-zitadel:${var.image_tag}"
-  deploy         = true
-
-  command = ["/bin/sh", "-c"]
-  args = [<<-EOT
-    zitadel start-from-init --masterkey "$ZITADEL_MASTERKEY" --tlsMode external --steps /steps.yaml &
-    ZPID=$!
-    for i in $(seq 1 90); do
-      if [ -f /output/quill-api.pat ]; then echo "ZITADEL_MACHINE_PAT=$(cat /output/quill-api.pat)"; break; fi
-      sleep 2
-    done
-    wait $ZPID
-  EOT
-  ]
-
-  port                   = 8080
-  cpu_limit              = var.container_cpu
-  memory_limit           = var.container_memory_mb
-  min_scale              = 0
-  max_scale              = var.container_max_scale
-  privacy                = "public"
-  protocol               = "h2c" # zitadel serves gRPC over h2c
-  https_connections_only = true
-  timeout                = 300
-
-  environment_variables = {
-    ZITADEL_EXTERNALDOMAIN                   = local.auth_host
-    ZITADEL_EXTERNALPORT                     = "443"
-    ZITADEL_EXTERNALSECURE                   = "true"
-    ZITADEL_TLS_MODE                         = "external"
-    ZITADEL_DATABASE_POSTGRES_HOST           = local.sdb_host["zitadel"]
-    ZITADEL_DATABASE_POSTGRES_PORT           = local.sdb_port["zitadel"]
-    ZITADEL_DATABASE_POSTGRES_DATABASE       = "zitadel"
-    ZITADEL_DATABASE_POSTGRES_USER_USERNAME  = local.db_user
-    ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE  = "require"
-    ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME = local.db_user
-    ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE = "require"
-  }
-  secret_environment_variables = {
-    ZITADEL_MASTERKEY                        = random_password.zitadel_masterkey.result
-    ZITADEL_DATABASE_POSTGRES_USER_PASSWORD  = local.db_password
-    ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD = local.db_password
-  }
-
-  liveness_probe {
-    interval          = "10s"
-    failure_threshold = 6
-    tcp               = true
-    timeout           = "5s"
-  }
-}
-
 # ---- custom domains ---------------------------------------------------------------------
 
 resource "scaleway_container_domain" "api" {
@@ -188,12 +126,6 @@ resource "scaleway_container_domain" "api" {
 resource "scaleway_container_domain" "app" {
   container_id = scaleway_container.web.id
   hostname     = local.app_host
-  region       = var.region
-}
-
-resource "scaleway_container_domain" "auth" {
-  container_id = scaleway_container.zitadel.id
-  hostname     = local.auth_host
   region       = var.region
 }
 
@@ -218,7 +150,6 @@ resource "scaleway_job_definition" "pg_backup" {
     BACKUP_RETENTION_DAYS = tostring(var.backup_retention_days)
     QUILL_DATABASE_URL    = local.db_url["quill"]
     FORGEJO_DATABASE_URL  = local.db_url["forgejo"]
-    ZITADEL_DATABASE_URL  = local.db_url["zitadel"]
   }
 
   cron {

@@ -16,6 +16,7 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
 
 COPY backup-pg.sh /usr/local/bin/backup-pg.sh
 COPY backup-forgejo.sh /usr/local/bin/backup-forgejo.sh
-RUN chmod +x /usr/local/bin/backup-pg.sh /usr/local/bin/backup-forgejo.sh
+RUN chmod 755 /usr/local/bin/backup-pg.sh /usr/local/bin/backup-forgejo.sh
 
+ENTRYPOINT []
 USER 1000:1000

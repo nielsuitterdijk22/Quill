@@ -10,29 +10,29 @@ locals {
 
   # Serverless SQL databases: quill (platform metadata), forgejo (git backend),
   # zitadel (IdP).
-  sdb_names = ["quill", "forgejo", "zitadel"]
+  sdb_names = ["quill", "forgejo"] # zitadel runs on the VM with its own postgres container
 
-  # SDB endpoint is host[:port]; normalize to host + port 5432.
-  sdb_host = { for n, db in scaleway_sdb_sql_database.dbs : n => split(":", db.endpoint)[0] }
-  sdb_port = { for n, db in scaleway_sdb_sql_database.dbs : n => length(split(":", db.endpoint)) > 1 ? split(":", db.endpoint)[1] : "5432" }
+  # SDB endpoint is a full postgres:// URI (postgres://host:port/db?sslmode=require).
+  sdb_addr = { for n, db in scaleway_sdb_sql_database.dbs : n => split("/", db.endpoint)[2] } # host:port
+  sdb_host = { for n, a in local.sdb_addr : n => split(":", a)[0] }
+  sdb_port = { for n, a in local.sdb_addr : n => split(":", a)[1] }
 
-  # SDB credentials are the IAM DB user's id (username) + its API key secret
-  # (password) — see Scaleway SDB docs.
-  db_user     = scaleway_iam_user.db.id
-  db_password = scaleway_iam_api_key.db.secret_key
+  # SDB credentials: IAM user id (username) + one of its API key secrets
+  # (password), supplied via var.sdb_user / var.sdb_password.
+  db_user     = var.sdb_user
+  db_password = var.sdb_password
 
   db_url = {
     for n in local.sdb_names :
-    n => "postgres://${local.db_user}:${local.db_password}@${local.sdb_host[n]}:${local.sdb_port[n]}/${n}?sslmode=require"
+    n => "postgresql://${local.db_user}:${local.db_password}@${local.sdb_host[n]}:${local.sdb_port[n]}/${n}?sslmode=require"
   }
 
   registry = scaleway_registry_namespace.quill.endpoint
 
   # CNAME targets for the serverless container domains (strip https://).
   container_cname = {
-    api  = scaleway_container.api.domain_name
-    app  = scaleway_container.web.domain_name
-    auth = scaleway_container.zitadel.domain_name
+    api = scaleway_container.api.domain_name
+    app = scaleway_container.web.domain_name
   }
 
   # Split var.domain into the registrable root and the subdomain label(s) that
