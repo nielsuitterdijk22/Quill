@@ -2,6 +2,22 @@
 
 Append-only log of design decisions: date, decision, why, alternatives rejected.
 
+- 2026-11-05 — Transactional email goes through the existing Brevo account
+  (`smtp-relay.brevo.com:587`, STARTTLS) for both Zitadel (invites/activation/
+  password reset) and Forgejo (PR notifications). Zitadel's
+  `ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_*` env vars are only read at instance
+  creation, so on the already-running instance CI applies the provider via the
+  admin API (`PUT /admin/v1/email/smtp/{id}` auto-activates, else
+  `POST /admin/v1/email/smtp` + `POST /admin/v1/email/{id}/_activate`) with the
+  IAM-owner machine PAT (`ZITADEL_MANAGEMENT_TOKEN`); `scripts/zitadel-smtp.sh`
+  is idempotent. `TLS=true` = implicit TLS with automatic STARTTLS fallback,
+  which covers Brevo 587 (and 465). Forgejo gets `[mailer]` env via a
+  `docker-compose.override.yml` written by the `vm-deploy` job (cloud-init only
+  runs on first boot). Sending domain must be authenticated in Brevo with
+  SPF/DKIM(/DMARC) at the registrar. Rejected: Scaleway Transactional Email
+  (another account/service to manage; Brevo account already exists), running a
+  local MailHog (no real delivery, no use for the 2-user MVP), SES (non-EU).
+
 - 2026-10-07 — T-000 required no code changes: the `./check` failure was
   environmental (sandbox without npm-registry access left a stale, wrong-platform
   `frontend/node_modules`, so the `@next/swc-linux-arm64-gnu` binary was missing

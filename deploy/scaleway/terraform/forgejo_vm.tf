@@ -77,6 +77,17 @@ resource "scaleway_instance_server" "forgejo" {
     backup_retention    = var.backup_retention_days
     ssh_public_key      = tls_private_key.vm.public_key_openssh
     letsencrypt_email   = var.letsencrypt_email
+    # Brevo SMTP (transactional email). Rendered as conditional env blocks; on a
+    # running Zitadel instance the admin API (scripts/zitadel-smtp.sh, run by CI)
+    # is what applies the settings — env vars only apply at instance creation.
+    brevo_enabled       = local.brevo_enabled
+    brevo_host_port     = local.brevo_host_port
+    brevo_smtp_host     = var.brevo_smtp_host
+    brevo_smtp_port     = tostring(var.brevo_smtp_port)
+    brevo_smtp_user     = var.brevo_smtp_user
+    brevo_smtp_password = var.brevo_smtp_password
+    brevo_from          = local.brevo_from
+    brevo_from_name     = var.brevo_smtp_from_name
   })
 
   tags = local.tags

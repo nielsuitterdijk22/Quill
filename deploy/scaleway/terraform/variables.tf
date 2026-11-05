@@ -183,3 +183,44 @@ variable "letsencrypt_email" {
   description = "ACME account email (Caddy on the VM issues Let's Encrypt certs for git.<domain> via HTTP-01)."
   type        = string
 }
+
+# ---- Transactional email (Brevo SMTP relay) --------------------------------------
+# Zitadel (invites, activation, password reset) and Forgejo (PR notifications)
+# send through Brevo. Leave user/password empty to disable. CI passes these from
+# GH secrets BREVO_SMTP_NAME / BREVO_SMTP_KEY (+ optional var BREVO_SMTP_FROM).
+variable "brevo_smtp_host" {
+  description = "Brevo SMTP relay host (without port)."
+  type        = string
+  default     = "smtp-relay.brevo.com"
+}
+
+variable "brevo_smtp_port" {
+  description = "Brevo SMTP port. 587 = STARTTLS (recommended), 465 = implicit TLS."
+  type        = number
+  default     = 587
+}
+
+variable "brevo_smtp_user" {
+  description = "Brevo SMTP login (the xxx@smtp-brevo.com login shown in the Brevo dashboard)."
+  type        = string
+  default     = ""
+}
+
+variable "brevo_smtp_password" {
+  description = "Brevo SMTP key (xsmtpib-...), from Transactional -> SMTP -> generate key."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "brevo_smtp_from" {
+  description = "Sender address. Defaults to no-reply@<domain>. The domain must be authenticated in Brevo."
+  type        = string
+  default     = ""
+}
+
+variable "brevo_smtp_from_name" {
+  description = "Sender display name."
+  type        = string
+  default     = "Quill"
+}

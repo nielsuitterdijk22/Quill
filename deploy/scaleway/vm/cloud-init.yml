@@ -40,6 +40,19 @@ write_files:
             FORGEJO__service__DISABLE_REGISTRATION: "true"
             FORGEJO__webhook__ALLOWED_HOST_LIST: "*"
             FORGEJO__server__LFS_START_SERVER: "true"
+            %{~ if brevo_enabled ~}
+            # Transactional mail for PR notifications etc. (Brevo relay, port 587
+            # STARTTLS -> IS_TLS_ENABLED=false). Applied by CI as a compose
+            # override on the running VM as well (see deploy-scaleway.yml).
+            FORGEJO__mailer__ENABLED: "true"
+            FORGEJO__mailer__MAILER_TYPE: smtp
+            FORGEJO__mailer__HOST: ${brevo_host_port}
+            FORGEJO__mailer__USER: ${brevo_smtp_user}
+            FORGEJO__mailer__PASSWD: ${brevo_smtp_password}
+            FORGEJO__mailer__FROM: ${brevo_from}
+            FORGEJO__mailer__SUBJECT_PREFIX: "[Quill] "
+            FORGEJO__mailer__IS_TLS_ENABLED: "false"
+            %{~ endif ~}
           ports:
             - "127.0.0.1:3000:3000"
             - "2222:2222"
@@ -139,6 +152,20 @@ write_files:
             ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: zitadel
             ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${zitadel_db_password}
             ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+            %{~ if brevo_enabled ~}
+            # SMTP for invites / activation / password-reset mails. NOTE: these
+            # env vars are only read when the Zitadel instance is created; on
+            # the already-running instance CI applies the same settings through
+            # the admin API (scripts/zitadel-smtp.sh). TLS=true = implicit TLS
+            # with automatic STARTTLS fallback (Brevo port 587).
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: ${brevo_host_port}
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: ${brevo_smtp_user}
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: ${brevo_smtp_password}
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "true"
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: ${brevo_from}
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: ${brevo_from_name}
+            ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_REPLYTOADDRESS: ${brevo_from}
+            %{~ endif ~}
           volumes:
             - zitadel-out:/output
           depends_on:

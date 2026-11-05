@@ -93,6 +93,39 @@ IAM policy), `VM_SSH_KEY` (output `vm_ssh_private_key`), `FORGEJO_ADMIN_TOKEN` a
 Repo **vars**: `QUILL_DOMAIN`, `SCW_REGION`, `SCW_PROJECT_ID`, `BACKUP_BUCKET`,
 `REGISTRY`, `LETSENCRYPT_EMAIL`, `VM_IP`, `NEXT_PUBLIC_ZITADEL_ISSUER` (=`https://auth.<domain>`),
 `NEXT_PUBLIC_ZITADEL_CLIENT_ID`, `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (from the Zitadel console).
+Optional, for transactional email (see below): secrets `BREVO_SMTP_NAME` /
+`BREVO_SMTP_KEY`, vars `BREVO_SMTP_FROM` (default `no-reply@<domain>`),
+`BREVO_SMTP_HOST`/`BREVO_SMTP_PORT` (default `smtp-relay.brevo.com:587`),
+`BREVO_SMTP_TEST_TO` (send a test mail on each deploy).
+
+## 2a. Transactional email via Brevo (invites, activation, password reset, PR mails)
+
+Zitadel (on the VM) sends invites / activation / password-reset mails; Forgejo
+sends PR notifications. Both relay through **Brevo** (`smtp-relay.brevo.com:587`,
+STARTTLS; free plan ~300 mails/day).
+
+One-time setup:
+
+1. In the Brevo dashboard: **Transactional → SMTP → generate an SMTP key**
+   (`xsmtpib-...`) and note the **SMTP login** (`xxx@smtp-brevo.com`).
+2. **Senders & IP → authenticate `quill.black-tulip.nl`** (domain authentication:
+   SPF + DKIM). Add the DNS records **at your registrar** (the zone is not managed
+   by Scaleway unless delegated):
+   - TXT on the apex: `v=spf1 include:spf.sendinblue.com ~all`
+   - the DKIM CNAMEs exactly as shown in the Brevo dashboard
+   - optional TXT on `_dmarc`: `v=DMARC1; p=none`
+3. GitHub: secrets `BREVO_SMTP_NAME` = SMTP login, `BREVO_SMTP_KEY` = SMTP
+   key; optionally var `BREVO_SMTP_FROM` (default `no-reply@<domain>`) and
+   `BREVO_SMTP_TEST_TO` (a mailbox to receive a test mail on each deploy).
+4. Re-run **Deploy to Scaleway (serverless)** (workflow_dispatch). The workflow
+   passes the creds to `terraform apply` (Secret Manager + cloud-init for VM
+   rebuilds), writes a `docker-compose.override.yml` on the VM (Forgejo mailer;
+   Zitadel env for fresh instances), and the `mail-config` job runs
+   `scripts/zitadel-smtp.sh`, which idempotently sets + activates the SMTP
+   provider on the **running** Zitadel instance via `POST/PUT /admin/v1/email/smtp`
+   with `ZITADEL_MANAGEMENT_TOKEN` (env vars alone never apply to an existing
+   instance). Test: invite a user in the org UI, or "forgot password" on
+   `https://app.<domain>/login`; watch delivery in Brevo → Transactional → Logs.
 
 ## 3. First deploy + provision
 

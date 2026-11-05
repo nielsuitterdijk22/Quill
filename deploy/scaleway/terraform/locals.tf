@@ -46,4 +46,10 @@ locals {
 
   tags     = ["project:quill", "env:mvp", "managed:terraform"]
   tags_map = { project = "quill", env = "mvp", managed = "terraform" }
+
+  # Transactional email via Brevo. Enabled only when credentials are supplied
+  # (CI: GH secrets BREVO_SMTP_NAME / BREVO_SMTP_KEY).
+  brevo_enabled   = var.brevo_smtp_user != "" && var.brevo_smtp_password != ""
+  brevo_from      = var.brevo_smtp_from != "" ? var.brevo_smtp_from : "no-reply@${var.domain}"
+  brevo_host_port = "${var.brevo_smtp_host}:${var.brevo_smtp_port}"
 }

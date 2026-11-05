@@ -34,3 +34,11 @@ backup_bucket_name = "quill-mvp-backups-<random-suffix>"
 # Post-provision (scripts/provision.sh prints the commands):
 # forgejo_admin_token      = "..."   # minted on the Forgejo VM
 # zitadel_management_token = "..."   # harvested from zitadel container logs
+#
+# Transactional email via Brevo (optional; CI passes these from GH secrets
+# BREVO_SMTP_NAME / BREVO_SMTP_KEY and var BREVO_SMTP_FROM):
+# brevo_smtp_host     = "smtp-relay.brevo.com"
+# brevo_smtp_port     = 587          # 587 STARTTLS / 465 implicit TLS
+# brevo_smtp_user     = "xxx@smtp-brevo.com"   # Brevo SMTP login
+# brevo_smtp_password = "xsmtpib-..."          # Brevo SMTP key (do NOT commit; use -var)
+# brevo_smtp_from     = "no-reply@quill.example.com"  # default; domain must be authenticated in Brevo
