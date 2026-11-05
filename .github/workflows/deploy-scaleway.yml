@@ -89,14 +89,14 @@ jobs:
 
       - name: Build backup image
         run: |
-          docker build -t ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }} deploy/scaleway/docker/
+          docker build -f deploy/scaleway/docker/backup.Dockerfile -t ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }} deploy/scaleway/docker/
           docker push ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }}
           docker tag ${{ vars.REGISTRY }}/quill-backup:${{ github.sha }} ${{ vars.REGISTRY }}/quill-backup:latest
           docker push ${{ vars.REGISTRY }}/quill-backup:latest
 
       - name: Build zitadel image
         run: |
-          docker build -t ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }} deploy/scaleway/docker/ \
+          docker build -f deploy/scaleway/docker/zitadel.Dockerfile -t ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }} deploy/scaleway/docker/
           docker push ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }}
           docker tag ${{ vars.REGISTRY }}/quill-zitadel:${{ github.sha }} ${{ vars.REGISTRY }}/quill-zitadel:latest
           docker push ${{ vars.REGISTRY }}/quill-zitadel:latest
