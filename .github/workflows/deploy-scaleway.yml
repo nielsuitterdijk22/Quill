@@ -201,7 +201,9 @@ jobs:
   mail-config:
     name: Configure Zitadel SMTP (Brevo) via admin API
     needs: [build, apply, vm-deploy]
-    if: ${{ (needs.build.outputs.vm_changed == 'true' || github.event_name == 'workflow_dispatch') && secrets.BREVO_SMTP_KEY != '' }}
+    # NOTE: the secrets context is not allowed in a job-level if — the
+    # "are Brevo creds set?" guard runs inside the step instead.
+    if: ${{ needs.build.outputs.vm_changed == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -216,7 +218,12 @@ jobs:
           SMTP_FROM: ${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}
           SMTP_FROM_NAME: Quill
           SMTP_TEST_TO: ${{ vars.BREVO_SMTP_TEST_TO }}
-        run: deploy/scaleway/scripts/zitadel-smtp.sh
+        run: |
+          if [ -z "$SMTP_USER" ] || [ -z "$SMTP_PASSWORD" ]; then
+            echo "BREVO_SMTP_NAME / BREVO_SMTP_KEY not set — skipping mail config (email disabled)"
+            exit 0
+          fi
+          deploy/scaleway/scripts/zitadel-smtp.sh
 
   provision:
     name: First-boot provision
