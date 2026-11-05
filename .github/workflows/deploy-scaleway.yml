@@ -5,11 +5,11 @@ name: Deploy to Scaleway (serverless)
 # the Forgejo VM stack when vm files change, sync DNS, health-check.
 #
 # Required GitHub repo secrets/variables (see deploy/scaleway/README.md):
-#   secrets: SCW_CI_ACCESS_KEY, SCW_CI_SECRET_KEY, VM_SSH_KEY, TFSTATE_* (or use
-#            SCW_CI_* for the state bucket), FORGEJO_ADMIN_TOKEN,
-#            ZITADEL_MANAGEMENT_TOKEN
+#   secrets: SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_ORGANIZATION_ID,
+#            VM_SSH_KEY, FORGEJO_ADMIN_TOKEN, ZITADEL_MANAGEMENT_TOKEN,
+#            SDB_USER, SDB_PASSWORD
 #   vars:    QUILL_DOMAIN, SCW_REGION, SCW_PROJECT_ID, BACKUP_BUCKET, REGISTRY,
-#            LETSENCRYPT_EMAIL, NEXT_PUBLIC_ZITADEL_ISSUER,
+#            VM_IP, LETSENCRYPT_EMAIL, NEXT_PUBLIC_ZITADEL_ISSUER,
 #            NEXT_PUBLIC_ZITADEL_CLIENT_ID, NEXT_PUBLIC_ZITADEL_PROJECT_ID
 # Optional (transactional email via Brevo — invites/activation/password-reset):
 #   secrets: BREVO_SMTP_NAME, BREVO_SMTP_KEY
@@ -142,6 +142,8 @@ jobs:
             -var "letsencrypt_email=${{ vars.LETSENCRYPT_EMAIL }}" \
             -var "forgejo_admin_token=${{ secrets.FORGEJO_ADMIN_TOKEN }}" \
             -var "zitadel_management_token=${{ secrets.ZITADEL_MANAGEMENT_TOKEN }}" \
+            -var "sdb_user=${{ secrets.SDB_USER }}" \
+            -var "sdb_password=${{ secrets.SDB_PASSWORD }}" \
             -var "brevo_smtp_user=${{ secrets.BREVO_SMTP_NAME }}" \
             -var "brevo_smtp_password=${{ secrets.BREVO_SMTP_KEY }}" \
             -var "brevo_smtp_from=${{ vars.BREVO_SMTP_FROM }}"
