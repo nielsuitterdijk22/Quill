@@ -15,7 +15,10 @@ terraform {
   #     -backend-config="skip_region_validation=true" \
   #     -backend-config="skip_metadata_api_check=true" \
   #     -backend-config="skip_requesting_account_id=true"
-  # backend "s3" {}  # disabled for bootstrap apply
+  # State lives in the S3 bucket for real (CI + local share it via
+  # -backend-config flags). It was commented out only for the very first
+  # bootstrap apply (-backend=false) that created the bucket itself.
+  backend "s3" {}
 
   required_providers {
     scaleway = {
