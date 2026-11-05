@@ -145,6 +145,7 @@ jobs:
             -var "zitadel_management_token=${{ secrets.ZITADEL_MANAGEMENT_TOKEN }}" \
             -var "sdb_user=${{ secrets.SDB_USER }}" \
             -var "sdb_password=${{ secrets.SDB_PASSWORD }}" \
+            -var "create_dns_zone=false" \
             -var "brevo_smtp_user=${{ secrets.BREVO_SMTP_NAME }}" \
             -var "brevo_smtp_password=${{ secrets.BREVO_SMTP_KEY }}" \
             -var "brevo_smtp_from=${{ vars.BREVO_SMTP_FROM }}"
