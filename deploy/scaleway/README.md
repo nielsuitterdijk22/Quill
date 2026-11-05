@@ -1,21 +1,24 @@
 # Quill on Scaleway — serverless (scale-to-zero) runbook
 
-Designed for near-zero traffic (hobby/2-user MVP) at **< €20/month**: everything
+Designed for near-zero traffic (hobby/2-user MVP) at **< €10/month**: everything
 that can be serverless is serverless; only Forgejo (git data needs a durable
-disk) and the CI dispatcher (needs a Docker daemon) run on one tiny VM.
+disk) and the CI dispatcher (needs a Docker daemon) run on one tiny VM — and
+Forgejo's Postgres runs on that VM too (its serverless SDB never scaled to
+zero, see DECISIONS.md).
 
 ## Architecture
 
 ```text
   app.<domain> ──CNAME──▶ Serverless Container: web (Next.js)     min_scale=0
   api.<domain> ──CNAME──▶ Serverless Container: api (Go)          min_scale=0
-  auth.<domain> ─CNAME──▶ Serverless Container: zitadel (SSO)     min_scale=0
                                         │
-  git.<domain> ──A──▶ DEV1-S VM: forgejo + caddy(TLS) + dispatch + backup sidecar
-  ssh.<domain> ──A──▶   (git SSH :2222, git HTTP via caddy :443)
+  git.<domain> ──A──▶ DEV1-S VM: forgejo + forgejo-db (Postgres) + caddy(TLS)
+  ssh.<domain> ──A──▶   + zitadel (+ zitadel-db) + dispatch + backup sidecars
+  auth.<domain> ──A──▶   (git SSH :2222, git HTTP via caddy :443, auth via caddy h2c)
 
-  Serverless SQL DBs (PostgreSQL, min_cpu=0 → free when idle):
-     quill · forgejo · zitadel        (7 days of managed backups included free)
+  Serverless SQL DB (PostgreSQL, min_cpu=0 → free when idle):
+     quill                              (7 days of managed backups included free)
+     (forgejo + zitadel Postgres run as containers on the VM, named volumes)
 
   Object Storage: backups bucket (nightly pg-backup Serverless Job + forgejo dump)
   Container Registry: images · DNS zone · Secret Manager · IAM keys (ci, backup, db)
@@ -23,25 +26,30 @@ disk) and the CI dispatcher (needs a Docker daemon) run on one tiny VM.
 
 | Component | Runs as | Why |
 | --- | --- | --- |
-| Quill api / web / zitadel | Serverless Containers, `min_scale=0` | stateless — free when idle |
-| Postgres ×3 | Serverless SQL DB, `min_cpu=0` | free compute when idle; storage only |
+| Quill api / web | Serverless Containers, `min_scale=0` | stateless — free when idle |
+| quill Postgres | Serverless SQL DB, `min_cpu=0` | free compute when idle; storage only |
 | Forgejo | 1× DEV1-S VM (Docker) | git repos need a persistent disk |
+| forgejo-db (Forgejo Postgres) | postgres:16-alpine container on the VM, named volume | a serverless DB can't scale to zero while Forgejo holds a persistent connection pool (~EUR 22/mo CPU) — local Postgres on the VM is free |
+| zitadel + its Postgres | containers on the same VM | IdP state + machine keys; already VM-local |
 | dispatch (CI) | same VM | needs the Docker socket |
-| backups | Serverless Job (cron) + VM sidecar | pg_dump → S3; forgejo dump → S3 |
+| backups | Serverless Job (cron, quill SDB only) + VM sidecars (forgejo dump, zitadel pg_dump) | pg_dump/forgejo dump → S3 |
 | TLS | Caddy on the VM (Let's Encrypt HTTP-01) for git; Scaleway edge for container domains | no LB needed |
 
-## Cost estimate (2026 list prices, excl. VAT, fr-par)
+## Cost estimate (2026-11 actuals, excl. VAT, fr-par)
 
-| Resource | Qty | /month |
-| --- | --- | --- |
-| DEV1-S VM (2 vCPU / 2 GiB) | 1 | ≈ €7 |
-| VM root volume b_ssd | 20 GB × €0.086 | €1.72 |
-| Serverless SQL DBs — compute | idle (min_cpu=0) | €0 |
-| Serverless SQL DBs — storage (incl. 7d backups) | ~1–3 GB total | ≈ €0.10–0.30 |
-| Serverless Containers api/web/zitadel | scale to zero | €0 when idle, cents when used |
-| Backup job (nightly) + bucket | 30 runs + a few GB | ≈ €0.40 |
-| Registry / DNS / Secret Manager / IAM / dynamic IP | — | ≈ €0 |
-| **Total** | | **≈ €9–10/mo** (well under €20) |
+The 2026-11 bill showed "Serverless SQL Database - CPU consumption" at EUR 4.29
+in 5.9 days (~EUR 22/mo projected) because Forgejo's persistent connection pool
+kept the `forgejo` SDB at ~0.22 vCPU 24/7. With the forgejo SDB destroyed (its
+data now lives in the VM-local forgejo-db container), the remaining bill is:
+
+| Resource | /month |
+| --- | --- |
+| DEV1-S VM (2 vCPU / 2 GiB) + 20 GB root volume + flexible IP | ≈ €0.85 (2026-11 actuals: 0.29 + 0.09 + 0.16 in 5.9 days) |
+| Serverless SQL DB `quill` — compute | €0 when idle (min_cpu=0); the nightly pg-backup job causes a brief daily blip |
+| Serverless SQL DB `quill` — storage (incl. 7d backups) | ≈ €0.02–0.10 |
+| Serverless Containers api/web | €0 when idle (free tier covers the tiny usage), cents when used |
+| Backup job (nightly) + bucket + registry + secret manager | ≈ €0.10 |
+| **Total** | **≈ €1–5/mo** (2026-11 projected without the forgejo SDB CPU: ~EUR 4.3/mo) |
 
 When traffic grows: raise `sdb_max_cpu` / `container_max_scale`, or move Forgejo
 back to Kapsule (the previous `deploy/scaleway` revision had full k8s manifests).

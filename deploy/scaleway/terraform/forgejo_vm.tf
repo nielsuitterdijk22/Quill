@@ -1,6 +1,8 @@
 # The one non-serverless piece: a single small VM running Forgejo (git data needs
-# a durable disk), the pipeline dispatcher (needs a Docker daemon), Caddy (TLS
-# for git.<domain> via Let's Encrypt HTTP-01), and a Forgejo-dump backup sidecar.
+# a durable disk), its own Postgres (forgejo-db container — the serverless
+# forgejo SDB never scaled to zero and cost ~EUR 22/mo in CPU), the pipeline
+# dispatcher (needs a Docker daemon), Caddy (TLS for git.<domain> via Let's
+# Encrypt HTTP-01), and a Forgejo-dump backup sidecar.
 #
 # Deployed/updated over SSH by CI (see .github/workflows/deploy-scaleway.yml);
 # the cloud-init below only runs on first boot.
@@ -54,12 +56,14 @@ resource "scaleway_instance_server" "forgejo" {
   }
 
   cloud_init = templatefile("${path.module}/../vm/cloud-init.yml", {
-    domain              = var.domain
-    git_host            = local.git_host
-    forgejo_db_host     = local.sdb_host["forgejo"]
-    forgejo_db_port     = local.sdb_port["forgejo"]
-    db_user             = local.db_user
-    db_password         = local.db_password
+    domain   = var.domain
+    git_host = local.git_host
+    # Forgejo's Postgres is the forgejo-db container on this VM (compose
+    # service name), not a serverless SDB.
+    forgejo_db_host     = "forgejo-db"
+    forgejo_db_port     = "5432"
+    forgejo_db_user     = "forgejo"
+    forgejo_db_password = random_password.forgejo_db.result
     dispatch_secret     = random_password.dispatch_secret.result
     backup_image        = "${local.registry}/quill-backup:latest"
     backend_image       = "${local.registry}/quill-backend:latest"

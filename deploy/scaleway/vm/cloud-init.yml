@@ -29,9 +29,9 @@ write_files:
             FORGEJO__database__HOST: ${forgejo_db_host}
             FORGEJO__database__PORT: "${forgejo_db_port}"
             FORGEJO__database__NAME: forgejo
-            FORGEJO__database__USER: ${db_user}
-            FORGEJO__database__PASSWD: ${db_password}
-            FORGEJO__database__SSL_MODE: require
+            FORGEJO__database__USER: ${forgejo_db_user}
+            FORGEJO__database__PASSWD: ${forgejo_db_password}
+            FORGEJO__database__SSL_MODE: disable
             FORGEJO__server__DOMAIN: ${git_host}
             FORGEJO__server__ROOT_URL: https://${git_host}/
             FORGEJO__server__SSH_DOMAIN: ssh.${domain}
@@ -45,9 +45,31 @@ write_files:
             - "2222:2222"
           volumes:
             - forgejo-data:/data
+          depends_on:
+            forgejo-db:
+              condition: service_healthy
           healthcheck:
             test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/healthz || exit 1"]
             interval: 10s
+            timeout: 5s
+            retries: 12
+
+        # Forgejo's Postgres, local to this VM (named volume). The serverless
+        # "forgejo" SDB was removed: Forgejo's persistent connection pool kept
+        # it at ~0.22 vCPU 24/7 (~EUR 22/mo CPU). Backups: the forgejo-backup
+        # sidecar's `forgejo dump` includes the database dump.
+        forgejo-db:
+          image: postgres:16-alpine
+          restart: unless-stopped
+          environment:
+            POSTGRES_USER: ${forgejo_db_user}
+            POSTGRES_PASSWORD: ${forgejo_db_password}
+            POSTGRES_DB: forgejo
+          volumes:
+            - forgejo-pgdata:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${forgejo_db_user} -d forgejo"]
+            interval: 5s
             timeout: 5s
             retries: 12
 
@@ -151,6 +173,7 @@ write_files:
 
       volumes:
         forgejo-data:
+        forgejo-pgdata:
         caddy-data:
         caddy-config:
         zitadel-pgdata:

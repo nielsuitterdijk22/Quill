@@ -39,6 +39,15 @@ resource "random_password" "zitadel_db" {
   override_special = "!#$%&*()-_=+[]{}<>?"
 }
 
+# Password for the VM-local Forgejo Postgres (forgejo-db container). The
+# serverless "forgejo" SDB was removed: Forgejo's persistent connection pool
+# kept it at ~0.22 vCPU 24/7 (~EUR 22/mo CPU); see DECISIONS.md.
+resource "random_password" "forgejo_db" {
+  length           = 32
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>?"
+}
+
 # Zitadel masterkey must be exactly 32 characters.
 resource "random_password" "zitadel_masterkey" {
   length  = 32

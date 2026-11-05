@@ -1,8 +1,12 @@
-# Serverless core: 3 scale-to-zero PostgreSQL databases + the api/web/zitadel
-# containers (min_scale = 0 — no charge when idle) + a cron backup job.
+# Serverless core: the quill scale-to-zero PostgreSQL database (min_cpu = 0 —
+# no charge when idle) + the api/web containers (min_scale = 0) + a cron backup
+# job.
 #
 # Forgejo itself is NOT serverless: git data needs a durable disk and CI needs a
-# Docker daemon, so it runs on one small VM (forgejo_vm.tf).
+# Docker daemon, so it runs on one small VM (forgejo_vm.tf) — and its Postgres
+# runs on that VM too (forgejo-db container in cloud-init.yml). The serverless
+# "forgejo" SDB was removed because Forgejo's persistent connection pool kept
+# it at ~0.22 vCPU 24/7 (~EUR 22/mo CPU); see DECISIONS.md.
 
 # ---- Serverless SQL databases ----------------------------------------------------
 
@@ -129,7 +133,9 @@ resource "scaleway_container_domain" "app" {
   region       = var.region
 }
 
-# ---- backup job (nightly pg_dump of all three SDBs -> Object Storage) --------------------
+# ---- backup job (nightly pg_dump of the quill SDB -> Object Storage) --------------------
+# The forgejo database is not dumped here anymore: it lives on the VM and is
+# covered by the forgejo-backup sidecar (`forgejo dump` includes the DB dump).
 
 resource "scaleway_job_definition" "pg_backup" {
   name       = "pg-backup"
@@ -149,7 +155,6 @@ resource "scaleway_job_definition" "pg_backup" {
     AWS_SECRET_ACCESS_KEY = scaleway_iam_api_key.backup.secret_key
     BACKUP_RETENTION_DAYS = tostring(var.backup_retention_days)
     QUILL_DATABASE_URL    = local.db_url["quill"]
-    FORGEJO_DATABASE_URL  = local.db_url["forgejo"]
   }
 
   cron {

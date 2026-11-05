@@ -15,10 +15,10 @@ resource "scaleway_secret" "s" {
     "app/forgejo-admin-token",
     "app/zitadel-management-token",
     "zitadel/masterkey",
+    "forgejo/db-password",
     "db/user",
     "db/password",
     "db/quill-url",
-    "db/forgejo-url",
     "backup/s3-access-key",
     "backup/s3-secret-key",
     "vm/ssh-private-key",
@@ -45,10 +45,10 @@ resource "scaleway_secret_version" "v" {
     "app/forgejo-admin-token"      = var.forgejo_admin_token
     "app/zitadel-management-token" = var.zitadel_management_token
     "zitadel/masterkey"            = random_password.zitadel_masterkey.result
+    "forgejo/db-password"          = random_password.forgejo_db.result
     "db/user"                      = local.db_user
     "db/password"                  = local.db_password
     "db/quill-url"                 = local.db_url["quill"]
-    "db/forgejo-url"               = local.db_url["forgejo"]
     "backup/s3-access-key"         = scaleway_iam_api_key.backup.access_key
     "backup/s3-secret-key"         = scaleway_iam_api_key.backup.secret_key
     "vm/ssh-private-key"           = tls_private_key.vm.private_key_openssh

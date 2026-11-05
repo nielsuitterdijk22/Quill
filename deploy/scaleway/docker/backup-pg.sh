@@ -1,9 +1,12 @@
 #!/bin/sh
-# backup-pg.sh — dump every Quill database (connection URIs in *_DATABASE_URL
-# env vars) and upload to Scaleway Object Storage (S3), pruning old objects.
+# backup-pg.sh — dump the Quill database (connection URI in QUILL_DATABASE_URL)
+# and upload to Scaleway Object Storage (S3), pruning old objects.
 # Runs as a Serverless Job (cron) — see terraform/serverless.tf.
 #
-# Env: QUILL_DATABASE_URL, FORGEJO_DATABASE_URL,
+# The forgejo database is NOT dumped here: it runs on the Forgejo VM (forgejo-db
+# container) and is covered by the forgejo-backup sidecar's `forgejo dump`.
+#
+# Env: QUILL_DATABASE_URL,
 #      S3_ENDPOINT, BACKUP_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
 #      BACKUP_RETENTION_DAYS
 set -eu
@@ -26,7 +29,6 @@ dump_one() { # dump_one <name> <postgres-uri>
 }
 
 dump_one quill "$QUILL_DATABASE_URL"
-dump_one forgejo "$FORGEJO_DATABASE_URL"
 
 
 echo "[backup] done (retention via bucket lifecycle rule)"
