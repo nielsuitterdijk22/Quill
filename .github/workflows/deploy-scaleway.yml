@@ -239,7 +239,7 @@ jobs:
 
       - name: Install scw CLI
         run: |
-          curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.42.0/scaleway-cli_2.42.0_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin scw
+          curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.65.2/scaleway-cli_2.65.2_linux_amd64 | sudo tee /usr/local/bin/scw >/dev/null && sudo chmod +x /usr/local/bin/scw
 
       - name: Run provision.sh
         env:
@@ -260,7 +260,7 @@ jobs:
 
       - name: Install scw CLI
         run: |
-          curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.42.0/scaleway-cli_2.42.0_linux_amd64.tar.gz | sudo tar -xz -C /usr/local/bin scw
+          curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.65.2/scaleway-cli_2.65.2_linux_amd64 | sudo tee /usr/local/bin/scw >/dev/null && sudo chmod +x /usr/local/bin/scw
 
       - name: Sync git/ssh DNS records to the VM IP
         env:
