@@ -1,0 +1,517 @@
+// Package live contains end-to-end tests that run against the DEPLOYED
+// platform (Scaleway), not a local stack. They are skipped unless
+// QUILL_LIVE_TEST=1 is set, so `./check` / CI never execute them.
+//
+// Required env:
+//
+//	QUILL_LIVE_TEST=1
+//	QUILL_E2E_API_URL      e.g. https://api.black-tulip.nl   (default)
+//	QUILL_E2E_APP_URL      e.g. https://app.black-tulip.nl   (default)
+//	QUILL_E2E_AUTH_URL     e.g. https://auth.black-tulip.nl  (default)
+//	QUILL_E2E_CLIENT_ID    Zitadel OIDC client id of the web app
+//	QUILL_E2E_PROJECT_ID   Zitadel project id (for the :aud scope)
+//	QUILL_E2E_USER         test user login name        (default e2e-tester)
+//	QUILL_E2E_PASSWORD     test user password
+package live
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+var (
+	apiURL   = env("QUILL_E2E_API_URL", "https://api.black-tulip.nl")
+	appURL   = env("QUILL_E2E_APP_URL", "https://app.black-tulip.nl")
+	authURL  = env("QUILL_E2E_AUTH_URL", "https://auth.black-tulip.nl")
+	clientID = os.Getenv("QUILL_E2E_CLIENT_ID")
+	projID   = os.Getenv("QUILL_E2E_PROJECT_ID")
+	e2eUser  = env("QUILL_E2E_USER", "e2e-tester")
+	e2ePass  = os.Getenv("QUILL_E2E_PASSWORD")
+)
+
+func env(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
+func requireLive(t *testing.T) {
+	t.Helper()
+	if os.Getenv("QUILL_LIVE_TEST") != "1" {
+		t.Skip("QUILL_LIVE_TEST not set; skipping live e2e tests")
+	}
+	if clientID == "" || projID == "" || e2ePass == "" {
+		t.Skip("QUILL_E2E_CLIENT_ID / QUILL_E2E_PROJECT_ID / QUILL_E2E_PASSWORD required")
+	}
+}
+
+// client returns an HTTP client with a cookie jar (needed for the Zitadel
+// login form flow).
+func client(t *testing.T) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	return &http.Client{
+		Jar:     jar,
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // we inspect redirects manually
+		},
+	}
+}
+
+func get(t *testing.T, c *http.Client, rawurl string, headers map[string]string) (int, http.Header, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, rawurl, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", rawurl, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, resp.Header, body
+}
+
+func req(t *testing.T, c *http.Client, method, rawurl string, body any, headers map[string]string) (int, http.Header, []byte) {
+	t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, rawurl, rdr)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, rawurl, err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, resp.Header, b
+}
+
+// login performs the OIDC authorization-code + PKCE flow headlessly against
+// Zitadel (login form v1: the form posts gorilla.csrf.Token, authRequestID,
+// loginName, password) and returns a Quill-usable access token.
+func login(t *testing.T) string {
+	t.Helper()
+	c := client(t)
+
+	verifier := randHex(48)
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+	redirectURI := appURL + "/api/auth/callback/zitadel"
+	scope := "openid profile email offline_access urn:zitadel:iam:org:project:id:" + projID + ":aud"
+
+	authReq := fmt.Sprintf("%s/oauth/v2/authorize?response_type=code&client_id=%s&redirect_uri=%s&scope=%s&state=e2e&nonce=e2e&code_challenge=%s&code_challenge_method=S256",
+		authURL, clientID, url.QueryEscape(redirectURI), url.QueryEscape(scope), challenge)
+
+	st, hdr, _ := get(t, c, authReq, nil)
+	if st != http.StatusFound {
+		t.Fatalf("authorize: got %d, want 302", st)
+	}
+	loginPage := hdr.Get("Location")
+	if !strings.HasPrefix(loginPage, "/") {
+		t.Fatalf("authorize redirect not relative: %s", loginPage)
+	}
+
+	// Zitadel login UI is stepwise: loginname -> password -> mfa/skip ->
+	// authorize/callback. Each step posts the form's gorilla.csrf.Token and
+	// authRequestID back. The login name must be the user's email.
+	loginName := e2eUser
+	if !strings.Contains(loginName, "@") {
+		loginName = loginName + "@" + strings.TrimPrefix(strings.TrimPrefix(authURL, "https://"), "https://")
+	}
+	formPost := func(path string, fields url.Values) (int, http.Header, []byte) {
+		preq, _ := http.NewRequest(http.MethodPost, authURL+path, strings.NewReader(fields.Encode()))
+		preq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := c.Do(preq)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, resp.Header, b
+	}
+
+	st, _, page := get(t, c, authURL+loginPage, nil)
+	if st != http.StatusOK {
+		t.Fatalf("login page: got %d", st)
+	}
+	csrf := extractInput(page, "gorilla.csrf.Token")
+	authID := extractInput(page, "authRequestID")
+	if csrf == "" || authID == "" {
+		t.Fatalf("login form fields not found (csrf=%q authID=%q)", csrf, authID)
+	}
+	base := url.Values{"gorilla.csrf.Token": {csrf}, "authRequestID": {authID}}
+
+	// step 1: loginname (the CSRF token rotates per page — re-read each step)
+	st, hdr, page = formPost("/ui/login/loginname", with(base, "loginName", loginName))
+	if cs := extractInput(page, "gorilla.csrf.Token"); cs != "" {
+		base.Set("gorilla.csrf.Token", cs)
+	}
+	// step 2: password (may 200 with an MFA page, or 302 straight to callback)
+	st, hdr, page = formPost("/ui/login/password", with(base, "password", e2ePass))
+	if cs := extractInput(page, "gorilla.csrf.Token"); cs != "" {
+		base.Set("gorilla.csrf.Token", cs)
+	}
+	// step 3: skip MFA prompt if present
+	if st != http.StatusFound && strings.Contains(string(page), "/ui/login/mfa/prompt") {
+		st, hdr, _ = formPost("/ui/login/mfa/prompt", with(base, "skip", "true"))
+		if st != http.StatusFound {
+			t.Fatalf("mfa skip: got %d", st)
+		}
+	}
+	if st == http.StatusFound && strings.Contains(hdr.Get("Location"), "/oauth/v2/authorize/callback") {
+		loc := hdr.Get("Location")
+		if strings.HasPrefix(loc, "http") {
+			st, hdr, _ = get(t, c, loc, nil)
+		} else {
+			st, hdr, _ = get(t, c, authURL+loc, nil)
+		}
+		if st != http.StatusFound {
+			t.Fatalf("authorize callback: got %d", st)
+		}
+	}
+	cb := hdr.Get("Location")
+	code := extractQuery(cb, "code")
+	if code == "" {
+		t.Fatalf("no code in callback redirect: %s", cb)
+	}
+
+	tokForm := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirectURI},
+		"client_id":     {clientID},
+		"code_verifier": {verifier},
+	}
+	treq, _ := http.NewRequest(http.MethodPost, authURL+"/oauth/v2/token", strings.NewReader(tokForm.Encode()))
+	treq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tresp, err := c.Do(treq)
+	if err != nil {
+		t.Fatalf("token exchange: %v", err)
+	}
+	defer tresp.Body.Close()
+	tb, _ := io.ReadAll(tresp.Body)
+	if tresp.StatusCode != http.StatusOK {
+		t.Fatalf("token exchange: %d %s", tresp.StatusCode, tb)
+	}
+	var tok struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(tb, &tok); err != nil || tok.AccessToken == "" {
+		t.Fatalf("parse token response: %v %s", err, tb)
+	}
+	return tok.AccessToken
+}
+
+func randHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func with(base url.Values, k, v string) url.Values {
+	out := url.Values{}
+	for key, vals := range base {
+		out[key] = vals
+	}
+	out.Set(k, v)
+	return out
+}
+
+func extractInput(page []byte, name string) string {
+	s := string(page)
+	needle := `name="` + name + `"`
+	i := strings.Index(s, needle)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i:]
+	j := strings.Index(rest, `value="`)
+	if j < 0 {
+		return ""
+	}
+	rest = rest[j+len(`value="`):]
+	k := strings.Index(rest, `"`)
+	if k < 0 {
+		return ""
+	}
+	return rest[:k]
+}
+
+func extractQuery(rawurl, key string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get(key)
+}
+
+// apiCall hits the Quill API with the bearer token.
+func apiCall(t *testing.T, token, method, path string, body any) (int, []byte) {
+	t.Helper()
+	c := client(t)
+	st, _, b := req(t, c, method, apiURL+"/api/v1"+path, body, map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+	return st, b
+}
+
+func jbody(t *testing.T, b []byte) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("response not JSON: %s", b)
+	}
+	return m
+}
+
+// ---- tests -------------------------------------------------------------------
+
+func TestHealthAndMeta(t *testing.T) {
+	requireLive(t)
+	c := client(t)
+	if st, _, _ := get(t, c, apiURL+"/healthz", nil); st != 200 {
+		t.Fatalf("healthz: %d", st)
+	}
+	st, _, b := get(t, c, apiURL+"/api/v1/meta", nil)
+	if st != 200 {
+		t.Fatalf("meta: %d %s", st, b)
+	}
+}
+
+func TestWebPages(t *testing.T) {
+	requireLive(t)
+	c := client(t)
+	// "/" redirects to /sign-in when logged out; /sign-in must be 200
+	if st, hdr, _ := get(t, c, appURL+"/", nil); st != 307 || !strings.Contains(hdr.Get("Location"), "sign-in") {
+		t.Errorf("GET /: %d -> %s, want 307 to /sign-in", st, hdr.Get("Location"))
+	}
+	if st, _, _ := get(t, c, appURL+"/sign-in", nil); st != 200 {
+		t.Errorf("GET /sign-in: %d, want 200", st)
+	}
+	// /login is an alias for /sign-in
+	if st, hdr, _ := get(t, c, appURL+"/login", nil); st != 307 || !strings.Contains(hdr.Get("Location"), "/sign-in") {
+		t.Errorf("GET /login: %d -> %s, want 307 to /sign-in", st, hdr.Get("Location"))
+	}
+	// unauthenticated app pages must redirect to sign-in, not 500
+	for _, p := range []string{"/repositories", "/onboarding", "/settings"} {
+		st, hdr, _ := get(t, c, appURL+p, nil)
+		if st >= 500 {
+			t.Errorf("GET %s: server error %d", p, st)
+		}
+		if st == 200 || st == 307 {
+			if loc := hdr.Get("Location"); st == 307 && !strings.Contains(loc, "sign-in") {
+				t.Errorf("GET %s: 307 to unexpected %s", p, loc)
+			}
+		}
+	}
+}
+
+func TestAuthMeAndUsernameRoundtrip(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+
+	st, b := apiCall(t, token, http.MethodGet, "/auth/me", nil)
+	if st != 200 {
+		t.Fatalf("auth/me: %d %s", st, b)
+	}
+	me := jbody(t, b)
+	wantUser := strings.Split(e2eUser, "@")[0] // Zitadel derives the handle from the email local part
+	if me["username"] != wantUser {
+		t.Fatalf("auth/me username = %v, want %s", me["username"], wantUser)
+	}
+
+	// The original onboarding bug: renaming the handle must work (it 500'd
+	// when the Forgejo rename was sent as JSON).
+	st, b = apiCall(t, token, http.MethodPatch, "/auth/me/username", map[string]any{"username": wantUser + "-2"})
+	if st != 200 {
+		t.Fatalf("PATCH username: %d %s", st, b)
+	}
+	if u := jbody(t, b)["username"]; u != wantUser+"-2" {
+		t.Fatalf("username after PATCH = %v", u)
+	}
+	// and back
+	if st, b = apiCall(t, token, http.MethodPatch, "/auth/me/username", map[string]any{"username": wantUser}); st != 200 {
+		t.Fatalf("PATCH username back: %d %s", st, b)
+	}
+}
+
+func TestPersonalProjectAndRepos(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+
+	st, b := apiCall(t, token, http.MethodPost, "/me/personal-project", nil)
+	if st != 200 && st != 409 {
+		t.Fatalf("personal-project: %d %s", st, b)
+	}
+
+	st, b = apiCall(t, token, http.MethodGet, "/me/projects", nil)
+	if st != 200 {
+		t.Fatalf("me/projects: %d %s", st, b)
+	}
+	projects := jbody(t, b)["projects"].([]any)
+	if len(projects) == 0 {
+		t.Fatalf("no projects after personal-project: %s", b)
+	}
+	slug, _ := projects[0].(map[string]any)["slug"].(string)
+
+	// create a repo
+	repoSlug := fmt.Sprintf("e2e-repo-%d", time.Now().UnixNano()%1e9)
+	st, b = apiCall(t, token, http.MethodPost, "/projects/"+slug+"/repos", map[string]any{
+		"slug": repoSlug, "name": repoSlug, "description": "e2e", "visibility": "private",
+	})
+	if st != 200 && st != 201 {
+		t.Fatalf("create repo: %d %s", st, b)
+	}
+
+	// list + get
+	st, b = apiCall(t, token, http.MethodGet, "/projects/"+slug+"/repos", nil)
+	if st != 200 {
+		t.Fatalf("list repos: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, "/projects/"+slug+"/repos/"+repoSlug, nil)
+	if st != 200 {
+		t.Fatalf("get repo: %d %s", st, b)
+	}
+	// branches/commits/contents on an empty repo (ErrEmptyRepo is a 409)
+	st, _ = apiCall(t, token, http.MethodGet, "/projects/"+slug+"/repos/"+repoSlug+"/branches", nil)
+	if st >= 500 {
+		t.Errorf("branches on empty repo: %d (want 200/404/409)", st)
+	}
+	st, _ = apiCall(t, token, http.MethodGet, "/projects/"+slug+"/repos/"+repoSlug+"/commits", nil)
+	if st >= 500 {
+		t.Errorf("commits on empty repo: %d", st)
+	}
+}
+
+func TestPullsPipelinesIssues(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+
+	st, b := apiCall(t, token, http.MethodGet, "/me/projects", nil)
+	if st != 200 {
+		t.Fatalf("me/projects: %d %s", st, b)
+	}
+	projects := jbody(t, b)["projects"].([]any)
+	slug, _ := projects[0].(map[string]any)["slug"].(string)
+
+	for _, p := range []string{
+		"/me/pulls", "/me/pulls/open-count",
+		"/projects/" + slug + "/repos",
+	} {
+		if st, b := apiCall(t, token, http.MethodGet, p, nil); st >= 500 {
+			t.Errorf("GET %s: %d %s", p, st, b)
+		}
+	}
+
+	// create issue + comment + edit on a repo
+	st, b = apiCall(t, token, http.MethodPost, "/me/personal-project", nil)
+	if st != 200 && st != 409 {
+		t.Fatalf("personal-project: %d %s", st, b)
+	}
+	repoSlug := fmt.Sprintf("e2e-issues-%d", time.Now().UnixNano()%1e9)
+	if st, b = apiCall(t, token, http.MethodPost, "/projects/"+slug+"/repos", map[string]any{"slug": repoSlug, "name": repoSlug}); st != 200 && st != 201 {
+		t.Fatalf("create repo: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodPost, "/projects/"+slug+"/repos/"+repoSlug+"/issues", map[string]any{"title": "e2e issue", "body": "hello"})
+	if st != 200 && st != 201 {
+		t.Fatalf("create issue: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, "/projects/"+slug+"/repos/"+repoSlug+"/issues", nil)
+	if st != 200 {
+		t.Errorf("list issues: %d %s", st, b)
+	}
+}
+
+func TestGitTokensAndSSHKeys(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+
+	st, b := apiCall(t, token, http.MethodPost, "/me/git-token", map[string]any{"name": "e2e"})
+	if st != 200 && st != 201 {
+		t.Fatalf("create git token: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, "/me/git-tokens", nil)
+	if st != 200 {
+		t.Errorf("list git tokens: %d %s", st, b)
+	}
+
+	st, b = apiCall(t, token, http.MethodPost, "/me/ssh-keys", map[string]any{"name": "e2e", "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE2eTestKeyDoNotUse000000000000000000000000000 e2e"})
+	if st >= 500 {
+		t.Errorf("add ssh key: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, "/me/ssh-keys", nil)
+	if st != 200 {
+		t.Errorf("list ssh keys: %d %s", st, b)
+	}
+}
+
+func TestAdminForbiddenForUser(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+	st, b := apiCall(t, token, http.MethodGet, "/admin/users", nil)
+	if st != 403 && st != 401 {
+		t.Errorf("admin/users as regular user: %d %s, want 403", st, b)
+	}
+}
+
+func TestGitHubImportEndpoints(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+	// Without the OAuth cookie, listing repos must be a clean 401 (not 500).
+	st, b := apiCall(t, token, http.MethodGet, "/import/github/repos", nil)
+	if st != 401 {
+		t.Errorf("import/github/repos without GH cookie: %d %s, want 401", st, b)
+	}
+	// The OAuth start must either redirect to github.com (creds configured)
+	// or return a clean error (not a raw crash). Accept 302-to-github or 501.
+	c := client(t)
+	st, hdr, _ := get(t, c, apiURL+"/api/v1/auth/github", nil)
+	if st == 302 && strings.HasPrefix(hdr.Get("Location"), "https://github.com/login/oauth/authorize") {
+		return // configured and redirecting — good
+	}
+	if st != 501 && st != 302 {
+		t.Errorf("auth/github: %d (want 302 to github or 501 not_configured)", st)
+	}
+}

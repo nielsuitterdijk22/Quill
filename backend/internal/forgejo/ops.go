@@ -111,8 +111,10 @@ func (c *Client) GetUser(ctx context.Context, username string) (User, error) {
 // user chooses their handle during onboarding so the Forgejo git identity stays
 // in sync with the Quill username.
 func (c *Client) RenameUser(ctx context.Context, username, newName string) error {
-	return c.do(ctx, http.MethodPost, "/admin/users/"+url.PathEscape(username)+"/rename",
-		map[string]string{"new_name": newName}, nil)
+	// The rename endpoint binds form values, not JSON (a JSON body gets a 422
+	// "[NewName]: Required" on Forgejo 15), so the new name goes as form data.
+	return c.doForm(ctx, http.MethodPost, "/admin/users/"+url.PathEscape(username)+"/rename",
+		url.Values{"new_name": {newName}}, nil)
 }
 
 // HeatmapEntry is one day's contribution bucket from Forgejo's user heatmap.

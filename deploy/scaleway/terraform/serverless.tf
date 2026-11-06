@@ -120,6 +120,12 @@ resource "scaleway_container" "web" {
     HOSTNAME           = "0.0.0.0"
     QUILL_API_BASE_URL = "https://${local.api_host}" # server components call the api container
     AUTH_URL           = "https://${local.app_host}"
+    # Runtime override of the build-time NEXT_PUBLIC_ZITADEL_ISSUER build-arg:
+    # server-side NextAuth code (auth.ts) reads process.env at runtime, so this
+    # fixes sign-in immediately on container update without an image rebuild.
+    # The client bundle (zitadel-bridge) still uses the baked value until the
+    # CI var NEXT_PUBLIC_ZITADEL_ISSUER is updated and the image rebuilt.
+    NEXT_PUBLIC_ZITADEL_ISSUER = "https://${local.auth_host}"
   }
   secret_environment_variables = {
     AUTH_SECRET = random_password.jwt_secret.result

@@ -8,25 +8,25 @@
 # the DB, so the admin API is the only way to enable mail on it.
 #
 # Env:
-#   ZITADEL_URL     e.g. https://auth.quill.black-tulip.nl
+#   ZITADEL_URL     e.g. https://auth.black-tulip.nl
 #   ZITADEL_TOKEN   machine PAT with iam.write (GH secret ZITADEL_MANAGEMENT_TOKEN;
 #                   the quill-api machine user from FirstInstance has IAM_OWNER)
 #   SMTP_HOST       host:port, e.g. smtp-relay.brevo.com:587 (port required)
 #   SMTP_USER       Brevo SMTP login (xxx@smtp-brevo.com)
 #   SMTP_PASSWORD   Brevo SMTP key (xsmtpib-...)
-#   SMTP_FROM       sender address, e.g. no-reply@quill.black-tulip.nl
+#   SMTP_FROM       sender address, e.g. no-reply@black-tulip.nl
 #   SMTP_FROM_NAME  default "Quill"
 #   SMTP_TLS        default "true" — implicit TLS with automatic STARTTLS
 #                   fallback, which is right for Brevo port 587 (and works for 465)
 #   SMTP_TEST_TO    optional receiver address for a test mail (POST /email/smtp/_test)
 set -euo pipefail
 
-: "${ZITADEL_URL:?set ZITADEL_URL, e.g. https://auth.quill.black-tulip.nl}"
+: "${ZITADEL_URL:?set ZITADEL_URL, e.g. https://auth.black-tulip.nl}"
 : "${ZITADEL_TOKEN:?set ZITADEL_TOKEN (machine PAT with iam.write)}"
 : "${SMTP_HOST:?set SMTP_HOST as host:port, e.g. smtp-relay.brevo.com:587}"
 : "${SMTP_USER:?set SMTP_USER (Brevo SMTP login)}"
 : "${SMTP_PASSWORD:?set SMTP_PASSWORD (Brevo SMTP key)}"
-: "${SMTP_FROM:?set SMTP_FROM, e.g. no-reply@quill.black-tulip.nl}"
+: "${SMTP_FROM:?set SMTP_FROM, e.g. no-reply@black-tulip.nl}"
 SMTP_FROM_NAME="${SMTP_FROM_NAME:-Quill}"
 SMTP_TLS="${SMTP_TLS:-true}"
 export SMTP_FROM_NAME SMTP_TLS

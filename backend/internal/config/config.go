@@ -196,6 +196,17 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins:  getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 	}
 
+	// Placeholder values must never reach GitHub: terraform's default is
+	// "unset", and tfvars files in the wild have carried dummy values like "x".
+	// Treat them as unconfigured so the OAuth start returns a clear error
+	// instead of redirecting to github.com with an invalid client_id.
+	if isPlaceholder(cfg.GitHub.ClientID) {
+		cfg.GitHub.ClientID = ""
+	}
+	if isPlaceholder(cfg.GitHub.ClientSecret) {
+		cfg.GitHub.ClientSecret = ""
+	}
+
 	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Zitadel.Issuer == "" {
 		return nil, fmt.Errorf("production requires QUILL_JWT_SECRET (local auth) or ZITADEL_ISSUER (Zitadel)")
 	}
@@ -215,6 +226,17 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// isPlaceholder reports whether a configured secret is really a placeholder
+// (terraform's "unset" default or a dummy value typed into tfvars), never a
+// real credential.
+func isPlaceholder(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "unset", "x", "changeme", "change-me", "placeholder", "todo", "example", "redacted":
+		return true
+	}
+	return false
 }
 
 func getdur(key string, fallback time.Duration) time.Duration {

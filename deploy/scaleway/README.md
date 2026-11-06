@@ -108,7 +108,7 @@ One-time setup:
 
 1. In the Brevo dashboard: **Transactional → SMTP → generate an SMTP key**
    (`xsmtpib-...`) and note the **SMTP login** (`xxx@smtp-brevo.com`).
-2. **Senders & IP → authenticate `quill.black-tulip.nl`** (domain authentication:
+2. **Senders & IP → authenticate `black-tulip.nl`** (the sending domain; or set `BREVO_SMTP_FROM` to an already-authenticated domain):
    SPF + DKIM). Add the DNS records **at your registrar** (the zone is not managed
    by Scaleway unless delegated):
    - TXT on the apex: `v=spf1 include:spf.sendinblue.com ~all`
@@ -151,12 +151,13 @@ be set directly at your current registrar — no need to delegate NS to Scaleway
 
 | Record | Type | Value |
 | --- | --- | --- |
-| `_scaleway-challenge.quill` | TXT | the `validation_token` shown in console → Domains → quill.black-tulip.nl |
-| `api.quill` | CNAME | the api container's native domain (`terraform output` / console → Containers → api) |
-| `app.quill` | CNAME | the web container's native domain |
-| `git.quill` | A | `terraform output -raw vm_public_ip` |
-| `ssh.quill` | A | same VM IP |
-| `auth.quill` | A | same VM IP |
+| `api` | CNAME | the api container's native domain (`terraform output` / console → Containers → api) |
+| `app` | CNAME | the web container's native domain |
+| `git` | A | `terraform output -raw vm_public_ip` |
+| `ssh` | A | same VM IP |
+| `auth` | A | same VM IP |
+
+(These are apex/subdomain records of `black-tulip.nl` itself, since `domain = "black-tulip.nl"` — no `quill.` label anymore. Add them at Cloudflare **before** running the deploy: the container domains need the CNAMEs for cert issuance and Caddy needs the `git`/`auth` A records for HTTP-01.)
 
 ## 4. Verify & backups
 

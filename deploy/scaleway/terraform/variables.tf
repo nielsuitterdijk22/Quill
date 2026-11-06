@@ -171,12 +171,26 @@ variable "github_client_id" {
   type      = string
   default   = "unset"
   sensitive = true
+
+  # Real GitHub OAuth-app client IDs start with "Iv" (e.g. "Iv1.…"). Anything
+  # else (terraform's "unset" default, or a dummy like "x" typed into tfvars)
+  # would deploy a broken OAuth flow, so only "unset" or an Iv-prefixed value
+  # may pass.
+  validation {
+    condition     = var.github_client_id == "unset" || startswith(var.github_client_id, "Iv")
+    error_message = "github_client_id must be a real GitHub OAuth app client ID (starts with \"Iv\") or left as \"unset\". Create the app at github.com/settings/developers with callback https://api.<domain>/api/v1/auth/github/callback."
+  }
 }
 
 variable "github_client_secret" {
   type      = string
   default   = "unset"
   sensitive = true
+
+  validation {
+    condition     = var.github_client_secret == "unset" || !contains(["x", "changeme", "change-me", "placeholder", "todo", "redacted"], lower(trimspace(var.github_client_secret)))
+    error_message = "github_client_secret looks like a placeholder. Set the real secret from the GitHub OAuth app, or leave \"unset\" to disable GitHub import with a clear error."
+  }
 }
 
 variable "letsencrypt_email" {

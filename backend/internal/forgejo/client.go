@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,38 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("forgejo %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return &APIError{Status: resp.StatusCode, Method: method, Path: path, Message: readError(resp.Body)}
+	}
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// doForm performs a request with an application/x-www-form-urlencoded body.
+// Some Forgejo endpoints bind form values rather than JSON (e.g.
+// POST /admin/users/{username}/rename rejects a JSON body with
+// 422 "[NewName]: Required"), so those calls must go through here.
+func (c *Client) doForm(ctx context.Context, method, path string, form url.Values, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.base+"/api/v1"+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if c.token != "" {
 		req.Header.Set("Authorization", "token "+c.token)
 	}

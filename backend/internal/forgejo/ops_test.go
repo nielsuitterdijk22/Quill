@@ -2,8 +2,10 @@ package forgejo_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
@@ -95,6 +97,47 @@ func TestGetOrCreateOrg_CreateRace(t *testing.T) {
 	}
 	if org.ID != 99 {
 		t.Fatalf("org ID = %d, want 99 (re-fetched after create race)", org.ID)
+	}
+}
+
+func TestRenameUser_SendsFormEncodedNewName(t *testing.T) {
+	var gotCT, gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/users/old/rename" {
+			gotCT = r.Header.Get("Content-Type")
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+	})
+
+	if err := c.RenameUser(context.Background(), "old", "new-handle"); err != nil {
+		t.Fatalf("RenameUser: %v", err)
+	}
+	if gotCT != "application/x-www-form-urlencoded" {
+		t.Fatalf("Content-Type = %q, want application/x-www-form-urlencoded", gotCT)
+	}
+	v, err := url.ParseQuery(gotBody)
+	if err != nil || v.Get("new_name") != "new-handle" {
+		t.Fatalf("body = %q, want new_name=new-handle", gotBody)
+	}
+}
+
+func TestRenameUser_PropagatesAPIError(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"message":"[NewName]: Required"}`))
+	})
+
+	err := c.RenameUser(context.Background(), "old", "new-handle")
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if forgejo.StatusCode(err) != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", forgejo.StatusCode(err))
 	}
 }
 

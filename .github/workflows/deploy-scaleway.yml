@@ -152,7 +152,9 @@ jobs:
             -var "create_dns_zone=false" \
             -var "brevo_smtp_user=${{ secrets.BREVO_SMTP_NAME }}" \
             -var "brevo_smtp_password=${{ secrets.BREVO_SMTP_KEY }}" \
-            -var "brevo_smtp_from=${{ vars.BREVO_SMTP_FROM }}"
+            -var "brevo_smtp_from=${{ vars.BREVO_SMTP_FROM }}" \
+            -var "github_client_id=${{ secrets.GH_CLIENT_ID }}" \
+            -var "github_client_secret=${{ secrets.GH_CLIENT_SECRET }}"
 
   vm-deploy:
     name: Deploy Forgejo VM stack (SSH)

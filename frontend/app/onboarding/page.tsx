@@ -17,6 +17,14 @@ type GitHubRepo = {
 
 type Step = "username" | "choose" | "org-setup" | "import" | "importing" | "done";
 
+const githubErrorMessages: Record<string, string> = {
+  not_configured:
+    "GitHub import is not configured on this server yet — the GitHub OAuth credentials are missing. Ask your administrator to set them, or skip for now.",
+  exchange_failed: "GitHub rejected the authorization (the OAuth app credentials may be wrong or revoked). Please try again.",
+  invalid_state: "The GitHub authorization session expired. Please try again.",
+  missing_code: "GitHub did not return an authorization code. Please try again.",
+};
+
 function IconUser() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -71,6 +79,9 @@ export default function OnboardingPage() {
   // Project explicitly requested via ?project=<slug> (e.g. from the project
   // picker on the repositories page for users with more than one project).
   const requestedProject = searchParams.get("project");
+  // Machine-readable error from the GitHub OAuth start/callback (the api
+  // redirects back here instead of showing a raw JSON error page).
+  const githubError = searchParams.get("github_error");
   const [accountType, setAccountType] = useState<"individual" | "org" | null>(null);
   const [orgSlug, setOrgSlug] = useState("");
   const [orgName, setOrgName] = useState("");
@@ -547,6 +558,11 @@ export default function OnboardingPage() {
           </div>
 
           {error && <div className="ob-error">{error}</div>}
+          {githubError && (
+            <div className="ob-error">
+              {githubErrorMessages[githubError] ?? "GitHub authorization failed. Please try again."}
+            </div>
+          )}
 
           {!loadingRepos && ghRepos.length === 0 && (
             <div className="ob-gh-connect">

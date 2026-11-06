@@ -86,11 +86,25 @@ func (s *Server) githubTokenFromRequest(r *http.Request) (string, error) {
 
 // ---- OAuth flow -------------------------------------------------------------
 
+// redirectOnboardingError sends the browser back to the onboarding import step
+// with a machine-readable github_error code, so a misconfigured OAuth app
+// surfaces as a friendly UI message instead of a raw JSON error page. Falls
+// back to a JSON error when no frontend origin is configured.
+func (s *Server) redirectOnboardingError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	if len(s.cfg.CORSAllowedOrigins) > 0 && s.cfg.CORSAllowedOrigins[0] != "" {
+		q := url.Values{"step": {"import"}, "github_error": {code}}
+		http.Redirect(w, r, s.cfg.CORSAllowedOrigins[0]+"/onboarding?"+q.Encode(), http.StatusFound)
+		return
+	}
+	httpx.Error(w, status, code, message)
+}
+
 // handleGitHubOAuthRedirect starts the GitHub OAuth flow by redirecting the
 // browser to the GitHub authorization page.
 func (s *Server) handleGitHubOAuthRedirect(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.GitHub.ClientID == "" {
-		httpx.Error(w, http.StatusNotImplemented, "not_configured", "GitHub OAuth is not configured")
+		s.logger.Warn("github oauth start requested but GITHUB_CLIENT_ID is not configured")
+		s.redirectOnboardingError(w, r, http.StatusNotImplemented, "not_configured", "GitHub OAuth is not configured")
 		return
 	}
 
@@ -137,14 +151,14 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 	// Validate state.
 	stateCookie, err := r.Cookie(githubStateCookie)
 	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {
-		httpx.Error(w, http.StatusBadRequest, "invalid_state", "OAuth state mismatch")
+		s.redirectOnboardingError(w, r, http.StatusBadRequest, "invalid_state", "OAuth state mismatch")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: githubStateCookie, MaxAge: -1, Path: "/"})
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		httpx.Error(w, http.StatusBadRequest, "missing_code", "no OAuth code in callback")
+		s.redirectOnboardingError(w, r, http.StatusBadRequest, "missing_code", "no OAuth code in callback")
 		return
 	}
 
@@ -152,13 +166,13 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 	token, err := s.exchangeGitHubCode(r.Context(), code)
 	if err != nil {
 		s.logger.Error("github oauth code exchange failed", "error", err)
-		httpx.Error(w, http.StatusBadGateway, "exchange_failed", "could not exchange GitHub OAuth code")
+		s.redirectOnboardingError(w, r, http.StatusBadGateway, "exchange_failed", "could not exchange GitHub OAuth code")
 		return
 	}
 
 	enc, err := s.encryptToken(token)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "internal", "could not encrypt token")
+		s.redirectOnboardingError(w, r, http.StatusInternalServerError, "internal", "could not encrypt token")
 		return
 	}
 
@@ -180,8 +194,11 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 		http.SetCookie(w, &http.Cookie{Name: githubProjectCookie, MaxAge: -1, Path: "/"})
 	}
 
-	origin := s.cfg.CORSAllowedOrigins[0]
-	http.Redirect(w, r, origin+"/onboarding?"+redirectQuery.Encode(), http.StatusFound)
+	target := "/onboarding?" + redirectQuery.Encode()
+	if len(s.cfg.CORSAllowedOrigins) > 0 && s.cfg.CORSAllowedOrigins[0] != "" {
+		target = s.cfg.CORSAllowedOrigins[0] + target
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func (s *Server) exchangeGitHubCode(ctx context.Context, code string) (string, error) {
