@@ -33,6 +33,13 @@ resource "scaleway_container_namespace" "quill" {
 # ---- api (Quill Go backend) ---------------------------------------------------------
 
 resource "scaleway_container" "api" {
+  lifecycle {
+    # Image updates flow through the registry: CI pushes the "latest" tag and
+    # Scaleway auto-redeploys. Letting terraform update registry_image races
+    # Scaleway's rolling redeploy and intermittently fails with 412.
+    ignore_changes = [registry_image, deploy]
+  }
+
   namespace_id   = scaleway_container_namespace.quill.id
   name           = "api"
   region         = var.region
@@ -85,6 +92,13 @@ resource "scaleway_container" "api" {
 # ---- web (Next.js frontend) -----------------------------------------------------------
 
 resource "scaleway_container" "web" {
+  lifecycle {
+    # Image updates flow through the registry: CI pushes the "latest" tag and
+    # Scaleway auto-redeploys. Letting terraform update registry_image races
+    # Scaleway's rolling redeploy and intermittently fails with 412.
+    ignore_changes = [registry_image, deploy]
+  }
+
   namespace_id   = scaleway_container_namespace.quill.id
   name           = "web"
   region         = var.region
