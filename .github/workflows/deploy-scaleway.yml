@@ -239,6 +239,7 @@ jobs:
           fi
           export SMTP_FROM="${SMTP_FROM:-info@$(echo "$QUILL_DOMAIN" | cut -d. -f2-)}"
           deploy/scaleway/scripts/zitadel-smtp.sh
+          QUILL_APP_URL="https://app.${{ vars.QUILL_DOMAIN }}" deploy/scaleway/scripts/zitadel-brand.sh
 
   provision:
     name: First-boot provision
