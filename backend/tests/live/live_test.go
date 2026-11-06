@@ -249,6 +249,9 @@ func login(t *testing.T) string {
 // (repo_slug, quill_pr_number) identity contract field names.
 func prNumber(t *testing.T, m map[string]any) int {
 	t.Helper()
+	if inner, ok := m["pull"].(map[string]any); ok {
+		m = inner
+	}
 	for _, k := range []string{"quill_pr_number", "number", "pr_number"} {
 		switch v := m[k].(type) {
 		case float64:
