@@ -51,7 +51,7 @@ b = {
 if len(os.sys.argv) > 1 and os.sys.argv[1]:
     b["receiver_address"] = os.sys.argv[1]
 print(json.dumps(b))
-' "$1"
+' "${1:-}"
 }
 
 get_id() { # extract provider id from a JSON blob on stdin
