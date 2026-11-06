@@ -715,3 +715,115 @@ func TestOrgsGroupsBillingPoliciesExport(t *testing.T) {
 		t.Errorf("contributions: %d %s", st, b)
 	}
 }
+
+// ---- round 2: PR review/merge, repo ops, secrets, invites -------------------
+
+func TestPRReviewAndMerge(t *testing.T) {
+	requireLive(t)
+	token, proj, repo := setupProjectRepo(t, "merge")
+
+	// push main + feature branch
+	st, b := apiCall(t, token, http.MethodPost, "/me/git-token", map[string]any{"name": "e2e"})
+	cred := jbody(t, b)
+	tok, _ := cred["token"].(string)
+	_, meB := apiCall(t, token, http.MethodGet, "/auth/me", nil)
+	username, _ := jbody(t, meB)["username"].(string)
+	dir := t.TempDir()
+	sh(t, dir, "git", "clone", fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo), "r")
+	rd := dir + "/r"
+	sh(t, rd, "git", "config", "user.email", "e2e@black-tulip.nl")
+	sh(t, rd, "git", "config", "user.name", "e2e")
+	_ = os.WriteFile(rd+"/a.txt", []byte("a\n"), 0o644)
+	sh(t, rd, "git", "add", ".")
+	sh(t, rd, "git", "commit", "-m", "c1")
+	sh(t, rd, "git", "branch", "-M", "main")
+	sh(t, rd, "git", "push", "-u", "origin", "main")
+	sh(t, rd, "git", "checkout", "-b", "feat")
+	_ = os.WriteFile(rd+"/b.txt", []byte("b\n"), 0o644)
+	sh(t, rd, "git", "add", ".")
+	sh(t, rd, "git", "commit", "-m", "c2")
+	sh(t, rd, "git", "push", "-u", "origin", "feat")
+
+	rp := "/projects/" + proj + "/repos/" + repo
+	st, b = apiCall(t, token, http.MethodPost, rp+"/pulls", map[string]any{"title": "merge me", "base": "main", "head": "feat"})
+	if st != 200 && st != 201 {
+		t.Fatalf("create PR: %d %s", st, b)
+	}
+	num := prNumber(t, jbody(t, b))
+
+	// review (approve) + line comment + merge
+	if st, b := apiCall(t, token, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", rp, num), map[string]any{"event": "APPROVED", "body": "lgtm"}); st >= 500 {
+		t.Errorf("review: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodPost, fmt.Sprintf("%s/pulls/%d/line-comments", rp, num), map[string]any{"body": "nit", "path": "b.txt", "line": 1}); st >= 500 {
+		t.Errorf("line comment: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/pulls/%d/reviews", rp, num), nil); st >= 500 {
+		t.Errorf("list reviews: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", rp, num), map[string]any{}); st >= 500 {
+		t.Errorf("merge: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/pulls/%d", rp, num), nil)
+	if st == 200 {
+		state, _ := jbody(t, b)["pull"].(map[string]any)["state"].(string)
+		t.Logf("PR state after merge attempt: %s", state)
+	}
+}
+
+func TestRepoOpsSecretsInvites(t *testing.T) {
+	requireLive(t)
+	token, proj, repo := setupProjectRepo(t, "ops")
+	rp := "/projects/" + proj + "/repos/" + repo
+
+	// update repo, star, fork
+	if st, b := apiCall(t, token, http.MethodPatch, rp, map[string]any{"description": "updated by e2e"}); st >= 500 {
+		t.Errorf("PATCH repo: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodPost, rp+"/star", nil); st >= 500 {
+		t.Errorf("star: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodPost, rp+"/fork", nil); st >= 500 {
+		t.Errorf("fork: %d %s", st, b)
+	}
+	// markup render
+	if st, b := apiCall(t, token, http.MethodPost, rp+"/markup", map[string]any{"text": "# hi", "mode": "markdown"}); st >= 500 {
+		t.Errorf("markup: %d %s", st, b)
+	}
+	// repo secrets CRUD
+	sec := rp + "/secrets"
+	if st, b := apiCall(t, token, http.MethodPut, sec+"/E2E_VAR", map[string]any{"value": "s3cr3t"}); st >= 500 && st != 404 {
+		t.Errorf("put repo secret: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, sec, nil); st >= 500 {
+		t.Errorf("list repo secrets: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodDelete, sec+"/E2E_VAR", nil); st >= 500 && st != 404 {
+		t.Errorf("delete repo secret: %d %s", st, b)
+	}
+	// invite create/list/revoke on the org
+	orgSlug := fmt.Sprintf("e2e-inv-%d", time.Now().UnixNano()%1e9)
+	if st, b := apiCall(t, token, http.MethodPost, "/orgs", map[string]any{"slug": orgSlug, "name": orgSlug}); st != 200 && st != 201 && st != 409 {
+		t.Fatalf("create org: %d %s", st, b)
+	}
+	st, b := apiCall(t, token, http.MethodPost, "/orgs/"+orgSlug+"/invites", map[string]any{"email": "invitee@black-tulip.nl", "role": "member"})
+	if st != 200 && st != 201 {
+		t.Errorf("create invite: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, "/orgs/"+orgSlug+"/invites", nil)
+	if st != 200 {
+		t.Errorf("list invites: %d %s", st, b)
+	} else {
+		inv := jbody(t, b)
+		if arr, ok := inv["invites"].([]any); ok && len(arr) > 0 {
+			id, _ := arr[0].(map[string]any)["id"].(string)
+			if st, b := apiCall(t, token, http.MethodDelete, "/orgs/"+orgSlug+"/invites/"+id, nil); st >= 500 {
+				t.Errorf("revoke invite: %d %s", st, b)
+			}
+		}
+	}
+	// delete the repo again (cleanup)
+	if st, b := apiCall(t, token, http.MethodDelete, rp, nil); st >= 500 {
+		t.Errorf("delete repo: %d %s", st, b)
+	}
+}

@@ -24,9 +24,7 @@ export async function getToken(): Promise<string | undefined> {
 // to re-authenticate, instead of erroring or bouncing indefinitely. A transient
 // backend outage degrades to the same signed-out state rather than a crash.
 export async function getSession(): Promise<User | null> {
-  console.log("getting token");
   const token = await getToken();
-  console.log("token:", token);
   if (!token) return null;
   try {
     return await fetchMe(token);
@@ -40,7 +38,6 @@ export async function getSession(): Promise<User | null> {
 // routes, so this redirect is a belt-and-suspenders guard.
 export async function requireSession(): Promise<User> {
   const user = await getSession();
-  console.log("user:", user);
   if (!user) redirect("/sign-in");
   return user;
 }
