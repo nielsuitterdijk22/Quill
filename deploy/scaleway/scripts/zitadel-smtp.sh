@@ -77,10 +77,18 @@ if [ -n "$id" ]; then
   echo "Updating existing email provider ${id} (PUT /email/smtp/{id} activates it)"
   curl -fsS "${AUTH[@]}" "${CT[@]}" -X PUT -d "$(body)" "$API/email/smtp/$id" >/dev/null
 else
-  # 2. No active provider -> add one, then activate it explicitly.
+  # 2. No ACTIVE provider -> add one; if a provider exists but is inactive the
+  #    add call 400s, so fall back to listing all providers and updating the
+  #    smtp one (PUT auto-activates).
   echo "Adding SMTP email provider (POST /email/smtp)"
-  resp=$(curl -fsS "${AUTH[@]}" "${CT[@]}" -X POST -d "$(body)" "$API/email/smtp")
-  id=$(echo "$resp" | get_id)
+  code=$(curl -s -o /tmp/zsmtp-resp.json -w "%{http_code}" "${AUTH[@]}" "${CT[@]}" -X POST -d "$(body)" "$API/email/smtp")
+  id=""
+  if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+    id=$(get_id </tmp/zsmtp-resp.json)
+  else
+    echo "POST returned ${code}: $(head -c 300 /tmp/zsmtp-resp.json)"
+    echo "Falling back to provider list (POST /email/_search)"
+  fi
   if [ -z "$id" ]; then
     resp=$(curl -fsS "${AUTH[@]}" "${CT[@]}" -X POST -d '{}' "$API/email/_search")
     id=$(echo "$resp" | python3 -c '
@@ -92,13 +100,17 @@ try:
 except Exception:
     pass
 ')
+    if [ -n "$id" ]; then
+      echo "Updating existing (inactive) provider ${id} (PUT auto-activates)"
+      curl -fsS "${AUTH[@]}" "${CT[@]}" -X PUT -d "$(body)" "$API/email/smtp/$id" >/dev/null
+    fi
   fi
   if [ -z "$id" ]; then
-    echo "ERROR: could not determine provider id after add" >&2
+    echo "ERROR: could not determine provider id" >&2
     exit 1
   fi
-  echo "Activating provider ${id} (POST /email/{id}/_activate)"
-  curl -fsS "${AUTH[@]}" -X POST "$API/email/$id/_activate" >/dev/null
+  # ensure it is active (PUT already activates; this is a safety net for the add path)
+  curl -s -o /dev/null -w "activate: %{http_code}\n" "${AUTH[@]}" -X POST "$API/email/$id/_activate"
 fi
 
 # 3. Optional test mail.
