@@ -219,7 +219,8 @@ jobs:
           SMTP_HOST: ${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '587' }}
           SMTP_USER: ${{ secrets.BREVO_SMTP_NAME }}
           SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY }}
-          SMTP_FROM: ${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}
+          SMTP_FROM: ${{ vars.BREVO_SMTP_FROM }}
+          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN }}
           SMTP_FROM_NAME: Quill
           SMTP_TEST_TO: ${{ vars.BREVO_SMTP_TEST_TO }}
         run: |
@@ -227,6 +228,7 @@ jobs:
             echo "BREVO_SMTP_NAME / BREVO_SMTP_KEY not set — skipping mail config (email disabled)"
             exit 0
           fi
+          export SMTP_FROM="${SMTP_FROM:-no-reply@${QUILL_DOMAIN}}"
           deploy/scaleway/scripts/zitadel-smtp.sh
 
   provision:
