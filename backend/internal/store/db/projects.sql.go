@@ -233,3 +233,29 @@ func (q *Queries) SetProjectForgejoName(ctx context.Context, arg SetProjectForge
 	)
 	return i, err
 }
+
+const updateProjectSlug = `-- name: UpdateProjectSlug :one
+UPDATE projects SET slug = $2, updated_at = now() WHERE id = $1 RETURNING id, tenant_id, slug, name, description, forgejo_org_name, is_personal, created_at, updated_at
+`
+
+type UpdateProjectSlugParams struct {
+	ID   uuid.UUID `json:"id"`
+	Slug string    `json:"slug"`
+}
+
+func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugParams) (Project, error) {
+	row := q.db.QueryRow(ctx, updateProjectSlug, arg.ID, arg.Slug)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.ForgejoOrgName,
+		&i.IsPersonal,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

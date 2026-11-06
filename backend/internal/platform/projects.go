@@ -196,10 +196,12 @@ func (s *Service) CreatePersonalProject(ctx context.Context, userID uuid.UUID, u
 	})
 }
 
-// SetUsername changes the caller's handle during onboarding. It is allowed only
-// before the user belongs to any project — the safe window in which no personal
-// namespace, repos, or org memberships exist yet — and keeps the Forgejo git
-// identity in sync by renaming the Forgejo account, so Quill's username and the
+// SetUsername changes the caller's handle. The personal project's slug equals the
+// username, so a rename cascades to the project slug (the Forgejo org keeps its
+// original name — Forgejo's API has no org rename — so existing git clone URLs keep
+// the old owner while Quill routing /{slug} follows the new name). The Forgejo
+// account is renamed too, keeping the git identity in sync. Format/reserved rules
+// match project slugs.
 // Forgejo login never diverge. Format/reserved rules match project slugs.
 func (s *Service) SetUsername(ctx context.Context, userID uuid.UUID, desired string) (db.User, error) {
 	clean := normalizeSlug(desired)
@@ -213,15 +215,6 @@ func (s *Service) SetUsername(ctx context.Context, userID uuid.UUID, desired str
 	}
 	if clean == user.Username {
 		return user, nil // no-op
-	}
-
-	// Onboarding-only: refuse once the user has any project (repos/namespace exist).
-	projects, err := s.store.ListProjectsByUser(ctx, userID)
-	if err != nil {
-		return db.User{}, fmt.Errorf("check projects: %w", err)
-	}
-	if len(projects) > 0 {
-		return db.User{}, fmt.Errorf("%w: your username can only be set during onboarding", ErrConflict)
 	}
 
 	// Uniqueness (case-insensitive via GetUserByUsername).
@@ -255,6 +248,18 @@ func (s *Service) SetUsername(ctx context.Context, userID uuid.UUID, desired str
 			ForgejoUsername: pgtype.Text{String: clean, Valid: true},
 		}); err != nil {
 			s.logger.Warn("username set: updated forgejo login but failed to persist link", "user", clean, "error", err)
+		}
+	}
+
+	// The personal project's slug equals the username, so rename it too (best
+	// effort — the user row is already updated and authoritative).
+	if projects, perr := s.store.ListProjectsByUser(ctx, userID); perr == nil {
+		for _, p := range projects {
+			if p.IsPersonal && p.Slug != clean {
+				if _, uerr := s.store.UpdateProjectSlug(ctx, db.UpdateProjectSlugParams{ID: p.ID, Slug: clean}); uerr != nil {
+					s.logger.Warn("username set: failed to rename personal project slug", "project", p.ID, "error", uerr)
+				}
+			}
 		}
 	}
 	return updated, nil

@@ -1,3 +1,16 @@
+- 2026-11-06 — Username is changeable after onboarding. SetUsername used to refuse
+  once the user had any project ("onboarding only"), but the personal project is
+  created at first login, so in practice the handle was frozen forever. The guard
+  is removed; a rename now cascades to the personal project slug (new
+  UpdateProjectSlug query) and the Forgejo user (admin rename). The Forgejo ORG
+  cannot be renamed via the API, so existing git clone URLs keep the original
+  owner while Quill's /{slug} routing follows the new name. Settings page gained
+  a username field (PATCH /api/v1/auth/me/username). Rejected: leaving the guard
+  (user-visible dead end) and renaming the Forgejo org (unsupported by the API).
+- 2026-11-06 — scw CLI v2.65 dropped the per-command `region=` arg (region comes
+  from SCW_DEFAULT_REGION). The pinned v2.42.0 asset 404'd, so CI installs v2.65.2
+  and dns-sync.sh/provision.sh no longer pass region= explicitly.
+
 # Decisions
 
 Append-only log of design decisions: date, decision, why, alternatives rejected.

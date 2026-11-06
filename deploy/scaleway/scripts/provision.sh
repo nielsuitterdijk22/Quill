@@ -20,7 +20,6 @@ DOMAIN="${QUILL_DOMAIN:-$(cd "$TF_DIR" && terraform output -raw hosts 2>/dev/nul
 VM_IP="$(cd "$TF_DIR" && terraform output -raw vm_public_ip)"
 SSH_KEY="$(cd "$TF_DIR" && terraform output -raw vm_ssh_private_key)"
 PROJECT_ID="$(cd "$TF_DIR" && terraform output -raw project_id)"
-REGION="${SCW_DEFAULT_REGION:-fr-par}"
 ADMIN_USER="${FORGEJO_ADMIN_USERNAME:-quill-admin}"
 ADMIN_PASS="${FORGEJO_ADMIN_PASSWORD:-$(openssl rand -hex 16)}"
 ADMIN_EMAIL="${FORGEJO_ADMIN_EMAIL:-admin@${DOMAIN}}"
@@ -48,18 +47,18 @@ TOKEN="$($SSH "curl -sf -u '$ADMIN_USER:$ADMIN_PASS' -H 'Content-Type: applicati
 [ -n "$TOKEN" ] || { echo "failed to mint token" >&2; exit 1; }
 
 echo "==> registering Forgejo system webhook -> https://api.${DOMAIN}/api/v1/webhooks/forgejo"
-WEBHOOK_SECRET="$(scw secret version get "$(scw secret secret list path=/quill/app name=app-webhook-secret project-id=$PROJECT_ID region=$REGION -o json | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')" region=$REGION -o json | python3 -c 'import sys,json,base64;print(base64.b64decode(json.load(sys.stdin)["data"]).decode())')"
+WEBHOOK_SECRET="$(scw secret version get "$(scw secret secret list path=/quill/app name=app-webhook-secret project-id=$PROJECT_ID -o json | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')" -o json | python3 -c 'import sys,json,base64;print(base64.b64decode(json.load(sys.stdin)["data"]).decode())')"
 $SSH "curl -sf -u '$ADMIN_USER:$TOKEN' -H 'Content-Type: application/json' -d '{\"type\":\"forgejo\",\"active\":true,\"events\":[\"push\",\"pull_request\"],\"config\":{\"url\":\"https://api.${DOMAIN}/api/v1/webhooks/forgejo\",\"content_type\":\"json\",\"secret\":\"${WEBHOOK_SECRET}\"}}' http://localhost:3000/api/v1/admin/hooks" >/dev/null || echo "  (webhook may already exist — continuing)"
 
 echo "==> harvesting Zitadel machine PAT from container logs"
-ZITADEL_CONTAINER="$(scw container container list namespace-id="$(cd "$TF_DIR" && terraform output -raw registry_endpoint >/dev/null 2>&1; scw container namespace list region=$REGION project-id=$PROJECT_ID -o json | python3 -c 'import sys,json;print([n["id"] for n in json.load(sys.stdin) if n["name"]=="quill"][0])')" region=$REGION -o json | python3 -c 'import sys,json;print([c["id"] for c in json.load(sys.stdin) if c["name"]=="zitadel"][0])')"
-ZPAT="$(scw container logs "$ZITADEL_CONTAINER" region=$REGION 2>/dev/null | grep -o 'ZITADEL_MACHINE_PAT=.*' | head -1 | cut -d= -f2 || true)"
+ZITADEL_CONTAINER="$(scw container container list namespace-id="$(cd "$TF_DIR" && terraform output -raw registry_endpoint >/dev/null 2>&1; scw container namespace list project-id=$PROJECT_ID -o json | python3 -c 'import sys,json;print([n["id"] for n in json.load(sys.stdin) if n["name"]=="quill"][0])')" -o json | python3 -c 'import sys,json;print([c["id"] for c in json.load(sys.stdin) if c["name"]=="zitadel"][0])')"
+ZPAT="$(scw container logs "$ZITADEL_CONTAINER" 2>/dev/null | grep -o 'ZITADEL_MACHINE_PAT=.*' | head -1 | cut -d= -f2 || true)"
 
 echo "==> writing tokens to Secret Manager"
 sm_set() { # sm_set <path> <name> <value>
   local sid
-  sid="$(scw secret secret list path="$1" name="$2" project-id=$PROJECT_ID region=$REGION -o json | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')"
-  printf '%s' "$3" | base64 | scw secret version create secret-id="$sid" region=$REGION data=- description="set by provision.sh" >/dev/null
+  sid="$(scw secret secret list path="$1" name="$2" project-id=$PROJECT_ID -o json | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')"
+  printf '%s' "$3" | base64 | scw secret version create secret-id="$sid" data=- description="set by provision.sh" >/dev/null
 }
 sm_set /quill/app app-forgejo-admin-token "$TOKEN"
 [ -n "$ZPAT" ] && sm_set /quill/app app-zitadel-management-token "$ZPAT"

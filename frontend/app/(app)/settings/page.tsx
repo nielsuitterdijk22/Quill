@@ -114,7 +114,7 @@ async function AccountTab({
         </div>
       </div>
 
-      <ProfileForm displayName={user.displayName} />
+      <ProfileForm displayName={user.displayName} username={user.username} />
 
       <EmailForm email={user.email} />
 

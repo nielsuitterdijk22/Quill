@@ -2,7 +2,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 
-import { updateProfileAction, type ProfileFormState } from "./actions";
+import { updateProfileAction, updateUsernameAction, type ProfileFormState } from "./actions";
 
 const initial: ProfileFormState = {};
 
@@ -15,13 +15,37 @@ function SaveButton() {
   );
 }
 
-// ProfileForm edits the signed-in user's display name. An empty value clears it;
-// the app then falls back to the username.
-export function ProfileForm({ displayName }: { displayName: string }) {
+// ProfileForm edits the signed-in user's display name and username. An empty
+// display name clears it; the app then falls back to the username.
+export function ProfileForm({ displayName, username }: { displayName: string; username: string }) {
   const [state, formAction] = useFormState(updateProfileAction, initial);
+  const [usernameState, usernameAction] = useFormState(updateUsernameAction, initial);
 
   return (
     <div className="panel form-narrow">
+      <h2>Username</h2>
+      <div className="readme-body">
+        {usernameState.error && <div className="form-error">{usernameState.error}</div>}
+        {usernameState.ok && <div className="form-success">Username updated.</div>}
+        <form action={usernameAction}>
+          <label className="field">
+            <span>Username</span>
+            <input
+              name="username"
+              defaultValue={username}
+              placeholder="your-handle"
+              maxLength={63}
+              pattern="[a-z0-9][a-z0-9._-]*"
+            />
+          </label>
+          <p className="hint">
+            Your personal workspace URL and git identity follow this handle.
+          </p>
+          <div className="form-actions">
+            <SaveButton />
+          </div>
+        </form>
+      </div>
       <h2>Display name</h2>
       <div className="readme-body">
         {state.error && <div className="form-error">{state.error}</div>}

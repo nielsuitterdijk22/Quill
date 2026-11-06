@@ -6,11 +6,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TF_DIR="$HERE/../terraform"
-REGION="${SCW_DEFAULT_REGION:-fr-par}"
 PROJECT_ID="${SCW_PROJECT_ID:?set SCW_PROJECT_ID (terraform output project_id)}"
 DOMAIN="${QUILL_DOMAIN:?set QUILL_DOMAIN}"
 
-VM_IP="$(scw instance server list region="$REGION" project-id="$PROJECT_ID" -o json | python3 -c '
+VM_IP="$(scw instance server list project-id="$PROJECT_ID" -o json | python3 -c '
 import sys, json
 for s in json.load(sys.stdin):
     if s.get("name") == "quill-forgejo":

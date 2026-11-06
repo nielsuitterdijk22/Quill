@@ -128,3 +128,37 @@ func TestCreatePersonalProjectRepairsMembership(t *testing.T) {
 		t.Fatalf("membership should be repaired, got %+v", repaired)
 	}
 }
+
+// TestSetUsernameAfterOnboarding verifies a username can be changed after the
+// personal project exists: the user row and the personal project slug both
+// follow the new handle.
+func TestSetUsernameAfterOnboarding(t *testing.T) {
+	svc, st := newService(t)
+	ctx := context.Background()
+	uid := makeUser(t, st, "before")
+
+	if err := svc.CreatePersonalProject(ctx, uid, "before"); err != nil {
+		t.Fatalf("create personal project: %v", err)
+	}
+
+	updated, err := svc.SetUsername(ctx, uid, "after")
+	if err != nil {
+		t.Fatalf("set username after onboarding should succeed, got: %v", err)
+	}
+	if updated.Username != "after" {
+		t.Fatalf("expected username 'after', got %q", updated.Username)
+	}
+
+	mine, err := svc.ListMyProjects(ctx, actor(uid))
+	if err != nil {
+		t.Fatalf("list my projects: %v", err)
+	}
+	if len(mine) != 1 || mine[0].Slug != "after" {
+		t.Fatalf("expected personal project slug renamed to 'after', got %+v", mine)
+	}
+
+	// The old slug is free again.
+	if _, err := st.GetProjectBySlug(ctx, "before"); err == nil {
+		t.Fatalf("old slug 'before' should be free after rename")
+	}
+}

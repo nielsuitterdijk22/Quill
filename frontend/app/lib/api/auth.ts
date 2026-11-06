@@ -47,6 +47,13 @@ export function updateProfile(
   return sendData<User>(token, "PATCH", "/api/v1/auth/me", input);
 }
 
+export function updateUsername(
+  token: string,
+  username: string,
+): Promise<DataResult<User>> {
+  return sendData<User>(token, "PATCH", "/api/v1/auth/me/username", { username });
+}
+
 export function updateEmail(
   token: string,
   email: string,

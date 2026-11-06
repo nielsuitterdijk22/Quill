@@ -7,6 +7,7 @@ import {
   deleteMyAccount,
   updateEmail,
   updateProfile,
+  updateUsername,
 } from "../../lib/api";
 import { getToken } from "../../lib/session";
 
@@ -26,6 +27,25 @@ export async function updateProfileAction(
   const displayName = String(formData.get("displayName") ?? "").trim();
 
   const res = await updateProfile(token, { displayName });
+  if (!res.ok) return { error: res.error };
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+// updateUsernameAction changes the signed-in user's handle (cascades to the
+// personal project slug and the Forgejo login).
+export async function updateUsernameAction(
+  _prev: ProfileFormState,
+  formData: FormData,
+): Promise<ProfileFormState> {
+  const token = await getToken();
+  if (!token) return { error: "Your session has expired. Sign in again." };
+
+  const username = String(formData.get("username") ?? "").trim().toLowerCase();
+  if (!username) return { error: "Username is required." };
+
+  const res = await updateUsername(token, username);
   if (!res.ok) return { error: res.error };
 
   revalidatePath("/", "layout");
