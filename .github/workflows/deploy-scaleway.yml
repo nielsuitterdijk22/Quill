@@ -80,7 +80,7 @@ jobs:
         run: |
           docker build -t ${{ vars.REGISTRY }}/quill-web:${{ github.sha }} frontend/ \
             --build-arg NEXT_PUBLIC_AUTH_PROVIDER=zitadel \
-            --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=${{ vars.NEXT_PUBLIC_ZITADEL_ISSUER }} \
+            --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.${{ vars.QUILL_DOMAIN }} \
             --build-arg NEXT_PUBLIC_ZITADEL_CLIENT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_CLIENT_ID }} \
             --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_PROJECT_ID }} \
             --build-arg QUILL_API_BASE_URL=https://api.${{ vars.QUILL_DOMAIN }}

@@ -26,6 +26,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -242,6 +243,27 @@ func login(t *testing.T) string {
 		t.Fatalf("parse token response: %v %s", err, tb)
 	}
 	return tok.AccessToken
+}
+
+// prNumber extracts the PR number from a create/get response, tolerating the
+// (repo_slug, quill_pr_number) identity contract field names.
+func prNumber(t *testing.T, m map[string]any) int {
+	t.Helper()
+	for _, k := range []string{"quill_pr_number", "number", "pr_number"} {
+		switch v := m[k].(type) {
+		case float64:
+			if v > 0 {
+				return int(v)
+			}
+		case string:
+			var n int
+			if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	t.Fatalf("no PR number in response: %v", m)
+	return 0
 }
 
 func randHex(n int) string {
@@ -513,5 +535,180 @@ func TestGitHubImportEndpoints(t *testing.T) {
 	}
 	if st != 501 && st != 302 {
 		t.Errorf("auth/github: %d (want 302 to github or 501 not_configured)", st)
+	}
+}
+
+// ---- extended flows ----------------------------------------------------------
+
+func sh(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+	}
+	return string(out)
+}
+
+// setupProjectRepo logs in, ensures a personal project, creates a repo and
+// returns (token, projectSlug, repoSlug).
+func setupProjectRepo(t *testing.T, suffix string) (string, string, string) {
+	token := login(t)
+	if st, b := apiCall(t, token, http.MethodPost, "/me/personal-project", nil); st != 200 && st != 409 {
+		t.Fatalf("personal-project: %d %s", st, b)
+	}
+	st, b := apiCall(t, token, http.MethodGet, "/me/projects", nil)
+	if st != 200 {
+		t.Fatalf("me/projects: %d %s", st, b)
+	}
+	projects := jbody(t, b)["projects"].([]any)
+	slug, _ := projects[0].(map[string]any)["slug"].(string)
+	repoSlug := fmt.Sprintf("e2e-%s-%d", suffix, time.Now().UnixNano()%1e9)
+	if st, b := apiCall(t, token, http.MethodPost, "/projects/"+slug+"/repos", map[string]any{
+		"slug": repoSlug, "name": repoSlug, "visibility": "private",
+	}); st != 200 && st != 201 {
+		t.Fatalf("create repo: %d %s", st, b)
+	}
+	return token, slug, repoSlug
+}
+
+func TestGitRoundtripAndPullRequest(t *testing.T) {
+	requireLive(t)
+	token, proj, repo := setupProjectRepo(t, "git")
+
+	// git token
+	st, b := apiCall(t, token, http.MethodPost, "/me/git-token", map[string]any{"name": "e2e"})
+	if st != 200 && st != 201 {
+		t.Fatalf("git token: %d %s", st, b)
+	}
+	cred := jbody(t, b)
+	tok, _ := cred["token"].(string)
+	if tok == "" {
+		t.Fatalf("git token response missing token: %s", b)
+	}
+	_, meB := apiCall(t, token, http.MethodGet, "/auth/me", nil)
+	username, _ := jbody(t, meB)["username"].(string)
+
+	// clone + commit + push over HTTPS
+	dir := t.TempDir()
+	cloneURL := fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo)
+	sh(t, dir, "git", "clone", cloneURL, "repo")
+	rdir := dir + "/repo"
+	sh(t, rdir, "git", "config", "user.email", "e2e@black-tulip.nl")
+	sh(t, rdir, "git", "config", "user.name", "e2e")
+	if err := os.WriteFile(rdir+"/README.md", []byte("# e2e\nhello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh(t, rdir, "git", "add", "README.md")
+	sh(t, rdir, "git", "commit", "-m", "e2e initial commit")
+	sh(t, rdir, "git", "branch", "-M", "main")
+	sh(t, rdir, "git", "push", "-u", "origin", "main")
+	// a feature branch for the PR
+	sh(t, rdir, "git", "checkout", "-b", "feature/e2e")
+	if err := os.WriteFile(rdir+"/feature.txt", []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh(t, rdir, "git", "add", "feature.txt")
+	sh(t, rdir, "git", "commit", "-m", "add feature")
+	sh(t, rdir, "git", "push", "-u", "origin", "feature/e2e")
+
+	// API sees the branches/commits/contents
+	for _, p := range []string{"/branches", "/commits", "/contents?ref=main"} {
+		if st, b := apiCall(t, token, http.MethodGet, "/projects/"+proj+"/repos/"+repo+p, nil); st >= 500 {
+			t.Errorf("GET %s: %d %s", p, st, b)
+		}
+	}
+
+	// open a PR
+	st, b = apiCall(t, token, http.MethodPost, "/projects/"+proj+"/repos/"+repo+"/pulls", map[string]any{
+		"title": "e2e PR", "body": "from e2e", "base": "main", "head": "feature/e2e",
+	})
+	if st != 200 && st != 201 {
+		t.Fatalf("create PR: %d %s", st, b)
+	}
+	pr := jbody(t, b)
+	num := prNumber(t, pr)
+	st, b = apiCall(t, token, http.MethodGet, "/projects/"+proj+"/repos/"+repo+"/pulls", nil)
+	if st != 200 {
+		t.Errorf("list PRs: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("/projects/%s/repos/%s/pulls/%d", proj, repo, int(num)), nil)
+	if st != 200 {
+		t.Errorf("get PR: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("/projects/%s/repos/%s/pulls/%d/diff", proj, repo, int(num)), nil)
+	if st >= 500 {
+		t.Errorf("PR diff: %d %s", st, b)
+	}
+	st, b = apiCall(t, token, http.MethodPost, fmt.Sprintf("/projects/%s/repos/%s/pulls/%d/comments", proj, repo, int(num)), map[string]any{"body": "e2e comment"})
+	if st != 200 && st != 201 {
+		t.Errorf("PR comment: %d %s", st, b)
+	}
+}
+
+func TestPipelines(t *testing.T) {
+	requireLive(t)
+	token, proj, repo := setupProjectRepo(t, "pipe")
+
+	base := "/projects/" + proj + "/repos/" + repo + "/pipelines"
+	if st, b := apiCall(t, token, http.MethodGet, base, nil); st >= 500 {
+		t.Errorf("list pipelines: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, base+"/runs", nil); st >= 500 {
+		t.Errorf("list runs: %d %s", st, b)
+	}
+	// trigger a run
+	st, b := apiCall(t, token, http.MethodPost, base, map[string]any{
+		"ref": "main", "steps": []string{"echo hello", "echo done"},
+	})
+	if st >= 500 {
+		t.Errorf("trigger run: %d %s", st, b)
+	}
+}
+
+func TestOrgsGroupsBillingPoliciesExport(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+
+	orgSlug := fmt.Sprintf("e2e-org-%d", time.Now().UnixNano()%1e9)
+	st, b := apiCall(t, token, http.MethodPost, "/orgs", map[string]any{"slug": orgSlug, "name": orgSlug})
+	if st != 200 && st != 201 && st != 409 {
+		t.Errorf("create org: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, "/orgs", nil); st >= 500 {
+		t.Errorf("list orgs: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, "/orgs/"+orgSlug+"/billing", nil); st >= 500 {
+		t.Errorf("org billing: %d %s", st, b)
+	}
+	// group create/list inside the org
+	if st, b := apiCall(t, token, http.MethodPost, "/orgs/"+orgSlug+"/groups", map[string]any{"name": "e2e-team"}); st >= 500 {
+		t.Errorf("create group: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, "/orgs/"+orgSlug+"/groups", nil); st >= 500 {
+		t.Errorf("list groups: %d %s", st, b)
+	}
+	// project policy set/get/delete on the personal project
+	st, b = apiCall(t, token, http.MethodGet, "/me/projects", nil)
+	projects := jbody(t, b)["projects"].([]any)
+	pslug, _ := projects[0].(map[string]any)["slug"].(string)
+	pol := "/projects/" + pslug + "/policies"
+	if st, b := apiCall(t, token, http.MethodPut, pol, map[string]any{"requireApprovals": 1}); st >= 500 {
+		t.Errorf("set policy: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodGet, pol, nil); st >= 500 {
+		t.Errorf("get policies: %d %s", st, b)
+	}
+	if st, b := apiCall(t, token, http.MethodDelete, pol, nil); st >= 500 && st != 404 {
+		t.Errorf("delete policy: %d %s", st, b)
+	}
+	// data export
+	if st, b := apiCall(t, token, http.MethodGet, "/me/export", nil); st >= 500 {
+		t.Errorf("export: %d %s", st, b)
+	}
+	// contributions
+	if st, b := apiCall(t, token, http.MethodGet, "/me/contributions", nil); st >= 500 {
+		t.Errorf("contributions: %d %s", st, b)
 	}
 }
