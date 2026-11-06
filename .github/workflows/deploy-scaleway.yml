@@ -14,7 +14,7 @@ name: Deploy to Scaleway (serverless)
 # Optional (transactional email via Brevo — invites/activation/password-reset):
 #   secrets: BREVO_SMTP_NAME, BREVO_SMTP_KEY
 #   vars:    BREVO_SMTP_FROM (default no-reply@<QUILL_DOMAIN>),
-#            BREVO_SMTP_HOST / BREVO_SMTP_PORT (defaults smtp-relay.brevo.com:587),
+#            BREVO_SMTP_HOST / BREVO_SMTP_PORT (defaults smtp-relay.brevo.com:2525),
 #            BREVO_SMTP_TEST_TO (send a test mail on deploy)
 
 on:
@@ -178,7 +178,7 @@ jobs:
                 environment:
                   FORGEJO__mailer__ENABLED: "true"
                   FORGEJO__mailer__MAILER_TYPE: smtp
-                  FORGEJO__mailer__HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '587' }}"
+                  FORGEJO__mailer__HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}"
                   FORGEJO__mailer__USER: "${{ secrets.BREVO_SMTP_NAME }}"
                   FORGEJO__mailer__PASSWD: "${{ secrets.BREVO_SMTP_KEY }}"
                   FORGEJO__mailer__FROM: "${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}"
@@ -186,7 +186,7 @@ jobs:
                   FORGEJO__mailer__IS_TLS_ENABLED: "false"
               zitadel:
                 environment:
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '587' }}"
+                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: "${{ secrets.BREVO_SMTP_NAME }}"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: "${{ secrets.BREVO_SMTP_KEY }}"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "true"
@@ -216,7 +216,7 @@ jobs:
         env:
           ZITADEL_URL: https://auth.${{ vars.QUILL_DOMAIN }}
           ZITADEL_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_TOKEN }}
-          SMTP_HOST: ${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '587' }}
+          SMTP_HOST: ${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}
           SMTP_USER: ${{ secrets.BREVO_SMTP_NAME }}
           SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY }}
           SMTP_FROM: ${{ vars.BREVO_SMTP_FROM }}

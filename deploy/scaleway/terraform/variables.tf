@@ -195,9 +195,9 @@ variable "brevo_smtp_host" {
 }
 
 variable "brevo_smtp_port" {
-  description = "Brevo SMTP port. 587 = STARTTLS (recommended), 465 = implicit TLS."
+  description = "Brevo SMTP port. 2525 = STARTTLS (587/465 are blocked on Scaleway egress — verified: connection timeout from the VM, 2525 open)."
   type        = number
-  default     = 587
+  default     = 2525
 }
 
 variable "brevo_smtp_user" {
