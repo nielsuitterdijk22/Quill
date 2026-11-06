@@ -214,7 +214,7 @@ variable "brevo_smtp_password" {
 }
 
 variable "brevo_smtp_from" {
-  description = "Sender address. Defaults to no-reply@<domain>. The domain must be authenticated in Brevo."
+  description = "Sender address. Defaults to info@<parent of domain> (the parent is the Brevo-authenticated domain). The domain must be authenticated in Brevo."
   type        = string
   default     = ""
 }

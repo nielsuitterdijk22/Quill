@@ -13,7 +13,7 @@ name: Deploy to Scaleway (serverless)
 #            NEXT_PUBLIC_ZITADEL_CLIENT_ID, NEXT_PUBLIC_ZITADEL_PROJECT_ID
 # Optional (transactional email via Brevo — invites/activation/password-reset):
 #   secrets: BREVO_SMTP_NAME, BREVO_SMTP_KEY
-#   vars:    BREVO_SMTP_FROM (default no-reply@<QUILL_DOMAIN>),
+#   vars:    BREVO_SMTP_FROM (default info@<parent of QUILL_DOMAIN>),
 #            BREVO_SMTP_HOST / BREVO_SMTP_PORT (defaults smtp-relay.brevo.com:2525),
 #            BREVO_SMTP_TEST_TO (send a test mail on deploy)
 
@@ -167,6 +167,10 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/quill
+            SMTP_FROM="${{ vars.BREVO_SMTP_FROM }}"
+            if [ -z "$SMTP_FROM" ]; then
+              SMTP_FROM="info@$(echo '${{ vars.QUILL_DOMAIN }}' | cut -d. -f2-)"
+            fi
             # Transactional mail (Brevo): compose auto-merges docker-compose.override.yml.
             # Forgejo reads [mailer] env on every start; Zitadel's env-based SMTP only
             # applies at instance creation, so the mail-config job also pushes the same
@@ -181,7 +185,7 @@ jobs:
                   FORGEJO__mailer__HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}"
                   FORGEJO__mailer__USER: "${{ secrets.BREVO_SMTP_NAME }}"
                   FORGEJO__mailer__PASSWD: "${{ secrets.BREVO_SMTP_KEY }}"
-                  FORGEJO__mailer__FROM: "${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}"
+                  FORGEJO__mailer__FROM: "__SMTP_FROM__"
                   FORGEJO__mailer__SUBJECT_PREFIX: "[Quill] "
                   FORGEJO__mailer__IS_TLS_ENABLED: "false"
               zitadel:
@@ -190,10 +194,11 @@ jobs:
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: "${{ secrets.BREVO_SMTP_NAME }}"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: "${{ secrets.BREVO_SMTP_KEY }}"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "true"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: "${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}"
+                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: "__SMTP_FROM__"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: "Quill"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_REPLYTOADDRESS: "${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}"
+                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_REPLYTOADDRESS: "__SMTP_FROM__"
             YAML
+              sudo sed -i "s|__SMTP_FROM__|${SMTP_FROM}|g" docker-compose.override.yml
               sudo chmod 600 docker-compose.override.yml
             else
               sudo rm -f docker-compose.override.yml
@@ -228,7 +233,7 @@ jobs:
             echo "BREVO_SMTP_NAME / BREVO_SMTP_KEY not set — skipping mail config (email disabled)"
             exit 0
           fi
-          export SMTP_FROM="${SMTP_FROM:-no-reply@${QUILL_DOMAIN}}"
+          export SMTP_FROM="${SMTP_FROM:-info@$(echo "$QUILL_DOMAIN" | cut -d. -f2-)}"
           deploy/scaleway/scripts/zitadel-smtp.sh
 
   provision:

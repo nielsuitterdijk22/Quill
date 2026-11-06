@@ -94,7 +94,7 @@ Repo **vars**: `QUILL_DOMAIN`, `SCW_REGION`, `SCW_PROJECT_ID`, `BACKUP_BUCKET`,
 `REGISTRY`, `LETSENCRYPT_EMAIL`, `VM_IP`, `NEXT_PUBLIC_ZITADEL_ISSUER` (=`https://auth.<domain>`),
 `NEXT_PUBLIC_ZITADEL_CLIENT_ID`, `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (from the Zitadel console).
 Optional, for transactional email (see below): secrets `BREVO_SMTP_NAME` /
-`BREVO_SMTP_KEY`, vars `BREVO_SMTP_FROM` (default `no-reply@<domain>`),
+`BREVO_SMTP_KEY`, vars `BREVO_SMTP_FROM` (default `info@<parent domain>` — the Brevo-authenticated one),
 `BREVO_SMTP_HOST`/`BREVO_SMTP_PORT` (default `smtp-relay.brevo.com:587`),
 `BREVO_SMTP_TEST_TO` (send a test mail on each deploy).
 
@@ -115,7 +115,7 @@ One-time setup:
    - the DKIM CNAMEs exactly as shown in the Brevo dashboard
    - optional TXT on `_dmarc`: `v=DMARC1; p=none`
 3. GitHub: secrets `BREVO_SMTP_NAME` = SMTP login, `BREVO_SMTP_KEY` = SMTP
-   key; optionally var `BREVO_SMTP_FROM` (default `no-reply@<domain>`) and
+   key; optionally var `BREVO_SMTP_FROM` (default `info@<parent domain>` — the Brevo-authenticated one) and
    `BREVO_SMTP_TEST_TO` (a mailbox to receive a test mail on each deploy).
 4. Re-run **Deploy to Scaleway (serverless)** (workflow_dispatch). The workflow
    passes the creds to `terraform apply` (Secret Manager + cloud-init for VM
