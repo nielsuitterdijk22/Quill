@@ -7,7 +7,10 @@ locals {
 }
 
 resource "scaleway_secret" "s" {
-  for_each = toset([
+  # Brevo SMTP entries only exist when credentials are configured
+  # (local.brevo_enabled), so disabling email removes them instead of
+  # overwriting them with empty values.
+  for_each = toset(concat([
     "app/jwt-secret",
     "app/secret-encryption-key",
     "app/webhook-secret",
@@ -22,10 +25,11 @@ resource "scaleway_secret" "s" {
     "backup/s3-access-key",
     "backup/s3-secret-key",
     "vm/ssh-private-key",
+    ], local.brevo_enabled ? [
     "mail/brevo-smtp-user",
     "mail/brevo-smtp-password",
     "mail/brevo-smtp-from",
-  ])
+  ] : []))
 
   name       = replace(each.value, "/", "-")
   path       = "${local.secret_path_prefix}/${split("/", each.value)[0]}"

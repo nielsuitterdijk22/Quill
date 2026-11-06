@@ -76,6 +76,13 @@ resource "scaleway_iam_api_key" "backup" {
   application_id     = scaleway_iam_application.backup.id
   description        = "S3 credentials for the backup job + Forgejo VM backup sidecar"
   default_project_id = scaleway_account_project.quill.id
+
+  lifecycle {
+    # The API returns a server-side expires_at that drifts, which otherwise
+    # forces a replace on every apply — and destroying the already-expired old
+    # key fails with 412 "cannot act on deleted resource".
+    ignore_changes = [expires_at]
+  }
 }
 
 # ---- SSH key for the Forgejo VM -----------------------------------------------------

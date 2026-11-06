@@ -49,7 +49,9 @@ locals {
 
   # Transactional email via Brevo. Enabled only when credentials are supplied
   # (CI: GH secrets BREVO_SMTP_NAME / BREVO_SMTP_KEY).
-  brevo_enabled   = var.brevo_smtp_user != "" && var.brevo_smtp_password != ""
+  # nonsensitive(): the secret-derived bool must not be sensitive, or it can't
+  # be used in for_each (secrets.tf) / template conditionals
+  brevo_enabled   = nonsensitive(var.brevo_smtp_user != "" && var.brevo_smtp_password != "")
   brevo_from      = var.brevo_smtp_from != "" ? var.brevo_smtp_from : "no-reply@${var.domain}"
   brevo_host_port = "${var.brevo_smtp_host}:${var.brevo_smtp_port}"
 }
