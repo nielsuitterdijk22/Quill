@@ -172,7 +172,6 @@ jobs:
             # applies at instance creation, so the mail-config job also pushes the same
             # settings through the admin API on the running instance.
             if [ -n "${{ secrets.BREVO_SMTP_KEY }}" ]; then
-              umask 077
               sudo tee docker-compose.override.yml >/dev/null <<'YAML'
             services:
               forgejo:
@@ -195,12 +194,13 @@ jobs:
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: "Quill"
                   ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_REPLYTOADDRESS: "${{ vars.BREVO_SMTP_FROM || format('no-reply@{0}', vars.QUILL_DOMAIN) }}"
             YAML
+              sudo chmod 600 docker-compose.override.yml
             else
               sudo rm -f docker-compose.override.yml
             fi
-            docker compose pull
-            docker compose up -d
-            docker image prune -f >/dev/null 2>&1 || true
+            sudo docker compose pull
+            sudo docker compose up -d
+            sudo docker image prune -f >/dev/null 2>&1 || true
 
   mail-config:
     name: Configure Zitadel SMTP (Brevo) via admin API
