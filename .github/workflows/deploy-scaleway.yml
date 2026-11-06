@@ -137,7 +137,11 @@ jobs:
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
         run: |
           terraform apply -auto-approve -input=false \
-            -var "image_tag=${{ github.sha }}" \
+            # Pin the tag to "latest": Scaleway auto-redeploys containers when the
+            # referenced tag is re-pushed, and a per-sha tag makes terraform try to
+            # update the container on every run, which intermittently 412s with
+            # "cannot act on deleted resource" during Scaleway redeploys.
+            -var "image_tag=latest" \
             -var "domain=${{ vars.QUILL_DOMAIN }}" \
             -var "backup_bucket_name=${{ vars.BACKUP_BUCKET }}" \
             -var "letsencrypt_email=${{ vars.LETSENCRYPT_EMAIL }}" \
