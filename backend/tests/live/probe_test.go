@@ -1,8 +1,6 @@
 package live
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -111,40 +109,4 @@ func TestWebRepositoriesPage(t *testing.T) {
 	if !strings.Contains(body, "e2e-git") {
 		t.Errorf("repositories page does not render repos (len=%d)", len(body))
 	}
-}
-
-// TestCleanupE2E deletes the e2e tester account, which purges its owned
-// projects/repos/orgs (GDPR account deletion path).
-func TestCleanupE2E(t *testing.T) {
-	requireLive(t)
-	token := login(t)
-	st, b := apiCall(t, token, http.MethodDelete, "/auth/me", nil)
-	fmt.Printf("DELETE /auth/me: %d %.200s\n", st, b)
-	if st >= 500 {
-		t.Errorf("delete account: %d %s", st, b)
-	}
-}
-
-func TestDebugTokenClaims(t *testing.T) {
-	requireLive(t)
-	token := login(t)
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		t.Fatalf("not a JWT")
-	}
-	pad := func(s string) string {
-		for len(s)%4 != 0 {
-			s += "="
-		}
-		return s
-	}
-	var claims map[string]any
-	b, err := base64.URLEncoding.DecodeString(pad(parts[1]))
-	if err != nil {
-		t.Fatal(err)
-	}
-	json.Unmarshal(b, &claims)
-	fmt.Printf("TOKEN iss=%v aud=%v exp=%v sub=%v\n", claims["iss"], claims["aud"], claims["exp"], claims["sub"])
-	st, b2 := apiCall(t, token, http.MethodGet, "/auth/me", nil)
-	fmt.Printf("auth/me: %d %.200s\n", st, b2)
 }

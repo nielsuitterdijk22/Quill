@@ -17,6 +17,10 @@ type User struct {
 	Login    string `json:"login"`
 	Email    string `json:"email"`
 	FullName string `json:"full_name"`
+	// Type distinguishes a real user ("User") from an organization ("Organization") —
+	// GET /users/{name} resolves orgs too, which once caused a re-registered user to
+	// be linked to a leftover org row instead of a fresh user.
+	Type string `json:"type"`
 }
 
 // Org is a Forgejo organization. The REST API exposes the handle as both "name"

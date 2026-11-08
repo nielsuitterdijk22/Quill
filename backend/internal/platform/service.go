@@ -231,7 +231,28 @@ func (s *Service) provisionForgejoUser(ctx context.Context, user db.User) error 
 		if getErr != nil {
 			return fmt.Errorf("create forgejo user: %w", err)
 		}
-		fjUser = existing
+		// GET /users/{name} also resolves ORGANIZATIONS. After an account purge the
+		// user's row is gone but a leftover org with the same handle can remain, and
+		// linking to it breaks git auth (orgs have no password). Remove the stale org
+		// and retry the user creation once.
+		if existing.Type != "" && existing.Type != "User" {
+			s.logger.Warn("forgejo provisioning: name held by a non-user entity; removing stale org and retrying",
+				"username", user.Username, "type", existing.Type)
+			if derr := s.forgejo.DeleteOrg(ctx, existing.Login); derr != nil && !forgejo.NotFound(derr) {
+				return fmt.Errorf("create forgejo user: name held by %s %q: %w", existing.Type, existing.Login, err)
+			}
+			fjUser, err = s.forgejo.CreateUser(ctx, forgejo.CreateUserOptions{
+				Username:           user.Username,
+				Email:              user.Email,
+				Password:           func() string { s, _ := randomToken(24); return s }(),
+				MustChangePassword: false,
+			})
+			if err != nil {
+				return fmt.Errorf("create forgejo user after removing stale org: %w", err)
+			}
+		} else {
+			fjUser = existing
+		}
 	}
 	_, err = s.store.SetUserForgejoLink(ctx, db.SetUserForgejoLinkParams{
 		ID:              user.ID,
