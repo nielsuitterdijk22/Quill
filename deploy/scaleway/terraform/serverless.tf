@@ -63,6 +63,10 @@ resource "scaleway_container" "api" {
     FORGEJO_BASE_URL           = "https://${local.git_host}"
     FORGEJO_PUBLIC_URL         = "https://${local.git_host}"
     QUILL_CORS_ALLOWED_ORIGINS = "https://${local.app_host}"
+    # The GitHub import OAuth cookies must be shared between the app host (where
+    # the flow starts via the frontend rewrite) and the API host (where the
+    # GitHub OAuth callback lands), so they get the parent domain.
+    QUILL_COOKIE_DOMAIN = var.domain
     QUILL_AUTH_PROVIDER        = "zitadel"
     ZITADEL_ISSUER             = "https://${local.auth_host}"
     # The api triggers pipelines by calling the dispatcher on the Forgejo VM

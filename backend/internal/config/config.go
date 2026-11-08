@@ -49,6 +49,14 @@ type Config struct {
 	SecretEncryptionKey string
 
 	CORSAllowedOrigins []string
+
+	// CookieDomain is the Domain attribute stamped on the short-lived GitHub
+	// import OAuth cookies (state/token/project). The OAuth start is initiated
+	// through the frontend rewrite (app host) while GitHub redirects back to the
+	// API host, so host-only cookies split across the two origins and the state
+	// check fails. Empty keeps host-only cookies (fine for localhost dev where
+	// both sides share one host).
+	CookieDomain string
 }
 
 // JWTConfig configures Quill-issued access tokens (used from PR 3 onward).
@@ -194,6 +202,7 @@ func Load() (*Config, error) {
 		WebhookSecret:       getenv("QUILL_WEBHOOK_SECRET", ""),
 		SecretEncryptionKey: getenv("QUILL_SECRET_ENCRYPTION_KEY", ""),
 		CORSAllowedOrigins:  getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
+		CookieDomain:        getenv("QUILL_COOKIE_DOMAIN", ""),
 	}
 
 	// Placeholder values must never reach GitHub: terraform's default is

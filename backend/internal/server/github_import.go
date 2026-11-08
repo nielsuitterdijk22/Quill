@@ -27,6 +27,30 @@ const (
 	tokenCookieTTL      = 15 * time.Minute
 )
 
+// flowCookie builds one of the short-lived GitHub import flow cookies. They all
+// carry the configured CookieDomain (when set): the OAuth start happens through
+// the frontend rewrite authority while the GitHub callback lands on the API
+// host, so host-only cookies would never meet on either side of the flow.
+func (s *Server) flowCookie(name, value string, maxAge int) *http.Cookie {
+	c := &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.cfg.IsProduction(),
+	}
+	if s.cfg.CookieDomain != "" {
+		c.Domain = s.cfg.CookieDomain
+	}
+	return c
+}
+
+func (s *Server) setFlowCookie(w http.ResponseWriter, name, value string, maxAge int) {
+	http.SetCookie(w, s.flowCookie(name, value, maxAge))
+}
+
 // ---- token cookie encryption ------------------------------------------------
 
 // cookieKey derives a 32-byte AES key from the JWT secret via SHA-256.
@@ -113,29 +137,13 @@ func (s *Server) handleGitHubOAuthRedirect(w http.ResponseWriter, r *http.Reques
 	_, _ = io.ReadFull(rand.Reader, b)
 	state := base64.URLEncoding.EncodeToString(b)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     githubStateCookie,
-		Value:    state,
-		Path:     "/",
-		MaxAge:   int(tokenCookieTTL.Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   s.cfg.IsProduction(),
-	})
+	s.setFlowCookie(w, githubStateCookie, state, int(tokenCookieTTL.Seconds()))
 
 	// Remember which project the user chose to import into (if any) so the
 	// callback can send them back to the same target after the OAuth
 	// round-trip, which otherwise drops all query params.
 	if project := r.URL.Query().Get("project"); project != "" {
-		http.SetCookie(w, &http.Cookie{
-			Name:     githubProjectCookie,
-			Value:    project,
-			Path:     "/",
-			MaxAge:   int(tokenCookieTTL.Seconds()),
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			Secure:   s.cfg.IsProduction(),
-		})
+		s.setFlowCookie(w, githubProjectCookie, project, int(tokenCookieTTL.Seconds()))
 	}
 
 	q := url.Values{}
@@ -154,7 +162,7 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 		s.redirectOnboardingError(w, r, http.StatusBadRequest, "invalid_state", "OAuth state mismatch")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: githubStateCookie, MaxAge: -1, Path: "/"})
+	s.setFlowCookie(w, githubStateCookie, "", -1)
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
@@ -176,22 +184,14 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     githubTokenCookie,
-		Value:    enc,
-		Path:     "/",
-		MaxAge:   int(tokenCookieTTL.Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   s.cfg.IsProduction(),
-	})
+	s.setFlowCookie(w, githubTokenCookie, enc, int(tokenCookieTTL.Seconds()))
 
 	// Redirect back to the frontend onboarding flow, preserving the target
 	// project chosen before the OAuth round-trip, if any.
 	redirectQuery := url.Values{"step": {"import"}}
 	if projectCookie, err := r.Cookie(githubProjectCookie); err == nil && projectCookie.Value != "" {
 		redirectQuery.Set("project", projectCookie.Value)
-		http.SetCookie(w, &http.Cookie{Name: githubProjectCookie, MaxAge: -1, Path: "/"})
+		s.setFlowCookie(w, githubProjectCookie, "", -1)
 	}
 
 	target := "/onboarding?" + redirectQuery.Encode()
@@ -395,7 +395,7 @@ func (s *Server) handleImportGitHubRepos(w http.ResponseWriter, r *http.Request)
 	wg.Wait()
 
 	// Clear the GitHub token cookie — it's single-use for the import flow.
-	http.SetCookie(w, &http.Cookie{Name: githubTokenCookie, MaxAge: -1, Path: "/"})
+	s.setFlowCookie(w, githubTokenCookie, "", -1)
 
 	httpx.JSON(w, http.StatusOK, map[string]any{"results": results})
 }
