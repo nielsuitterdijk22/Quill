@@ -110,3 +110,15 @@ func TestWebRepositoriesPage(t *testing.T) {
 		t.Errorf("repositories page does not render repos (len=%d)", len(body))
 	}
 }
+
+// TestCleanupE2E deletes the e2e tester account, which purges its owned
+// projects/repos/orgs (GDPR account deletion path).
+func TestCleanupE2E(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+	st, b := apiCall(t, token, http.MethodDelete, "/auth/me", nil)
+	fmt.Printf("DELETE /auth/me: %d %.200s\n", st, b)
+	if st >= 500 {
+		t.Errorf("delete account: %d %s", st, b)
+	}
+}
