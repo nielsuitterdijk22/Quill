@@ -2,6 +2,7 @@ package forgejo_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -151,5 +152,38 @@ func TestGetOrCreateOrg_PropagatesNon404(t *testing.T) {
 
 	if _, err := c.GetOrCreateOrg(context.Background(), forgejo.CreateOrgOptions{Name: "acme"}); err == nil {
 		t.Fatal("expected error to propagate on 500")
+	}
+}
+
+// Forgejo 15 rejects an admin user-edit that sets login_name without source_id
+// ("source_id and login_name must be specified together", 422). SetUserPassword
+// only changes the password, so the body must contain password only.
+func TestSetUserPassword_SendsPasswordOnly(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch && r.URL.Path == "/api/v1/admin/users/bob" {
+			b, _ := io.ReadAll(r.Body)
+			gotBody = string(b)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+	})
+
+	if err := c.SetUserPassword(context.Background(), "bob", "s3cr3t"); err != nil {
+		t.Fatalf("SetUserPassword: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(gotBody), &m); err != nil {
+		t.Fatalf("body not JSON: %q", gotBody)
+	}
+	if m["password"] != "s3cr3t" {
+		t.Fatalf("password = %v, want s3cr3t", m["password"])
+	}
+	if _, ok := m["login_name"]; ok {
+		t.Fatalf("login_name must be omitted (Forgejo 422s on login_name without source_id): %s", gotBody)
+	}
+	if _, ok := m["source_id"]; ok {
+		t.Fatalf("source_id must be omitted: %s", gotBody)
 	}
 }

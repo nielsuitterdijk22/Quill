@@ -12,11 +12,13 @@ import (
 // Quill mediates all Forgejo access via the admin token, but git-over-HTTP needs
 // a credential the user themselves holds, so Quill issues them a scoped token.
 
-// editUserOptions is the admin user-edit payload. Forgejo's admin edit endpoint
-// requires LoginName and SourceID even when only the password is changing.
+// editUserOptions is the admin user-edit payload. Forgejo 15 validates that
+// login_name and source_id are set together ("source_id and login_name must be
+// specified together"), so when only the password changes, both must be omitted
+// (omitempty) — sending login_name with source_id: 0 gets a 422.
 type editUserOptions struct {
-	LoginName string `json:"login_name"`
-	SourceID  int64  `json:"source_id"`
+	LoginName string `json:"login_name,omitempty"`
+	SourceID  int64  `json:"source_id,omitempty"`
 	Password  string `json:"password,omitempty"`
 }
 
@@ -24,7 +26,7 @@ type editUserOptions struct {
 // short-lived password so it can authenticate as the user to mint a git token;
 // the password is then discarded.
 func (c *Client) SetUserPassword(ctx context.Context, username, password string) error {
-	body := editUserOptions{LoginName: username, SourceID: 0, Password: password}
+	body := editUserOptions{Password: password}
 	return c.do(ctx, http.MethodPatch, "/admin/users/"+url.PathEscape(username), body, nil)
 }
 

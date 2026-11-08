@@ -1,6 +1,8 @@
 package live
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,4 +123,28 @@ func TestCleanupE2E(t *testing.T) {
 	if st >= 500 {
 		t.Errorf("delete account: %d %s", st, b)
 	}
+}
+
+func TestDebugTokenClaims(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("not a JWT")
+	}
+	pad := func(s string) string {
+		for len(s)%4 != 0 {
+			s += "="
+		}
+		return s
+	}
+	var claims map[string]any
+	b, err := base64.URLEncoding.DecodeString(pad(parts[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	json.Unmarshal(b, &claims)
+	fmt.Printf("TOKEN iss=%v aud=%v exp=%v sub=%v\n", claims["iss"], claims["aud"], claims["exp"], claims["sub"])
+	st, b2 := apiCall(t, token, http.MethodGet, "/auth/me", nil)
+	fmt.Printf("auth/me: %d %.200s\n", st, b2)
 }

@@ -724,10 +724,15 @@ func TestPRReviewAndMerge(t *testing.T) {
 
 	// push main + feature branch
 	st, b := apiCall(t, token, http.MethodPost, "/me/git-token", map[string]any{"name": "e2e"})
+	if st != 200 && st != 201 {
+		t.Fatalf("git token: %d %s", st, b)
+	}
 	cred := jbody(t, b)
 	tok, _ := cred["token"].(string)
-	_, meB := apiCall(t, token, http.MethodGet, "/auth/me", nil)
-	username, _ := jbody(t, meB)["username"].(string)
+	username, _ := cred["username"].(string)
+	if tok == "" {
+		t.Fatalf("git token empty: %s", b)
+	}
 	dir := t.TempDir()
 	sh(t, dir, "git", "clone", fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo), "r")
 	rd := dir + "/r"
