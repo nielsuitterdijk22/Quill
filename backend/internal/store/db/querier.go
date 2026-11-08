@@ -104,6 +104,8 @@ type Querier interface {
 	ListRunsByPipeline(ctx context.Context, arg ListRunsByPipelineParams) ([]PipelineRun, error)
 	ListRunsByRepo(ctx context.Context, arg ListRunsByRepoParams) ([]PipelineRun, error)
 	ListStepsByJob(ctx context.Context, jobID uuid.UUID) ([]PipelineStep, error)
+	ListOrgTenantsBySlugLike(ctx context.Context, slug string) ([]ListOrgTenantsBySlugLikeRow, error)
+	ListProjectsByTenantID(ctx context.Context, tenantID uuid.UUID) ([]Project, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error)
 	NextRunNumber(ctx context.Context, pipelineID uuid.UUID) (int32, error)
 	RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberParams) error

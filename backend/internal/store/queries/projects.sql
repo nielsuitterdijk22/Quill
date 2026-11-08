@@ -82,3 +82,8 @@ WHERE EXISTS (
     WHERE tm.tenant_id = p.tenant_id AND tm.user_id = $1
   )
 ORDER BY p.slug;
+
+-- name: ListProjectsByTenantID :many
+SELECT * FROM projects
+WHERE tenant_id = $1
+ORDER BY slug;

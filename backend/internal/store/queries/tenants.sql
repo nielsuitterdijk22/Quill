@@ -26,3 +26,12 @@ FROM tenant_members m
 JOIN tenants t ON t.id = m.tenant_id
 WHERE m.user_id = $1 AND t.kind = 'org'
 ORDER BY t.name;
+
+-- name: ListOrgTenantsBySlugLike :many
+-- Org tenants whose slug matches a LIKE pattern — used by ops tooling (e.g.
+-- purging live-e2e debris tenants). Columns are listed explicitly to match the
+-- Tenant model (the kind filter is a WHERE, not a projection).
+SELECT id, slug, name, external_org_id, plan, created_at, updated_at
+FROM tenants
+WHERE kind = 'org' AND slug LIKE $1
+ORDER BY slug;

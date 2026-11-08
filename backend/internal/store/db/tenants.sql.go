@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -163,4 +164,52 @@ func (q *Queries) GetTenantBySlug(ctx context.Context, lower string) (Tenant, er
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listOrgTenantsBySlugLike = `-- name: ListOrgTenantsBySlugLike :many
+SELECT id, slug, name, external_org_id, plan, created_at, updated_at
+FROM tenants
+WHERE kind = 'org' AND slug LIKE $1
+ORDER BY slug
+`
+
+type ListOrgTenantsBySlugLikeRow struct {
+	ID            uuid.UUID   `json:"id"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	ExternalOrgID pgtype.Text `json:"externalOrgId"`
+	Plan          string      `json:"plan"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	UpdatedAt     time.Time   `json:"updatedAt"`
+}
+
+// Org tenants whose slug matches a LIKE pattern — used by ops tooling (e.g.
+// purging live-e2e debris tenants). Columns are listed explicitly to match the
+// Tenant model (the kind filter is a WHERE, not a projection).
+func (q *Queries) ListOrgTenantsBySlugLike(ctx context.Context, slug string) ([]ListOrgTenantsBySlugLikeRow, error) {
+	rows, err := q.db.Query(ctx, listOrgTenantsBySlugLike, slug)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrgTenantsBySlugLikeRow{}
+	for rows.Next() {
+		var i ListOrgTenantsBySlugLikeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.ExternalOrgID,
+			&i.Plan,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

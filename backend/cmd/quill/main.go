@@ -13,6 +13,8 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/logging"
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
 
@@ -45,10 +47,12 @@ Usage:
   quill admin create-repo --tenant <id-or-slug> --name <name> [--description <text>] [--visibility public|internal|private]
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --content <text> [--branch <ref>]
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --file <path-or--> [--branch <ref>]
+  quill admin purge-e2e --confirm
 
 Commands:
   admin create-repo  create a repository in the tenant's Forgejo org and record it in Postgres
   admin seed-file    create or update a file in a repository via the Forgejo API, committing as an admin seed
+  admin purge-e2e    delete live-e2e debris: tenants/projects/repos whose slug starts with e2e- (never users)
 
 seed-file content comes from --content (inline text) or --file (a file path, or '-' to read stdin).
 
@@ -63,16 +67,53 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e)")
 	}
 	switch args[0] {
 	case "create-repo":
 		return runCreateRepo(args[1:])
 	case "seed-file":
 		return runSeedFile(args[1:])
+	case "purge-e2e":
+		return runPurgeE2e(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e)", args[0])
 	}
+}
+
+// runPurgeE2e removes live-e2e debris (tenants/projects/repos with the e2e-
+// slug prefix) from the deployment — see platform.PurgeE2eDebris. Refuses to
+// run without --confirm so a bare invocation is a dry "did you mean" check.
+func runPurgeE2e(args []string) error {
+	fs := flag.NewFlagSet("purge-e2e", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	confirm := fs.Bool("confirm", false, "actually delete the debris (required)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if !*confirm {
+		return fmt.Errorf("purge-e2e: pass --confirm to delete e2e-prefixed tenants, projects and repos")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	ctx := context.Background()
+	st, err := store.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer st.Close()
+
+	svc := platform.NewService(st, forgejo.New(cfg.Forgejo), logging.New("info", "text"))
+	report, err := svc.PurgeE2eDebris(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("purged %d tenant(s), %d project(s), %d repo(s)\n", report.Tenants, report.Projects, report.Repos)
+	fmt.Println("re-run until the counts are zero to catch best-effort leftovers")
+	return nil
 }
 
 func runCreateRepo(args []string) error {

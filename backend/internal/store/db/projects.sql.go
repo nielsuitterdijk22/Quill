@@ -382,3 +382,39 @@ func (q *Queries) ListVisibleProjectsForUserWithRole(ctx context.Context, userID
 	}
 	return items, nil
 }
+
+const listProjectsByTenantID = `-- name: ListProjectsByTenantID :many
+SELECT id, tenant_id, slug, name, description, forgejo_org_name, created_at, updated_at, is_personal FROM projects
+WHERE tenant_id = $1
+ORDER BY slug
+`
+
+func (q *Queries) ListProjectsByTenantID(ctx context.Context, tenantID uuid.UUID) ([]Project, error) {
+	rows, err := q.db.Query(ctx, listProjectsByTenantID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.ForgejoOrgName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsPersonal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
