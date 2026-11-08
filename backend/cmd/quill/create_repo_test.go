@@ -132,8 +132,13 @@ var _ storeLike = (*fakeStore)(nil)
 func newTestForgejo(t *testing.T, createErr error, htmlURL string) (*forgejo.Client, *httptest.Server) {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/orgs/", func(w http.ResponseWriter, r *http.Request) {
-		rest := strings.TrimPrefix(r.URL.Path, "/api/v1/orgs/")
+	// Serve the exact path too: the real Forgejo API registers POST /api/v1/orgs
+	// without a trailing slash, and Go's ServeMux (pre-1.26) would otherwise 301
+	// the exact path over to the subtree pattern, where http.Client follows the
+	// redirect as a GET and this stub 404s it.
+	orgsHandler := func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/api/v1/orgs")
+		rest = strings.TrimPrefix(rest, "/")
 		if r.Method == http.MethodPost && strings.HasSuffix(rest, "/repos") {
 			if createErr != nil {
 				w.WriteHeader(http.StatusConflict)
@@ -155,7 +160,9 @@ func newTestForgejo(t *testing.T, createErr error, htmlURL string) (*forgejo.Cli
 		}
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, `{"message":"not found"}`)
-	})
+	}
+	mux.HandleFunc("/api/v1/orgs", orgsHandler)
+	mux.HandleFunc("/api/v1/orgs/", orgsHandler)
 	mux.HandleFunc("/api/v1/repos/", func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/repos/"), "/")
 		name := "suite-meta"
