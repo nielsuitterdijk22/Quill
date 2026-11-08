@@ -231,25 +231,26 @@ func (s *Service) provisionForgejoUser(ctx context.Context, user db.User) error 
 		if getErr != nil {
 			return fmt.Errorf("create forgejo user: %w", err)
 		}
-		// GET /users/{name} also resolves ORGANIZATIONS. After an account purge the
-		// user's row is gone but a leftover org with the same handle can remain, and
+		// GET /users/{name} also resolves ORGANIZATIONS (and this build's user JSON
+		// carries no "type" field), so detect a stale org via GET /orgs/{name}. After
+		// an account purge the user row is gone but a same-named org can remain, and
 		// linking to it breaks git auth (orgs have no password). Remove the stale org
 		// and retry the user creation once.
-		if existing.Type != "" && existing.Type != "User" {
-			s.logger.Warn("forgejo provisioning: name held by a non-user entity; removing stale org and retrying",
-				"username", user.Username, "type", existing.Type)
-			// A purged account can leave an org with orphaned repos behind (the purge
-			// removes the Quill rows but the Forgejo org blocks the name). Delete its
-			// leftover repos first — Forgejo refuses to delete a non-empty org.
-			if repos, lerr := s.forgejo.ListOrgRepos(ctx, existing.Login); lerr == nil {
+		if _, orgErr := s.forgejo.GetOrg(ctx, user.Username); orgErr == nil {
+			s.logger.Warn("forgejo provisioning: name held by a leftover org; removing it and retrying",
+				"username", user.Username)
+			// The purged account's Quill rows are gone but the org may still own
+			// orphaned repos; Forgejo refuses to delete a non-empty org (500), so
+			// delete them first.
+			if repos, lerr := s.forgejo.ListOrgRepos(ctx, user.Username); lerr == nil {
 				for _, r := range repos {
-					if derr := s.forgejo.DeleteRepo(ctx, existing.Login, r.Name); derr != nil && !forgejo.NotFound(derr) {
+					if derr := s.forgejo.DeleteRepo(ctx, user.Username, r.Name); derr != nil && !forgejo.NotFound(derr) {
 						s.logger.Warn("forgejo provisioning: delete stale org repo failed", "repo", r.FullName, "error", derr)
 					}
 				}
 			}
-			if derr := s.forgejo.DeleteOrg(ctx, existing.Login); derr != nil && !forgejo.NotFound(derr) {
-				return fmt.Errorf("create forgejo user: name held by %s %q: %w", existing.Type, existing.Login, err)
+			if derr := s.forgejo.DeleteOrg(ctx, user.Username); derr != nil && !forgejo.NotFound(derr) {
+				return fmt.Errorf("create forgejo user: stale org %q blocks the name: %w", user.Username, err)
 			}
 			fjUser, err = s.forgejo.CreateUser(ctx, forgejo.CreateUserOptions{
 				Username:           user.Username,
