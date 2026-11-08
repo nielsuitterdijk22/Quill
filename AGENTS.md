@@ -151,13 +151,20 @@ container hot and burned SDB CPU); cancel them (`cron list` / `cron cancel` in t
 tooling) once a check is green.
 
 ### Known open items
-- GitHub repo import: the api answers `not_configured` until real OAuth creds reach the
-  api container. Fastest path: put `github_client_id` / `github_client_secret` in
-  `deploy/scaleway/terraform/terraform.tfvars` (gitignored) and `terraform apply`
-  locally; the CI workflow also passes them from Actions secrets (tries
-  `GH_CLIENT_ID`/`GH_OAUTH_CLIENT_ID`/`GH_OAUTH_CLIENTID`/`GH_APP_CLIENT_ID` and secret
-  counterparts). OAuth app callback must be
-  `https://api.black-tulip.nl/api/v1/auth/github/callback`. Verify with
-  `curl -sI https://api.black-tulip.nl/api/v1/auth/github` → 302 to github.com.
+- GitHub repo import: OAuth creds are live (the api 302s to github.com) and the
+  cross-host cookie bug is fixed (2026-11-08): the flow cookies carry
+  `Domain=black-tulip.nl` via `QUILL_COOKIE_DOMAIN` (terraform sets it from
+  `var.domain`) because the flow starts on the `app` host via the frontend
+  rewrite while the OAuth app callback lands on the `api` host. The GitHub OAuth
+  app callback must stay `https://api.black-tulip.nl/api/v1/auth/github/callback`.
+  Still unverified with a real GitHub authorization end-to-end (repo list +
+  import); check as soon as a GitHub account is available. If you ever own the
+  GitHub OAuth app settings, the cleaner design is registering the callback on
+  the app host (`app.black-tulip.nl/api/backend/auth/github/callback`) and
+  dropping the cookie-domain workaround.
 - `/projects/[project]/repos` has no index page (404) — repos live under `/repositories`
   and `/{owner}/{repo}`.
+- The `Docs` workflow fails on pre-existing markdownlint violations and the
+  `check` workflow fails at `go install golangci-lint@latest` (both red since
+  before 2026-11-08); `./check`'s gofmt step swallows its own failures
+  (`(...) || true` shell bug) — CI catches what it misses.
