@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -109,4 +110,100 @@ func TestWebRepositoriesPage(t *testing.T) {
 	if !strings.Contains(body, "e2e-git") {
 		t.Errorf("repositories page does not render repos (len=%d)", len(body))
 	}
+}
+
+// webSession drives the full app signin flow (app -> Zitadel -> callback) and
+// returns a client holding the NextAuth session cookie.
+func webSession(t *testing.T) *http.Client {
+	t.Helper()
+	c := client(t)
+	_, _, b := get(t, c, appURL+"/api/auth/csrf", nil)
+	csrf := jbody(t, b)["csrfToken"].(string)
+	preq, _ := http.NewRequest(http.MethodPost, appURL+"/api/auth/signin/zitadel", strings.NewReader(url.Values{"csrfToken": {csrf}, "callbackUrl": {appURL + "/"}}.Encode()))
+	preq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.Do(preq)
+	if err != nil || resp.StatusCode != 302 {
+		t.Fatalf("app signin: %v %d", err, resp.StatusCode)
+	}
+	authReq := resp.Header.Get("Location")
+	resp.Body.Close()
+
+	st, hdr, _ := get(t, c, authReq, nil)
+	if st != 302 {
+		t.Fatalf("authorize: %d", st)
+	}
+	loginPage := hdr.Get("Location")
+	if !strings.HasPrefix(loginPage, "/") {
+		loginPage = "/" + strings.TrimPrefix(loginPage, authURL)
+	}
+	_, _, page := get(t, c, authURL+loginPage, nil)
+	base := url.Values{
+		"gorilla.csrf.Token": {extractInput(page, "gorilla.csrf.Token")},
+		"authRequestID":      {extractInput(page, "authRequestID")},
+	}
+	formPost := func(path string, fields url.Values) (int, http.Header, []byte) {
+		pq, _ := http.NewRequest(http.MethodPost, authURL+path, strings.NewReader(fields.Encode()))
+		pq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r, err := c.Do(pq)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer r.Body.Close()
+		b, _ := io.ReadAll(r.Body)
+		return r.StatusCode, r.Header, b
+	}
+	_, _, page = formPost("/ui/login/loginname", with(base, "loginName", e2eUser))
+	if cs := extractInput(page, "gorilla.csrf.Token"); cs != "" {
+		base.Set("gorilla.csrf.Token", cs)
+	}
+	st, hdr, page = formPost("/ui/login/password", with(base, "password", e2ePass))
+	if cs := extractInput(page, "gorilla.csrf.Token"); cs != "" {
+		base.Set("gorilla.csrf.Token", cs)
+	}
+	if st != 302 && strings.Contains(string(page), "/ui/login/mfa/prompt") {
+		st, hdr, _ = formPost("/ui/login/mfa/prompt", with(base, "skip", "true"))
+	}
+	if st == 302 && strings.Contains(hdr.Get("Location"), "/oauth/v2/authorize/callback") {
+		loc := hdr.Get("Location")
+		if strings.HasPrefix(loc, "http") {
+			st, hdr, _ = get(t, c, loc, nil)
+		} else {
+			st, hdr, _ = get(t, c, authURL+loc, nil)
+		}
+	}
+	cb := hdr.Get("Location")
+	if !strings.Contains(cb, "code=") {
+		t.Fatalf("no code: %s", cb)
+	}
+	if st, _, _ := get(t, c, cb, nil); st != 302 && st != 200 {
+		t.Fatalf("app callback: %d", st)
+	}
+	return c
+}
+
+// pushBranch clones the repo with a fresh git token, writes content, and
+// pushes the given branch.
+func pushBranch(t *testing.T, token, proj, repo, branch, filename, content string) {
+	t.Helper()
+	st, b := apiCall(t, token, http.MethodPost, "/me/git-token", map[string]any{"name": "e2e"})
+	if st != 200 && st != 201 {
+		t.Fatalf("git token: %d %s", st, b)
+	}
+	cred := jbody(t, b)
+	tok, _ := cred["token"].(string)
+	username, _ := cred["username"].(string)
+	dir := t.TempDir()
+	sh(t, dir, "git", "clone", fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo), "r")
+	rd := dir + "/r"
+	sh(t, rd, "git", "config", "user.email", "e2e@black-tulip.nl")
+	sh(t, rd, "git", "config", "user.name", "e2e")
+	if branch != "main" {
+		sh(t, rd, "git", "checkout", "-b", branch)
+	}
+	if err := os.WriteFile(rd+"/"+filename, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh(t, rd, "git", "add", filename)
+	sh(t, rd, "git", "commit", "-m", "e2e "+filename)
+	sh(t, rd, "git", "push", "-u", "origin", branch)
 }
