@@ -238,6 +238,16 @@ func (s *Service) provisionForgejoUser(ctx context.Context, user db.User) error 
 		if existing.Type != "" && existing.Type != "User" {
 			s.logger.Warn("forgejo provisioning: name held by a non-user entity; removing stale org and retrying",
 				"username", user.Username, "type", existing.Type)
+			// A purged account can leave an org with orphaned repos behind (the purge
+			// removes the Quill rows but the Forgejo org blocks the name). Delete its
+			// leftover repos first — Forgejo refuses to delete a non-empty org.
+			if repos, lerr := s.forgejo.ListOrgRepos(ctx, existing.Login); lerr == nil {
+				for _, r := range repos {
+					if derr := s.forgejo.DeleteRepo(ctx, existing.Login, r.Name); derr != nil && !forgejo.NotFound(derr) {
+						s.logger.Warn("forgejo provisioning: delete stale org repo failed", "repo", r.FullName, "error", derr)
+					}
+				}
+			}
 			if derr := s.forgejo.DeleteOrg(ctx, existing.Login); derr != nil && !forgejo.NotFound(derr) {
 				return fmt.Errorf("create forgejo user: name held by %s %q: %w", existing.Type, existing.Login, err)
 			}

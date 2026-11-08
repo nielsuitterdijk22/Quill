@@ -190,6 +190,24 @@ func (c *Client) DeleteOrg(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/orgs/"+url.PathEscape(name), nil, nil)
 }
 
+// ListOrgRepos lists the repositories owned by an organization.
+func (c *Client) ListOrgRepos(ctx context.Context, org string) ([]Repo, error) {
+	var out []Repo
+	page := 1
+	for {
+		var batch []Repo
+		q := url.Values{"limit": {"100"}, "page": {fmt.Sprintf("%d", page)}}
+		if err := c.do(ctx, http.MethodGet, "/orgs/"+url.PathEscape(org)+"/repos?"+q.Encode(), nil, &batch); err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if len(batch) < 100 {
+			return out, nil
+		}
+		page++
+	}
+}
+
 // AddOrgMember adds username to the organization's Owners team. It is
 // idempotent — re-adding an existing member returns no error.
 func (c *Client) AddOrgMember(ctx context.Context, org, username string) error {
