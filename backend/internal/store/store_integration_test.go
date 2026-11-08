@@ -35,8 +35,9 @@ func testStore(t *testing.T) *store.Store {
 	return st
 }
 
-// TestTenantPlanColumn asserts migration 000019 added the plan column with the
-// 'internal' default and that the sqlc-generated reads expose it.
+// TestTenantPlanColumn asserts the tenants.plan column (migration 000019)
+// and migration 000021's freemium default: the seeded default tenant keeps the
+// operator's 'internal' plan, while newly created tenants start on 'free'.
 func TestTenantPlanColumn(t *testing.T) {
 	st := testStore(t)
 	ctx := context.Background()
@@ -64,8 +65,8 @@ func TestTenantPlanColumn(t *testing.T) {
 			t.Logf("cleanup tenant %v: %v", created.ID, err)
 		}
 	})
-	if created.Plan != "internal" {
-		t.Fatalf("created tenant plan = %q, want %q", created.Plan, "internal")
+	if created.Plan != "free" {
+		t.Fatalf("created tenant plan = %q, want %q", created.Plan, "free")
 	}
 
 	// Read back by id: the plan must round-trip through GetTenantByID.
@@ -73,8 +74,8 @@ func TestTenantPlanColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get tenant by id: %v", err)
 	}
-	if got.Plan != "internal" {
-		t.Fatalf("tenant plan by id = %q, want %q", got.Plan, "internal")
+	if got.Plan != "free" {
+		t.Fatalf("tenant plan by id = %q, want %q", got.Plan, "free")
 	}
 }
 

@@ -68,6 +68,10 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
 		return db.Repository{}, err
 	}
+	// Freemium premium gate: free-plan tenants are capped at FreeMaxRepos.
+	if err := s.enforceRepoQuota(ctx, project.TenantID); err != nil {
+		return db.Repository{}, err
+	}
 
 	slug := normalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)

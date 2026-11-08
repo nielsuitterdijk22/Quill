@@ -176,13 +176,14 @@ func TestBillingUsageAndPlan(t *testing.T) {
 		t.Fatalf("finish run: %v", err)
 	}
 
-	// Tenant admin sees plan + usage; internal plan has no hard limits.
+	// Tenant admin sees plan + usage. New orgs default to the free plan
+	// (migration 000021), which carries the hard limits.
 	view, err := svc.GetBilling(ctx, founder, "acme2")
 	if err != nil {
 		t.Fatalf("get billing: %v", err)
 	}
-	if view.Plan != PlanInternal {
-		t.Fatalf("plan: want internal, got %q", view.Plan)
+	if view.Plan != PlanFree {
+		t.Fatalf("plan: want free, got %q", view.Plan)
 	}
 	if view.Usage.Repos != 1 {
 		t.Fatalf("repos: want 1, got %d", view.Usage.Repos)
@@ -190,8 +191,8 @@ func TestBillingUsageAndPlan(t *testing.T) {
 	if view.Usage.PipelineMinutes < 9.9 || view.Usage.PipelineMinutes > 10.1 {
 		t.Fatalf("pipeline minutes: want ~10, got %f", view.Usage.PipelineMinutes)
 	}
-	if view.Limits != nil {
-		t.Fatalf("internal plan should have no hard limits, got %+v", view.Limits)
+	if view.Limits == nil || view.Limits.Repos == nil || *view.Limits.Repos != FreeMaxRepos {
+		t.Fatalf("free plan should have hard limits, got %+v", view.Limits)
 	}
 
 	// A plain org member may not see billing.
@@ -208,14 +209,14 @@ func TestBillingUsageAndPlan(t *testing.T) {
 	if _, err := svc.SetTenantPlan(ctx, admin, "acme2", "bogus"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("invalid plan: want ErrInvalidInput, got %v", err)
 	}
-	if _, err := svc.SetTenantPlan(ctx, admin, "acme2", PlanFree); err != nil {
-		t.Fatalf("set plan free: %v", err)
+	if _, err := svc.SetTenantPlan(ctx, admin, "acme2", PlanInternal); err != nil {
+		t.Fatalf("set plan internal: %v", err)
 	}
 	view2, err := svc.GetBilling(ctx, admin, "acme2")
 	if err != nil {
 		t.Fatalf("get billing after plan change: %v", err)
 	}
-	if view2.Plan != PlanFree || view2.Limits == nil || view2.Limits.Repos == nil || *view2.Limits.Repos != FreeMaxRepos {
-		t.Fatalf("free plan limits: got plan=%q limits=%+v", view2.Plan, view2.Limits)
+	if view2.Plan != PlanInternal || view2.Limits != nil {
+		t.Fatalf("internal plan should have no hard limits: got plan=%q limits=%+v", view2.Plan, view2.Limits)
 	}
 }

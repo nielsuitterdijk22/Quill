@@ -192,6 +192,17 @@ func (s *Service) CancelRun(ctx context.Context, actor Actor, projectSlug, repoS
 // TriggerRun runs a workflow for an authorized project member. It reads the workflow
 // YAML from git, executes it through the runner, and records the run tree.
 func (s *Service) TriggerRun(ctx context.Context, actor Actor, projectSlug, repoSlug string, in TriggerInput) (db.Repository, db.PipelineRun, error) {
+	// Freemium premium gate first, before any git-backend dependency: free-plan
+	// tenants are capped at FreeMaxPipelineMinutes of finished runs per calendar
+	// month. (Webhook-driven runs are gated inside runWorkflow.)
+	if project, err := s.getProject(ctx, projectSlug); err == nil {
+		if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+			return db.Repository{}, db.PipelineRun{}, err
+		}
+		if err := s.enforcePipelineMinutesQuota(ctx, project.TenantID); err != nil {
+			return db.Repository{}, db.PipelineRun{}, err
+		}
+	}
 	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, db.PipelineRun{}, err
@@ -259,6 +270,18 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 	event := strings.TrimSpace(in.Event)
 	if event == "" {
 		event = "manual"
+	}
+
+	// Freemium premium gate: free-plan tenants are capped at
+	// FreeMaxPipelineMinutes of finished runs per calendar month.
+	if project, perr := s.store.GetProjectByID(ctx, repo.ProjectID); perr == nil {
+		if err := s.enforcePipelineMinutesQuota(ctx, project.TenantID); err != nil {
+			return db.PipelineRun{}, err
+		}
+	} else {
+		// The quota lookup is best-effort: a repo without a project row can't
+		// be metered, so the run proceeds (and is logged).
+		s.logger.Warn("pipeline quota check skipped: project lookup failed", "repo", repo.Slug, "error", perr)
 	}
 
 	yaml, err := s.forgejo.GetWorkflowContent(ctx, owner, name, path, ref)

@@ -45,6 +45,7 @@ JOIN pipelines pl ON pl.id = pr.pipeline_id
 JOIN repositories r ON r.id = pl.repo_id
 JOIN projects p ON p.id = r.project_id
 WHERE p.tenant_id = $1 AND pr.started_at IS NOT NULL AND pr.finished_at IS NOT NULL
+  AND pr.started_at >= date_trunc('month', now())
 `
 
 func (q *Queries) SumPipelineMinutesByTenant(ctx context.Context, tenantID uuid.UUID) (float64, error) {

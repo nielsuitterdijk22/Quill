@@ -27,6 +27,10 @@ var (
 	// ErrEmptyRepo signals that the git repository exists but has no commits yet,
 	// so content/branch/commit reads cannot be served.
 	ErrEmptyRepo = errors.New("repository is empty")
+	// ErrLimitReached signals that the tenant's plan quota is exhausted
+	// (repositories or pipeline minutes on the free plan) and the operation
+	// was rejected. The free plan is the freemium premium gate.
+	ErrLimitReached = errors.New("plan limit reached")
 )
 
 // Visibility values accepted for repositories. "internal" is visible to all

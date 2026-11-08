@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -133,4 +135,46 @@ func (s *Service) SetTenantPlan(ctx context.Context, actor Actor, orgSlug, plan 
 	}
 	tenant.Plan = plan
 	return tenant, nil
+}
+
+// enforceRepoQuota rejects repository creation when the tenant's free-plan repo
+// allotment is used up. Paid plans (team/enterprise/internal) are unlimited, so
+// the gate is a no-op for them.
+func (s *Service) enforceRepoQuota(ctx context.Context, tenantID uuid.UUID) error {
+	tenant, err := s.store.GetTenantByID(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("lookup tenant: %w", err)
+	}
+	if tenant.Plan != PlanFree {
+		return nil
+	}
+	repos, err := s.store.CountRepositoriesByTenant(ctx, tenant.ID)
+	if err != nil {
+		return fmt.Errorf("count repositories: %w", err)
+	}
+	if repos >= FreeMaxRepos {
+		return fmt.Errorf("%w: the free plan includes %d repositories; contact us or upgrade your plan to add more", ErrLimitReached, FreeMaxRepos)
+	}
+	return nil
+}
+
+// enforcePipelineMinutesQuota rejects workflow triggers once the tenant's
+// finished-run minutes this calendar month reach the free-plan allowance.
+// Metering counts finished runs only, matching what GetBilling reports.
+func (s *Service) enforcePipelineMinutesQuota(ctx context.Context, tenantID uuid.UUID) error {
+	tenant, err := s.store.GetTenantByID(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("lookup tenant: %w", err)
+	}
+	if tenant.Plan != PlanFree {
+		return nil
+	}
+	minutes, err := s.store.SumPipelineMinutesByTenant(ctx, tenant.ID)
+	if err != nil {
+		return fmt.Errorf("sum pipeline minutes: %w", err)
+	}
+	if minutes >= float64(FreeMaxPipelineMinutes) {
+		return fmt.Errorf("%w: the free plan includes %d pipeline minutes per month; contact us or upgrade your plan to keep building", ErrLimitReached, FreeMaxPipelineMinutes)
+	}
+	return nil
 }

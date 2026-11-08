@@ -69,7 +69,7 @@ export function OrgBilling({ billing }: { billing: BillingView }) {
             format={formatBytes}
           />
           <UsageRow
-            label="Pipeline minutes (all time)"
+            label="Pipeline minutes (this month)"
             used={Math.round(usage.pipelineMinutes * 10) / 10}
             limit={limits?.pipelineMinutes}
             format={(n) => `${Math.round(n * 10) / 10} min`}
@@ -80,7 +80,7 @@ export function OrgBilling({ billing }: { billing: BillingView }) {
         Usage is metered from the Quill database (repos, pipeline run durations)
         and Forgejo repository sizes (git storage).
         {billing.plan === "free"
-          ? " The free tier is capped; overage is billed pay-as-you-go once a payment method is connected."
+          ? " The free plan is a hard cap — creating repositories and triggering pipelines stops when a limit is reached. Contact us to upgrade."
           : " This plan has no hard caps; usage is invoiced monthly."}
       </p>
     </div>

@@ -288,6 +288,8 @@ func (s *Server) writePlatformError(w http.ResponseWriter, err error, fallback s
 		httpx.Error(w, http.StatusConflict, "empty_repo", "repository has no commits yet")
 	case errors.Is(err, platform.ErrPolicyViolation):
 		httpx.Error(w, http.StatusConflict, "policy_violation", err.Error())
+	case errors.Is(err, platform.ErrLimitReached):
+		httpx.Error(w, http.StatusPaymentRequired, "limit_reached", err.Error())
 	default:
 		s.logger.Error("platform operation failed", "error", err)
 		httpx.Error(w, http.StatusInternalServerError, "internal", fallback)
