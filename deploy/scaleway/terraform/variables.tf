@@ -172,13 +172,14 @@ variable "github_client_id" {
   default   = "unset"
   sensitive = true
 
-  # Real GitHub OAuth-app client IDs start with "Iv" (e.g. "Iv1.…"). Anything
-  # else (terraform's "unset" default, or a dummy like "x" typed into tfvars)
-  # would deploy a broken OAuth flow, so only "unset" or an Iv-prefixed value
-  # may pass.
+  # Reject obvious placeholders (terraform's "unset" default, or a dummy like
+  # "x" typed into tfvars) so a broken OAuth flow can't deploy silently — but
+  # accept ANY non-placeholder value: client-ID prefixes differ between OAuth
+  # apps (Iv1.…), GitHub Apps (IvCB…/Iv23…), and may gain new formats, so
+  # pinning a prefix rejected a real credential and failed every CI apply.
   validation {
-    condition     = var.github_client_id == "unset" || startswith(var.github_client_id, "Iv")
-    error_message = "github_client_id must be a real GitHub OAuth app client ID (starts with \"Iv\") or left as \"unset\". Create the app at github.com/settings/developers with callback https://api.<domain>/api/v1/auth/github/callback."
+    condition     = var.github_client_id == "unset" || !contains(["", "x", "changeme", "change-me", "placeholder", "todo", "redacted"], lower(trimspace(var.github_client_id)))
+    error_message = "github_client_id looks like a placeholder. Set the real client ID from the GitHub app (github.com/settings/developers; callback https://api.<domain>/api/v1/auth/github/callback) or leave \"unset\" to disable GitHub import with a clear error."
   }
 }
 
