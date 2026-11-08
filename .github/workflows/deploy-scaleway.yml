@@ -17,6 +17,9 @@ name: Deploy to Scaleway (serverless)
 #            BREVO_SMTP_HOST / BREVO_SMTP_PORT (defaults smtp-relay.brevo.com:2525),
 #            BREVO_SMTP_TEST_TO (send a test mail on deploy)
 
+# Pinned deployment domain: the Scaleway stack serves *.black-tulip.nl (apex).
+# vars.QUILL_DOMAIN is intentionally not used for hosts anymore — the migration to
+# the apex is done; set the records at the registrar accordingly.
 on:
   push:
     branches: [main]
@@ -80,10 +83,10 @@ jobs:
         run: |
           docker build -t ${{ vars.REGISTRY }}/quill-web:${{ github.sha }} frontend/ \
             --build-arg NEXT_PUBLIC_AUTH_PROVIDER=zitadel \
-            --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }} \
+            --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.black-tulip.nl \
             --build-arg NEXT_PUBLIC_ZITADEL_CLIENT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_CLIENT_ID }} \
             --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_PROJECT_ID }} \
-            --build-arg QUILL_API_BASE_URL=https://api.${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}
+            --build-arg QUILL_API_BASE_URL=https://api.black-tulip.nl
           docker push ${{ vars.REGISTRY }}/quill-web:${{ github.sha }}
           docker tag ${{ vars.REGISTRY }}/quill-web:${{ github.sha }} ${{ vars.REGISTRY }}/quill-web:latest
           docker push ${{ vars.REGISTRY }}/quill-web:latest
@@ -142,7 +145,7 @@ jobs:
         run: |
           terraform apply -auto-approve -input=false \
             -var "image_tag=latest" \
-            -var "domain=${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}" \
+            -var "domain=black-tulip.nl" \
             -var "backup_bucket_name=${{ vars.BACKUP_BUCKET }}" \
             -var "letsencrypt_email=${{ vars.LETSENCRYPT_EMAIL }}" \
             -var "forgejo_admin_token=${{ secrets.FORGEJO_ADMIN_TOKEN }}" \
@@ -175,7 +178,7 @@ jobs:
             cd /opt/quill
             SMTP_FROM="${{ vars.BREVO_SMTP_FROM }}"
             if [ -z "$SMTP_FROM" ]; then
-              SMTP_FROM="info@$(echo "${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}" | cut -d. -f2-)"
+              SMTP_FROM="info@$(echo "black-tulip.nl" | cut -d. -f2-)"
             fi
             # Transactional mail (Brevo): compose auto-merges docker-compose.override.yml.
             # Forgejo reads [mailer] env on every start; Zitadel's env-based SMTP only
@@ -225,13 +228,13 @@ jobs:
 
       - name: Apply SMTP settings on the running Zitadel instance
         env:
-          ZITADEL_URL: https://auth.${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}
+          ZITADEL_URL: https://auth.black-tulip.nl
           ZITADEL_TOKEN: ${{ secrets.ZITADEL_MANAGEMENT_TOKEN }}
           SMTP_HOST: ${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}
           SMTP_USER: ${{ secrets.BREVO_SMTP_NAME }}
           SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_KEY }}
           SMTP_FROM: ${{ vars.BREVO_SMTP_FROM }}
-          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}
+          QUILL_DOMAIN: black-tulip.nl
           SMTP_FROM_NAME: Quill
           SMTP_TEST_TO: ${{ vars.BREVO_SMTP_TEST_TO }}
         run: |
@@ -241,7 +244,7 @@ jobs:
           fi
           export SMTP_FROM="${SMTP_FROM:-info@$(echo "$QUILL_DOMAIN" | cut -d. -f2-)}"
           deploy/scaleway/scripts/zitadel-smtp.sh
-          QUILL_APP_URL="https://app.${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}" deploy/scaleway/scripts/zitadel-brand.sh
+          QUILL_APP_URL="https://app.black-tulip.nl" deploy/scaleway/scripts/zitadel-brand.sh
 
   provision:
     name: First-boot provision
@@ -257,7 +260,7 @@ jobs:
 
       - name: Run provision.sh
         env:
-          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}
+          QUILL_DOMAIN: black-tulip.nl
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
@@ -278,7 +281,7 @@ jobs:
 
       - name: Sync git/ssh DNS records to the VM IP
         env:
-          QUILL_DOMAIN: ${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}
+          QUILL_DOMAIN: black-tulip.nl
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
           SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
@@ -288,8 +291,8 @@ jobs:
       - name: Health check
         run: |
           for i in $(seq 1 40); do
-            if curl -fsS -o /dev/null "https://app.${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}/login" \
-               && curl -fsS -o /dev/null "https://git.${{ vars.QUILL_DOMAIN || 'black-tulip.nl' }}/api/healthz"; then
+            if curl -fsS -o /dev/null "https://app.black-tulip.nl/login" \
+               && curl -fsS -o /dev/null "https://git.black-tulip.nl/api/healthz"; then
               echo "app + git are serving"
               exit 0
             fi
