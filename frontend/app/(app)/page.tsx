@@ -10,6 +10,7 @@ import {
   type MyProject,
 } from "../lib/api";
 import { getProfileAvatar, getToken, requireSession } from "../lib/session";
+import { resolveCurrentProject } from "../lib/projects";
 import { ContributionGraph } from "../components/ContributionGraph";
 import { VisibilityBadge } from "../components/repo";
 
@@ -49,10 +50,16 @@ export default async function DashboardPage() {
     : [];
   const repos = perProject.flat();
 
+  // Recent PR activity follows the sidebar's current project, like the pulls
+  // overview — the dashboard is a per-workspace home, not an "everything the
+  // admin can see" firehose.
+  const resolvedScopes = token ? await resolveCurrentProject(token) : null;
+  const currentProject = resolvedScopes?.current.slug;
+
   const [contributions, myPulls] = token
     ? await Promise.all([
         getMyContributions(token),
-        getMyPulls(token, { state: "all" }),
+        getMyPulls(token, { state: "all", project: currentProject }),
       ])
     : [[], { ok: false as const, status: 0, message: "" }];
 
