@@ -702,7 +702,7 @@ func translateForgejoWrite(err error) error {
 	case http.StatusNotFound:
 		return ErrNotFound
 	case http.StatusConflict:
-		return fmt.Errorf("%w: a pull request for these branches already exists", ErrConflict)
+		return fmt.Errorf("%w: %s", ErrConflict, err.Error())
 	case http.StatusMethodNotAllowed:
 		// Forgejo answers 405 when merging an already-merged/closed PR
 		return fmt.Errorf("%w: pull request is already merged or closed", ErrConflict)
