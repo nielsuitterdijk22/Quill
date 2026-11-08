@@ -134,6 +134,11 @@ func req(t *testing.T, c *http.Client, method, rawurl string, body any, headers 
 // loginName, password) and returns a Quill-usable access token.
 func login(t *testing.T) string {
 	t.Helper()
+	return loginAs(t, e2eUser, e2ePass)
+}
+
+func loginAs(t *testing.T, user, pass string) string {
+	t.Helper()
 	c := client(t)
 
 	verifier := randHex(48)
@@ -157,10 +162,6 @@ func login(t *testing.T) string {
 	// Zitadel login UI is stepwise: loginname -> password -> mfa/skip ->
 	// authorize/callback. Each step posts the form's gorilla.csrf.Token and
 	// authRequestID back. The login name must be the user's email.
-	loginName := e2eUser
-	if !strings.Contains(loginName, "@") {
-		loginName = loginName + "@" + strings.TrimPrefix(strings.TrimPrefix(authURL, "https://"), "https://")
-	}
 	formPost := func(path string, fields url.Values) (int, http.Header, []byte) {
 		preq, _ := http.NewRequest(http.MethodPost, authURL+path, strings.NewReader(fields.Encode()))
 		preq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -185,12 +186,12 @@ func login(t *testing.T) string {
 	base := url.Values{"gorilla.csrf.Token": {csrf}, "authRequestID": {authID}}
 
 	// step 1: loginname (the CSRF token rotates per page — re-read each step)
-	st, hdr, page = formPost("/ui/login/loginname", with(base, "loginName", loginName))
+	st, hdr, page = formPost("/ui/login/loginname", with(base, "loginName", user))
 	if cs := extractInput(page, "gorilla.csrf.Token"); cs != "" {
 		base.Set("gorilla.csrf.Token", cs)
 	}
 	// step 2: password (may 200 with an MFA page, or 302 straight to callback)
-	st, hdr, page = formPost("/ui/login/password", with(base, "password", e2ePass))
+	st, hdr, page = formPost("/ui/login/password", with(base, "password", pass))
 	if cs := extractInput(page, "gorilla.csrf.Token"); cs != "" {
 		base.Set("gorilla.csrf.Token", cs)
 	}

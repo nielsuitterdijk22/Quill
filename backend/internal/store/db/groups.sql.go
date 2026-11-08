@@ -422,6 +422,11 @@ candidates AS (
   FROM group_project_roles gpr
   JOIN effective_groups eg ON eg.group_id = gpr.group_id
   WHERE gpr.project_id = $1
+  UNION ALL
+  SELECT CASE WHEN tm.role = 'admin' THEN 'owner' ELSE 'member' END
+  FROM tenant_members tm
+  JOIN projects p ON p.tenant_id = tm.tenant_id
+  WHERE p.id = $1 AND tm.user_id = $2
 )
 SELECT COALESCE((
   SELECT role FROM candidates

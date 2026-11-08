@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -199,6 +200,9 @@ func pushBranch(t *testing.T, token, proj, repo, branch, filename, content strin
 	sh(t, rd, "git", "config", "user.name", "e2e")
 	if branch != "main" {
 		sh(t, rd, "git", "checkout", "-b", branch)
+	}
+	if err := os.MkdirAll(rd+"/"+filepath.Dir(filename), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.WriteFile(rd+"/"+filename, []byte(content), 0o644); err != nil {
 		t.Fatal(err)

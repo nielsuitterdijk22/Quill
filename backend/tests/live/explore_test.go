@@ -3,6 +3,7 @@ package live
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +119,9 @@ func TestPipelineRunLogs(t *testing.T) {
 	st, b = apiCall(t, token, http.MethodGet, rp+"/runs", nil)
 	if st == 200 {
 		if arr, ok := jbody(t, b)["runs"].([]any); ok && len(arr) > 0 {
-			if f, ok := arr[0].(map[string]any)["number"].(float64); ok {
+			if f, ok := arr[0].(map[string]any)["runNumber"].(float64); ok {
+				num = int(f)
+			} else if f, ok := arr[0].(map[string]any)["number"].(float64); ok {
 				num = int(f)
 			}
 		}
@@ -129,9 +132,12 @@ func TestPipelineRunLogs(t *testing.T) {
 	// poll for completion then read logs
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/runs/%d", rp, num), nil)
+		st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/runs/%d?workflow=.github/workflows/ci.yml", rp, num), nil)
 		if st == 200 {
 			run := jbody(t, b)
+			if inner, ok := run["run"].(map[string]any); ok {
+				run = inner
+			}
 			status, _ := run["status"].(string)
 			fmt.Printf("RUN %d status=%s\n", num, status)
 			if status == "success" || status == "failed" || status == "cancelled" {
@@ -140,7 +146,7 @@ func TestPipelineRunLogs(t *testing.T) {
 		}
 		time.Sleep(3 * time.Second)
 	}
-	st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/runs/%d/logs", rp, num), nil)
+	st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/runs/%d/logs?workflow=.github/workflows/ci.yml", rp, num), nil)
 	fmt.Printf("LOGS: %d %.200s\n", st, b)
 	if st != 200 {
 		t.Errorf("run logs: %d", st)
@@ -170,4 +176,66 @@ func TestInviteAccept(t *testing.T) {
 	c := client(t)
 	st, _, b = req(t, c, http.MethodPost, apiURL+"/api/v1/invites/"+tok+"/accept", map[string]any{}, map[string]string{"Authorization": "Bearer " + token})
 	fmt.Printf("ACCEPT: %d %.200s\n", st, b)
+}
+
+// TestMergeGateTwoUsers: org owner creates repo+PR, second member approves,
+// merge then succeeds (policy requiredApprovals=1, self-approval excluded).
+func TestMergeGateTwoUsers(t *testing.T) {
+	requireLive(t)
+	user2 := os.Getenv("QUILL_E2E_USER2")
+	pass2 := os.Getenv("QUILL_E2E_PASSWORD2")
+	if user2 == "" || pass2 == "" {
+		t.Skip("QUILL_E2E_USER2/QUILL_E2E_PASSWORD2 not set")
+	}
+	tok1 := login(t)
+	orgSlug := fmt.Sprintf("e2e-gate-%d", time.Now().UnixNano()%1e9)
+	if st, b := apiCall(t, tok1, http.MethodPost, "/orgs", map[string]any{"slug": orgSlug, "name": orgSlug}); st != 200 && st != 201 && st != 409 {
+		t.Fatalf("create org: %d %s", st, b)
+	}
+	// invite user2 and accept as user2
+	st, b := apiCall(t, tok1, http.MethodPost, "/orgs/"+orgSlug+"/invites", map[string]any{"email": user2, "role": "member"})
+	if st != 200 && st != 201 {
+		t.Fatalf("invite: %d %s", st, b)
+	}
+	itok, _ := jbody(t, b)["token"].(string)
+	tok2 := loginAs(t, user2, pass2)
+	c := client(t)
+	if st, _, b := req(t, c, http.MethodPost, apiURL+"/api/v1/invites/"+itok+"/accept", map[string]any{}, map[string]string{"Authorization": "Bearer " + tok2}); st != 200 {
+		t.Fatalf("accept invite: %d %s", st, b)
+	}
+
+	// repo in the org project
+	repoSlug := fmt.Sprintf("e2e-gate-repo-%d", time.Now().UnixNano()%1e9)
+	if st, b := apiCall(t, tok1, http.MethodPost, "/projects/"+orgSlug+"/repos", map[string]any{"slug": repoSlug, "name": repoSlug}); st != 200 && st != 201 {
+		t.Fatalf("create repo: %d %s", st, b)
+	}
+	pushBranch(t, tok1, orgSlug, repoSlug, "main", "a.txt", "a\n")
+	pushBranch(t, tok1, orgSlug, repoSlug, "feat", "b.txt", "b\n")
+	rp := "/projects/" + orgSlug + "/repos/" + repoSlug
+	if st, b := apiCall(t, tok1, http.MethodPut, rp+"/policies", map[string]any{"pattern": "main", "requiredApprovals": 1}); st != 200 {
+		t.Fatalf("set policy: %d %s", st, b)
+	}
+	st, b = apiCall(t, tok1, http.MethodPost, rp+"/pulls", map[string]any{"title": "gate2", "base": "main", "head": "feat"})
+	if st != 200 && st != 201 {
+		t.Fatalf("create PR: %d %s", st, b)
+	}
+	num := prNumber(t, jbody(t, b))
+
+	// merge before approval -> 409
+	if st, b := apiCall(t, tok1, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", rp, num), map[string]any{}); st != 409 {
+		t.Errorf("merge before approval: %d %s, want 409", st, b)
+	}
+	// approve as user2 -> merge ok
+	if st, b := apiCall(t, tok2, http.MethodPost, fmt.Sprintf("%s/pulls/%d/reviews", rp, num), map[string]any{"event": "APPROVED", "body": "ok"}); st != 200 && st != 201 {
+		t.Fatalf("review by user2: %d %s", st, b)
+	}
+	st, b = apiCall(t, tok1, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", rp, num), map[string]any{})
+	fmt.Printf("MERGE after user2 approval: %d %.150s\n", st, b)
+	if st != 200 {
+		t.Errorf("merge after approval: %d %s", st, b)
+	}
+	// double merge -> 409 (not 500)
+	if st, b := apiCall(t, tok1, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", rp, num), map[string]any{}); st != 409 {
+		t.Errorf("double merge: %d %s, want 409", st, b)
+	}
 }
