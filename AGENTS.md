@@ -139,7 +139,10 @@ git clone/push, PRs, pipelines. Run:
 `QUILL_LIVE_TEST=1 QUILL_E2E_CLIENT_ID=<zitadel client id> QUILL_E2E_PROJECT_ID=<project id> QUILL_E2E_USER=<email> QUILL_E2E_PASSWORD=<pw> go test ./tests/live/ -v`
 Skipped unless `QUILL_LIVE_TEST=1`, so `./check`/CI never run them. Test users are
 created via the Zitadel mgmt API on the VM (`/v2/users/human`, Host header must be
-`auth.black-tulip.nl`).
+`auth.black-tulip.nl`). **After each live round, clean up the test debris:**
+`QUILL_DATABASE_URL=<sdb dsn> FORGEJO_BASE_URL=https://git.black-tulip.nl FORGEJO_ADMIN_TOKEN=<token> ZITADEL_ISSUER=https://auth.black-tulip.nl QUILL_ENV=production go run ./cmd/quill admin purge-e2e --confirm`
+(re-run until counts are zero; it deletes `e2e-`-prefixed orgs/projects/repos only —
+never users, personal projects, or real content).
 
 ### Cost watch
 Current drivers (billing via `scw billing consumption list`): DEV1-S VM (fixed, required
