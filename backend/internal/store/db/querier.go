@@ -97,6 +97,8 @@ type Querier interface {
 	ListProjectGroupRoles(ctx context.Context, projectID uuid.UUID) ([]ListProjectGroupRolesRow, error)
 	ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ListProjectMembersRow, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
+	ListVisibleProjectsForUser(ctx context.Context, userID uuid.UUID) ([]Project, error)
+	ListVisibleProjectsForUserWithRole(ctx context.Context, userID uuid.UUID) ([]ListVisibleProjectsForUserWithRoleRow, error)
 	ListProjectsByUser(ctx context.Context, userID uuid.UUID) ([]ListProjectsByUserRow, error)
 	ListRepositoriesByProject(ctx context.Context, arg ListRepositoriesByProjectParams) ([]Repository, error)
 	ListRunsByPipeline(ctx context.Context, arg ListRunsByPipelineParams) ([]PipelineRun, error)

@@ -2,7 +2,6 @@ package platform
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -74,22 +73,14 @@ func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, e
 		return 0, nil
 	}
 
-	projects, err := s.store.ListProjects(ctx, db.ListProjectsParams{Limit: 200, Offset: 0})
+	projects, err := s.visibleProjects(ctx, actor, "")
 	if err != nil {
-		return 0, fmt.Errorf("list projects: %w", err)
+		return 0, err
 	}
 
 	type target struct{ owner, name string }
 	var targets []target
 	for _, project := range projects {
-		// Only count repos in projects the actor can see; skip the rest silently so the
-		// total matches what the dashboard would list for this user.
-		if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
-			if errors.Is(err, ErrForbidden) {
-				continue
-			}
-			return 0, err
-		}
 		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 200, Offset: 0})
 		if err != nil {
 			return 0, fmt.Errorf("list repos: %w", err)
@@ -153,6 +144,31 @@ const maxPullListConcurrency = 8
 // aggregate (and the response size).
 const maxPullsPerRepo = 50
 
+// visibleProjects returns the projects that scope the actor's cross-cutting
+// user views (PRs overview, dashboard counts): those reached through a direct
+// project_members row or the actor's org-tenant memberships. A non-empty
+// projectSlug narrows to that project without granting access to it — naming a
+// project you can't see yields nothing. Platform admins are deliberately NOT
+// broadened: their user views show their own memberships (admin visibility
+// belongs to admin tooling), which is what the unified visibility SQL in
+// groups.sql (GetEffectiveProjectRole) does not model.
+func (s *Service) visibleProjects(ctx context.Context, actor Actor, projectSlug string) ([]db.Project, error) {
+	projects, err := s.store.ListVisibleProjectsForUser(ctx, actor.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("list visible projects: %w", err)
+	}
+	if projectSlug == "" {
+		return projects, nil
+	}
+	filtered := make([]db.Project, 0, 1)
+	for _, p := range projects {
+		if strings.EqualFold(p.Slug, projectSlug) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered, nil
+}
+
 // ListOpenPulls returns pull requests across every repository in the
 // projects the actor belongs to, newest-updated first. Like
 // OpenPullRequestCount it is best-effort: a repository whose pulls can't be read
@@ -167,9 +183,9 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 		state = "open"
 	}
 
-	projects, err := s.store.ListProjects(ctx, db.ListProjectsParams{Limit: 200, Offset: 0})
+	projects, err := s.visibleProjects(ctx, actor, in.ProjectSlug)
 	if err != nil {
-		return nil, fmt.Errorf("list projects: %w", err)
+		return nil, err
 	}
 
 	type target struct {
@@ -177,17 +193,6 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 	}
 	var targets []target
 	for _, project := range projects {
-		if in.ProjectSlug != "" && project.Slug != in.ProjectSlug {
-			continue
-		}
-		// Only list repos in projects the actor can see; skip the rest silently so the
-		// result matches what the dashboard would show for this user.
-		if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
-			if errors.Is(err, ErrForbidden) {
-				continue
-			}
-			return nil, err
-		}
 		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 200, Offset: 0})
 		if err != nil {
 			return nil, fmt.Errorf("list repos: %w", err)

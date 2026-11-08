@@ -259,3 +259,126 @@ func (q *Queries) UpdateProjectSlug(ctx context.Context, arg UpdateProjectSlugPa
 	)
 	return i, err
 }
+
+const listVisibleProjectsForUser = `-- name: ListVisibleProjectsForUser :many
+SELECT DISTINCT p.id, p.tenant_id, p.slug, p.name, p.description, p.forgejo_org_name, p.created_at, p.updated_at, p.is_personal
+FROM projects p
+WHERE EXISTS (
+    SELECT 1 FROM project_members pm
+    WHERE pm.project_id = p.id AND pm.user_id = $1
+  )
+   OR EXISTS (
+    SELECT 1 FROM tenant_members tm
+    WHERE tm.tenant_id = p.tenant_id AND tm.user_id = $1
+  )
+ORDER BY p.slug
+`
+
+// Projects the user can reach through membership: a direct project_members row
+// or membership in the project's org tenant (tenant_members). This is the
+// visibility scope of the cross-cutting user views (PRs overview, dashboard
+// counts); platform admins are deliberately NOT broadened here — their user
+// views show their own memberships, admin tooling uses other paths.
+func (q *Queries) ListVisibleProjectsForUser(ctx context.Context, userID uuid.UUID) ([]Project, error) {
+	rows, err := q.db.Query(ctx, listVisibleProjectsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.ForgejoOrgName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsPersonal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVisibleProjectsForUserWithRole = `-- name: ListVisibleProjectsForUserWithRole :many
+SELECT p.id, p.tenant_id, p.slug, p.name, p.description, p.forgejo_org_name, p.created_at, p.updated_at, p.is_personal,
+(
+  SELECT r.role FROM (
+    SELECT pm.role FROM project_members pm
+    WHERE pm.project_id = p.id AND pm.user_id = $1
+    UNION ALL
+    SELECT CASE tm.role WHEN 'admin' THEN 'owner' ELSE 'member' END
+    FROM tenant_members tm
+    WHERE tm.tenant_id = p.tenant_id AND tm.user_id = $1
+  ) r
+  ORDER BY CASE r.role WHEN 'owner' THEN 2 WHEN 'member' THEN 1 ELSE 0 END DESC
+  LIMIT 1
+) AS member_role
+FROM projects p
+WHERE EXISTS (
+    SELECT 1 FROM project_members pm
+    WHERE pm.project_id = p.id AND pm.user_id = $1
+  )
+   OR EXISTS (
+    SELECT 1 FROM tenant_members tm
+    WHERE tm.tenant_id = p.tenant_id AND tm.user_id = $1
+  )
+ORDER BY p.slug
+`
+
+type ListVisibleProjectsForUserWithRoleRow struct {
+	ID             uuid.UUID   `json:"id"`
+	TenantID       uuid.UUID   `json:"tenantId"`
+	Slug           string      `json:"slug"`
+	Name           string      `json:"name"`
+	Description    string      `json:"description"`
+	ForgejoOrgName pgtype.Text `json:"forgejoOrgName"`
+	CreatedAt      time.Time   `json:"createdAt"`
+	UpdatedAt      time.Time   `json:"updatedAt"`
+	IsPersonal     bool        `json:"isPersonal"`
+	MemberRole     string      `json:"memberRole"`
+}
+
+// Same memberships union as ListVisibleProjectsForUser, but also computes the
+// caller's effective role on each project (direct project_members role, else
+// the org-tenant membership with 'admin' -> owner), matching the precedence of
+// GetEffectiveProjectRole. Backs /me/projects (the project switcher).
+func (q *Queries) ListVisibleProjectsForUserWithRole(ctx context.Context, userID uuid.UUID) ([]ListVisibleProjectsForUserWithRoleRow, error) {
+	rows, err := q.db.Query(ctx, listVisibleProjectsForUserWithRole, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVisibleProjectsForUserWithRoleRow{}
+	for rows.Next() {
+		var i ListVisibleProjectsForUserWithRoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.ForgejoOrgName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IsPersonal,
+			&i.MemberRole,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

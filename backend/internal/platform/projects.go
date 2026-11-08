@@ -391,9 +391,13 @@ func (s *Service) ListProjects(ctx context.Context, limit, offset int32) ([]db.P
 	return s.store.ListProjects(ctx, db.ListProjectsParams{Limit: limit, Offset: offset})
 }
 
-// ListMyProjects returns the projects the actor belongs to, ordered by slug.
-func (s *Service) ListMyProjects(ctx context.Context, actor Actor) ([]db.ListProjectsByUserRow, error) {
-	projects, err := s.store.ListProjectsByUser(ctx, actor.UserID)
+// ListMyProjects returns the projects the actor belongs to, ordered by slug —
+// direct project_members rows plus projects reached through the actor's org
+// memberships (tenant_members), with the same effective-role precedence as
+// GetEffectiveProjectRole. Platform admins are not broadened: user-facing
+// project lists show their own memberships only.
+func (s *Service) ListMyProjects(ctx context.Context, actor Actor) ([]db.ListVisibleProjectsForUserWithRoleRow, error) {
+	projects, err := s.store.ListVisibleProjectsForUserWithRole(ctx, actor.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("list user projects: %w", err)
 	}
