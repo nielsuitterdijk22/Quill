@@ -1,7 +1,15 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 
 import { AuthProvider } from "./components/auth/AuthProvider";
+
+// Geist Sans/Mono (Creem's type family), self-hosted at build time via
+// next/font — no runtime requests to any font CDN, matching the no-telemetry
+// stance. Falls back to the system stack via the CSS variable defaults.
+// The geist package ships the font files and serves them self-hosted via
+// next/font/local — no runtime requests (no-telemetry stance kept).
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

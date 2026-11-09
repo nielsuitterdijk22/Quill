@@ -8,6 +8,9 @@
    ========================================================================== */
 
 :root {
+  /* Core surfaces (Creem-style semantic set: one name per role, redefined for
+     the light theme under [data-theme="light"] — components must never hardcode
+     hexes, only these tokens). */
   --bg: #0f1115;
   --panel: #171a21;
   --panel2: #1d212b;
@@ -20,9 +23,21 @@
   --red: #f0506e;
   --amber: #d29922;
 
+  /* Derived interaction tokens. */
+  --row-hover: rgba(236, 234, 247, 0.045);   /* list-row hover tint */
+  --row-selected: rgba(124, 92, 255, 0.1);   /* active/selected row tint */
+  --btn: #222634;                            /* secondary button surface */
+  --input: #10131a;                          /* text inputs / wells */
+  --well: #10131a;                           /* inset command blocks, clone URLs */
+  --skeleton: #1a1e29;
+
   --radius-sm: 6px;
   --radius: 9px;
   --radius-lg: 12px;
+
+  /* Motion: 150ms ease-out is the app-wide interaction duration.
+     Honour reduced-motion globally. */
+  --ease: cubic-bezier(0.25, 0.8, 0.5, 1);
 }
 
 * {
@@ -36,8 +51,10 @@ body {
 }
 
 body {
-  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
-    sans-serif;
+  font-family: var(--font-geist-sans, ui-sans-serif), system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   background: var(--bg);
   color: var(--text);
 }
@@ -48,7 +65,7 @@ a {
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   color: var(--muted);
 }
@@ -295,11 +312,22 @@ a {
   color: var(--muted);
 }
 .nav a.active {
-  background: var(--panel2);
+  background: var(--row-selected);
   color: var(--text);
+}
+.nav a.active .ic {
+  color: var(--accent-soft);
 }
 .nav a:hover {
   color: var(--text);
+  background: var(--row-hover);
+}
+.nav a,
+.project-switcher-item,
+.project-switcher-btn,
+.theme-toggle {
+  transition: background 150ms var(--ease), color 150ms var(--ease),
+    border-color 150ms var(--ease);
 }
 .nav a .ic {
   width: 16px;
@@ -399,24 +427,24 @@ h1 {
 .badge.green,
 .badge.active {
   color: var(--green);
-  border-color: #1f3d29;
-  background: #10261a;
+  border-color: color-mix(in oklab, var(--green) 32%, transparent);
+  background: color-mix(in oklab, var(--green) 13%, transparent);
 }
 .badge.amber,
 .badge.susp {
   color: var(--amber);
-  border-color: #3d3318;
-  background: #241f10;
+  border-color: color-mix(in oklab, var(--amber) 32%, transparent);
+  background: color-mix(in oklab, var(--amber) 13%, transparent);
 }
 .badge.red {
   color: var(--red);
-  border-color: #3d1f27;
-  background: #26101a;
+  border-color: color-mix(in oklab, var(--red) 30%, transparent);
+  background: color-mix(in oklab, var(--red) 13%, transparent);
 }
 .badge.accent {
   color: var(--accent-soft);
-  border-color: #2d2a4d;
-  background: #16142b;
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
 /* ---- stat cards ------------------------------------------------------------ */
@@ -492,7 +520,8 @@ h1 {
   border-bottom: none;
 }
 .row-item:hover {
-  background: var(--panel2);
+  background: var(--row-hover);
+  transition: background 150ms var(--ease);
 }
 .row-item .spacer {
   flex: 1;
@@ -552,15 +581,24 @@ tbody tr:hover {
   padding: 7px 12px;
   border-radius: 7px;
   border: 1px solid var(--line);
-  background: #222634;
+  background: var(--btn);
   color: var(--text);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  transition: border-color 150ms var(--ease), background 150ms var(--ease),
+    color 150ms var(--ease), opacity 150ms var(--ease);
 }
 .btn:hover {
   border-color: var(--accent);
+}
+.btn:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
 .btn:disabled {
   opacity: 0.45;
@@ -602,21 +640,21 @@ input,
 textarea,
 select {
   width: 100%;
-  background: #10131a;
+  background: var(--input);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 9px 10px;
   font: 13px/1.45 inherit;
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
 }
 textarea {
   resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
 }
 input:focus,
 textarea:focus,
 select:focus {
-  outline: 1px solid var(--accent);
   border-color: var(--accent);
 }
 .check {
@@ -638,8 +676,8 @@ select:focus {
   font-size: 13px;
 }
 .banner {
-  background: #241f10;
-  border: 1px solid #3d3318;
+  background: color-mix(in oklab, var(--amber) 13%, transparent);
+  border: 1px solid color-mix(in oklab, var(--amber) 32%, transparent);
   color: var(--amber);
   padding: 10px 14px;
   border-radius: 10px;
@@ -817,8 +855,8 @@ select:focus {
   white-space: nowrap;
 }
 .clone-url {
-  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: #10131a;
+  font: 12px/1.4 var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 10px;
@@ -828,10 +866,10 @@ select:focus {
 .setup-cmds {
   margin: 0 0 18px;
   padding: 14px 16px;
-  background: #10131a;
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 8px;
-  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 12px/1.7 var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
   color: var(--text);
   white-space: pre;
   overflow-x: auto;
@@ -841,7 +879,7 @@ select:focus {
 .token-reveal {
   margin-bottom: 16px;
   padding: 12px 14px;
-  background: #10131a;
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -855,7 +893,7 @@ select:focus {
   flex: 1;
   min-width: 0;
   padding: 8px 10px;
-  background: #10131a;
+  background: var(--input);
   border: 1px solid var(--line);
   border-radius: 6px;
   color: var(--text);
@@ -2297,6 +2335,14 @@ h2.section {
   --green: #1a8f3a;
   --red: #cc2244;
   --amber: #a07010;
+
+  /* Interaction tokens derived for light surfaces (all same names as dark). */
+  --row-hover: rgba(26, 29, 38, 0.04);
+  --row-selected: rgba(98, 68, 232, 0.09);
+  --btn: #ffffff;
+  --input: #f0f2f8;
+  --well: #f0f2f8;
+  --skeleton: #e6e9f2;
 }
 [data-theme="light"] body {
   background: var(--bg);
@@ -2325,24 +2371,11 @@ h2.section {
 [data-theme="light"] .markdown-body pre {
   background: #eef1f7;
 }
-[data-theme="light"] .setup-cmds,
-[data-theme="light"] .token-reveal,
-[data-theme="light"] .clone-url,
-[data-theme="light"] input,
-[data-theme="light"] textarea,
-[data-theme="light"] select {
-  background: #f0f2f8;
-}
 [data-theme="light"] .auth-card {
   box-shadow: 0 4px 24px rgba(0,0,0,0.10);
 }
 [data-theme="light"] .center-wrap {
   background: radial-gradient(ellipse 80% 60% at 50% -10%, #d8d0ff 0%, var(--bg) 70%);
-}
-[data-theme="light"] .banner {
-  background: #fff8e8;
-  border-color: #e8c96d;
-  color: #a07010;
 }
 [data-theme="light"] .form-error {
   background: #fff0f3;
@@ -2377,6 +2410,28 @@ h2.section {
 .theme-toggle:hover {
   color: var(--text);
   border-color: var(--accent);
+}
+
+
+/* ---- motion & skeleton ------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+.skeleton {
+  background: var(--skeleton);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 /* ---- keyboard shortcuts overlay ------------------------------------------- */
