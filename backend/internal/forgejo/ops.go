@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ---- types -----------------------------------------------------------------
@@ -53,6 +54,9 @@ type Repo struct {
 	// Size is the git repository size in bytes (Forgejo `size` field), used for
 	// storage metering in billing.
 	Size int64 `json:"size"`
+	// Updated is the repo's last-update timestamp (moves on push), used for
+	// "updated X ago" freshness on list pages.
+	Updated *time.Time `json:"updated"`
 }
 
 // ---- options ---------------------------------------------------------------

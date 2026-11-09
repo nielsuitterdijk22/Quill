@@ -53,6 +53,9 @@ type repoResponse struct {
 	StarCount        int64     `json:"starCount"`
 	ViewerHasStarred bool      `json:"viewerHasStarred"`
 	CreatedAt        time.Time `json:"createdAt"`
+	// UpdatedAt is the repo's last-update time from Forgejo (moves on push) —
+	// optional, present when the git backend can provide it.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
 }
 
 func newRepoResponse(r db.Repository) repoResponse {
@@ -227,10 +230,47 @@ func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
 	for _, repo := range repos {
 		out = append(out, newRepoResponse(repo))
 	}
+	// Enrich with Forgejo's per-repo updated timestamps (one batched call) so
+	// list pages can show "updated X ago" — a push today is the signal the
+	// user looks for on a namespace landing page. Best-effort: without the
+	// git backend the field just stays absent.
+	out = s.attachRepoUpdated(r.Context(), project, out)
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"project":      newProjectResponse(project),
 		"repositories": out,
 	})
+}
+
+// attachRepoUpdated fills repoResponse.UpdatedAt from a single Forgejo
+// org-repos listing. Repos missing from Forgejo keep a nil UpdatedAt.
+func (s *Server) attachRepoUpdated(ctx context.Context, project db.Project, out []repoResponse) []repoResponse {
+	if s.forgejo == nil || !s.forgejo.Enabled() || len(out) == 0 {
+		return out
+	}
+	var org string
+	if project.ForgejoOrgName.Valid {
+		org = project.ForgejoOrgName.String
+	}
+	if org == "" {
+		return out
+	}
+	forgejoRepos, err := s.forgejo.ListOrgRepos(ctx, org)
+	if err != nil {
+		s.logger.Warn("repo list updated-at enrichment failed", "org", org, "error", err)
+		return out
+	}
+	byName := make(map[string]*time.Time, len(forgejoRepos))
+	for i := range forgejoRepos {
+		if forgejoRepos[i].Updated != nil {
+			byName[forgejoRepos[i].Name] = forgejoRepos[i].Updated
+		}
+	}
+	for i := range out {
+		if t, ok := byName[out[i].ForgejoName]; ok {
+			out[i].UpdatedAt = t
+		}
+	}
+	return out
 }
 
 // handleCreateRepo provisions a repository under a project.
