@@ -24,6 +24,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: DavidAnson/markdownlint-cli2-action@v16
         with:
+          # Owner-maintained documents are excluded: their content and
+          # formatting belong to the owner, and agents must not edit them.
           globs: |
             docs/**/*.md
             *.md
+            !SUITE.md
+            !MISSION.md
+            !FEATURES.md
+            !USER_STORIES.md
+            !FEEDBACK.md
+            !BACKLOG.md
+            !JOURNAL.md

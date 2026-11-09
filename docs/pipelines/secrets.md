@@ -24,7 +24,7 @@ You need to be a **project admin** to view or manage secrets at any scope.
 When a run starts, Quill gathers the secrets that apply to it and merges them in
 this order:
 
-```
+```text
 project  →  repository  →  environment
 (broadest)                 (most specific)
 ```

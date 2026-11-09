@@ -51,17 +51,20 @@ These rules apply to every coding agent in this repository. The foundry loop enf
 ones marked **(enforced)**: breaking them throws the work away.
 
 ### Read order, every session
+
 1. `FEEDBACK.md`: the owner's latest feedback. It overrides everything except the mission.
 2. `SUITE.md` (if present: the product family this repo belongs to), `MISSION.md`,
    then this file, then `DECISIONS.md`.
 3. Your task (in `.foundry/task.md` when run by foundry, otherwise the top of `BACKLOG.md`).
 
 ### Owner documents
+
 - `SUITE.md`, `MISSION.md`, `FEATURES.md`, `USER_STORIES.md` belong to the owner. Never edit them. **(enforced)**
 - `BACKLOG.md` and `JOURNAL.md` are maintained by the foundry loop; don't edit them during a task.
 - `FEEDBACK.md` is written by the owner; read it, don't edit it.
 
 ### How to work
+
 - One task per session. Keep the diff small and on-topic.
 - Tests first: encode the task's acceptance check as tests, see them fail, then implement.
 - `./check` is the only definition of done. It must exit 0 before you finish.
@@ -80,6 +83,7 @@ ones marked **(enforced)**: breaking them throws the work away.
   write the question in your summary instead of stalling.
 
 ### Finishing a session
+
 Write `.foundry/summary.md` with `## Done`, `## Questions`, and `## Follow-ups` sections.
 
 ## Operations handbook (Scaleway production, decided by the owner 2026-11-08)
@@ -92,6 +96,7 @@ working product; Scaleway budget is **€20/month**. The MISSION.md "must never 
 rules (tenant isolation, no credential leaks) remain hard constraints regardless.
 
 ### Access
+
 - `source .envrc` in the repo root (direnv; gitignored) for `SCW_*` credentials.
   scw CLI v2.65 is installed; region comes from `SCW_DEFAULT_REGION=fr-par` (v2.65 dropped
   the per-command `region=` arg).
@@ -108,6 +113,7 @@ rules (tenant isolation, no credential leaks) remain hard constraints regardless
   `terraform.tfvars` / `.envrc` are gitignored for this reason.
 
 ### Deploy / redeploy gotchas (learned the hard way)
+
 - Push to `main` → CI builds images (`<sha>` + `latest` tags) and runs `terraform apply`.
 - Serverless containers do **not** reliably auto-redeploy on tag push: after CI finishes,
   run `scw container container redeploy <container-id>` (ids from `scw container container list`)
@@ -121,6 +127,7 @@ rules (tenant isolation, no credential leaks) remain hard constraints regardless
   `vars.QUILL_DOMAIN` for hosts (it still holds the pre-migration value).
 
 ### Debugging production 500s
+
 Container logs are not reachable via the scw CLI. Fastest path: run the api **locally**
 against the live SDB + live Forgejo — env recipe (never commit):
 `QUILL_DATABASE_URL` from `terraform output sdb_endpoints` + `sdb_user`/`sdb_password`
@@ -131,6 +138,7 @@ Then point tests at `QUILL_E2E_API_URL=http://localhost:18080` and read real err
 the local log.
 
 ### Live e2e tests
+
 `backend/tests/live/` (Go, stdlib only) drives the deployed platform: headless Zitadel
 login (PKCE; the login UI is stepwise — POST `/ui/login/loginname` with the **email** as
 loginName, then `/ui/login/password`, then `/ui/login/mfa/prompt` with `skip=true`, each
@@ -145,6 +153,7 @@ never users, personal projects, or real content).
 
 **Agent credentials recipe** (agents can and should run the live suite + signed-in
 web-session verification themselves):
+
 - `QUILL_E2E_USER` / `QUILL_E2E_PASSWORD`: the fixture account
   `e2e-tester@black-tulip.nl`; its password lives in Secret Manager as
   `/quill/app/app-e2e-user-password` (`scw secret version access <id> revision=latest`
@@ -167,6 +176,7 @@ web-session verification themselves):
   were re-stored cleanly on 2026-11-09.
 
 ### Cost watch
+
 Current drivers (billing via `scw billing consumption list`): DEV1-S VM (fixed, required
 for git/CI), `quill` Serverless SQL DB CPU (billed only while the api container is scaled
 up — api has `min_scale=0`), containers mostly inside the free tier. The stale pending
@@ -176,6 +186,7 @@ container hot and burned SDB CPU); cancel them (`cron list` / `cron cancel` in t
 tooling) once a check is green.
 
 ### Known open items
+
 - GitHub repo import: OAuth creds are live (the api 302s to github.com) and the
   cross-host cookie bug is fixed (2026-11-08): the flow cookies carry
   `Domain=black-tulip.nl` via `QUILL_COOKIE_DOMAIN` (terraform sets it from
