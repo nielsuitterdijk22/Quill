@@ -30,8 +30,8 @@ export default async function TreePage({
 }: {
   params: { project: string; repo: string; slug: string[] };
 }) {
+  // token may be absent for public repos browsed anonymously.
   const token = await getToken();
-  if (!token) notFound();
 
   const slug = (params.slug ?? []).map(decodeURIComponent);
   const [branchesRes, meta] = await Promise.all([

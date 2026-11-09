@@ -19,8 +19,8 @@ export default async function CommitsPage({
 }: {
   params: { project: string; repo: string; ref: string[] };
 }) {
+  // token may be absent — public repos are browsable anonymously.
   const token = await getToken();
-  if (!token) notFound();
 
   const ref = (params.ref ?? []).map(decodeURIComponent).join("/");
   const result = await getCommits(token, params.project, params.repo, ref, "", 50);
@@ -57,21 +57,20 @@ export default async function CommitsPage({
           <div className="empty">No commits on this ref.</div>
         ) : (
           commits.map((c) => (
-            <div className="row-item" key={c.sha}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <Link
+              className="row-item commit-row"
+              key={c.sha}
+              href={`/projects/${params.project}/repos/${params.repo}/commit/${c.sha}`}
+            >
+              <div className="pr-main">
                 <span className="nm">{firstLine(c.message)}</span>
                 <span className="sub">
                   {c.authorLogin || c.authorName} · {fmtDate(c.date)}
                 </span>
               </div>
               <span className="spacer" />
-              <Link
-                className="mono"
-                href={`/projects/${params.project}/repos/${params.repo}/commit/${c.sha}`}
-              >
-                {shortSha(c.sha)}
-              </Link>
-            </div>
+              <span className="mono">{shortSha(c.sha)}</span>
+            </Link>
           ))
         )}
       </div>

@@ -19,6 +19,12 @@ const PUBLIC_ROUTES = [
   // bearer itself (mirrors how Atlas's own middleware.ts treats its /api/*
   // backend-proxied routes as public for the same reason).
   /^\/api\/backend(?:\/.*)?$/,
+  // Public repositories are browsable anonymously (GH-style): the code
+  // pages of a repo — landing, tree, blob, commits, commit detail, branches.
+  // The backend enforces that only visibility=public repos answer; everything
+  // else 404s without revealing that it exists.
+  /^\/projects\/[^/]+\/repos\/[^/]+(?:\/|$)/,
+  /^\/[^/]+\/[^/]+(?:\/|$)/,
 ];
 
 function isPublic(pathname: string): boolean {

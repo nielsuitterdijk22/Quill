@@ -31,8 +31,7 @@ export default async function RepoHomePage({
   params: { project: string; repo: string };
 }) {
   const token = await getToken();
-  if (!token) notFound();
-
+  // NOTE: token may be absent — public repos are browsable anonymously.
   const result = await getContents(token, params.project, params.repo);
 
   // 409 means the git repo exists in Forgejo but has no commits yet. Show
@@ -187,13 +186,21 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
         <Link className="pill" href={commitsHref(params.project, params.repo, ref)}>
           commits
         </Link>
-        <StarButton
-          project={params.project}
-          repo={params.repo}
-          initialStarred={repoDetailRes.ok ? repoDetailRes.data.viewerHasStarred : false}
-          initialCount={repoDetailRes.ok ? repoDetailRes.data.starCount : 0}
-        />
-        <ForkButton sourceProject={params.project} sourceRepo={params.repo} />
+        {token ? (
+          <>
+            <StarButton
+              project={params.project}
+              repo={params.repo}
+              initialStarred={repoDetailRes.ok ? repoDetailRes.data.viewerHasStarred : false}
+              initialCount={repoDetailRes.ok ? repoDetailRes.data.starCount : 0}
+            />
+            <ForkButton sourceProject={params.project} sourceRepo={params.repo} />
+          </>
+        ) : (
+          <Link className="pill" href="/sign-in">
+            Sign in to star or fork
+          </Link>
+        )}
         <CloneButton httpUrl={httpUrl} />
       </div>
 

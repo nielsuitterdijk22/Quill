@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import { getBranches, getCommits, getContents } from "../../../../../../../lib/api";
+import { getBranches, getCommits, getContents, renderMarkdown } from "../../../../../../../lib/api";
 import { getToken } from "../../../../../../../lib/session";
 import {
   BrowseError,
@@ -19,11 +19,13 @@ import {
 // instead of inline text.
 export default async function BlobPage({
   params,
+  searchParams,
 }: {
   params: { project: string; repo: string; slug: string[] };
+  searchParams: { view?: string };
 }) {
+  // token may be absent — public repos are browsable anonymously.
   const token = await getToken();
-  if (!token) notFound();
 
   const slug = (params.slug ?? []).map(decodeURIComponent);
   const branchesRes = await getBranches(token, params.project, params.repo);
@@ -52,6 +54,15 @@ export default async function BlobPage({
   }
   if (!contents.file) notFound();
   const file = contents.file;
+
+  // Markdown files render as formatted markup by default (Forgejo's markup
+  // engine, same as the README), with a toggle back to the raw source.
+  const isMarkdown = /\.(md|markdown)$/i.test(file.name);
+  const wantSource = searchParams?.view === "source";
+  const markdownHtml =
+    isMarkdown && !wantSource
+      ? await renderMarkdown(token, params.project, params.repo, file.content ?? "")
+      : null;
 
   // Fetch the most recent commit touching this file so the header can show
   // when it was last edited.
@@ -102,7 +113,26 @@ export default async function BlobPage({
           <div className="empty">Binary file not shown.</div>
         </div>
       ) : (
-        <CodeView content={file.content ?? ""} />
+        <>
+          {isMarkdown && (
+            <div className="blob-view-tabs">
+              <a className={wantSource ? "" : "active"} href={`?${new URLSearchParams(ref ? { ref } : {}).toString()}`}>
+                Preview
+              </a>
+              <a className={wantSource ? "active" : ""} href={`?${new URLSearchParams({ ...(ref ? { ref } : {}), view: "source" }).toString()}`}>
+                Code
+              </a>
+            </div>
+          )}
+          {markdownHtml ? (
+            <div
+              className="panel attached markdown-body blob-markdown"
+              dangerouslySetInnerHTML={{ __html: markdownHtml }}
+            />
+          ) : (
+            <CodeView content={file.content ?? ""} />
+          )}
+        </>
       )}
     </>
   );

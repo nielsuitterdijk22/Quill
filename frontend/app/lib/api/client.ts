@@ -4,10 +4,18 @@ export const API_BASE = process.env.QUILL_API_BASE_URL || "http://localhost:8080
 
 import type { Result, DataResult, MutationResult, AuthResult, User } from "./types";
 
-export async function authGet<T>(token: string, path: string): Promise<Result<T>> {
+// authGet performs a GET. The token may be absent: anonymous reads of public
+// repositories go through without an Authorization header (the backend's
+// public-read path), while any protected endpoint still answers 401.
+export async function authGet<T>(
+  token: string | null | undefined,
+  path: string,
+): Promise<Result<T>> {
   try {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers,
       cache: "no-store",
     });
     if (!res.ok) {
@@ -40,20 +48,26 @@ export async function postAuth(path: string, body: unknown): Promise<AuthResult>
   }
 }
 
-export async function postData<T>(token: string, path: string, body: unknown): Promise<DataResult<T>> {
+export async function postData<T>(
+  token: string | null | undefined,
+  path: string,
+  body: unknown,
+): Promise<DataResult<T>> {
   return sendData<T>(token, "POST", path, body);
 }
 
 export async function sendData<T>(
-  token: string,
+  token: string | null | undefined,
   method: "POST" | "PUT" | "PATCH",
   path: string,
   body: unknown,
 ): Promise<DataResult<T>> {
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify(body),
       cache: "no-store",
     });

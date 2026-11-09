@@ -11,7 +11,11 @@ import type {
   MutationResult,
 } from "./types";
 
-export function getRepo(token: string, project: string, repo: string): Promise<Result<Repo>> {
+export function getRepo(
+  token: string | null | undefined,
+  project: string,
+  repo: string,
+): Promise<Result<Repo>> {
   return authGet<Repo>(token, `/api/v1/projects/${project}/repos/${repo}`);
 }
 
@@ -66,7 +70,7 @@ export function unstarRepo(
 }
 
 export function getBranches(
-  token: string,
+  token: string | null | undefined,
   project: string,
   repo: string,
 ): Promise<Result<BranchesResult>> {
@@ -74,7 +78,7 @@ export function getBranches(
 }
 
 export function getCommits(
-  token: string,
+  token: string | null | undefined,
   project: string,
   repo: string,
   ref?: string,
@@ -89,7 +93,7 @@ export function getCommits(
 }
 
 export function getCommit(
-  token: string,
+  token: string | null | undefined,
   project: string,
   repo: string,
   sha: string,
@@ -98,7 +102,7 @@ export function getCommit(
 }
 
 export function getContents(
-  token: string,
+  token: string | null | undefined,
   project: string,
   repo: string,
   path?: string,
@@ -115,7 +119,7 @@ export function getContents(
 }
 
 export async function renderMarkdown(
-  token: string,
+  token: string | null | undefined,
   project: string,
   repo: string,
   text: string,

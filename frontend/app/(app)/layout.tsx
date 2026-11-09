@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Sidebar } from "../components/Sidebar";
 import { KeyboardShortcuts } from "../components/KeyboardShortcuts";
-import { getToken, requireSession } from "../lib/session";
+import { getToken, getSession } from "../lib/session";
 import { authGet } from "../lib/api/client";
 import { listOrgs } from "../lib/api/organizations";
 import type { Organization } from "../lib/api/organizations";
@@ -15,8 +16,30 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await requireSession();
+  const user = await getSession();
   const token = await getToken();
+
+  // Anonymous visitors get a bare shell: PUBLIC repositories are browsable
+  // without an account (GH-style), so the (app) group stays reachable signed
+  // out — the pages that need auth redirect to /sign-in themselves or the
+  // backend answers 401/404 for anything non-public.
+  if (!user) {
+    return (
+      <div className="app app-public">
+        <header className="public-top">
+          <Link className="project-switcher-btn" href="/">
+            <span className="dot" />
+            Quill
+          </Link>
+          <span className="spacer" />
+          <Link className="pill" href="/sign-in">
+            Sign in
+          </Link>
+        </header>
+        <main className="main main-public">{children}</main>
+      </div>
+    );
+  }
 
   // Use authGet directly so we can distinguish "no projects" (should redirect)
   // from "fetch failed / auth error" (should not redirect — avoids a loop when

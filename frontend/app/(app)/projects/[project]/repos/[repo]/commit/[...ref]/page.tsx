@@ -20,8 +20,8 @@ export default async function CommitPage({
 }: {
   params: { project: string; repo: string; ref: string[] };
 }) {
+  // token may be absent for public repos browsed anonymously.
   const token = await getToken();
-  if (!token) notFound();
 
   const sha = (params.ref ?? []).map(decodeURIComponent).join("/");
   if (!sha) notFound();

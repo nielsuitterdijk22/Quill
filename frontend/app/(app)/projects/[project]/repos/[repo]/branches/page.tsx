@@ -21,8 +21,8 @@ export default async function BranchesPage({
 }: {
   params: { project: string; repo: string };
 }) {
+  // token may be absent for public repos browsed anonymously.
   const token = await getToken();
-  if (!token) notFound();
 
   const [result, meta] = await Promise.all([
     getBranches(token, params.project, params.repo),
