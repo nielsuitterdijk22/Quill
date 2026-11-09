@@ -203,6 +203,10 @@ func (s *Server) setupRoutes() {
 		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
 		r.Post("/webhooks/forgejo", s.handleWebhook)
 
+		// Creem merchant-of-record events (plan upgrades). Signature-verified
+		// inside the handler; no Quill auth involved.
+		r.Post("/webhooks/creem", s.handleCreemWebhook)
+
 		// Authentication: /me requires a valid token. Register/login are handled by
 		// Zitadel on the frontend; local auth routes are available as a fallback when
 		// ZITADEL_ISSUER is not set (development / self-hosted without Zitadel).
