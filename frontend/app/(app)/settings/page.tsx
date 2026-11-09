@@ -52,6 +52,13 @@ export default async function SettingsPage({
         <h1>Settings</h1>
       </div>
 
+      <nav className="settings-nav" aria-label="Settings sections">
+        <a href="#settings-profile">Profile</a>
+        <a href="#settings-security">Security</a>
+        <a href="#settings-billing">Billing</a>
+        <a href="#settings-data">Data</a>
+      </nav>
+
       {personalProject && (
         <div className="repo-toolbar">
           <div className="state-tabs">
@@ -116,33 +123,41 @@ async function AccountTab({
         </div>
       </div>
 
-      <AvatarUploadPanel
-        userId={user.id}
-        hasAvatar={!!user.hasAvatar}
-        name={user.displayName || user.username}
-      />
+      <div id="settings-profile">
+        <AvatarUploadPanel
+          userId={user.id}
+          hasAvatar={!!user.hasAvatar}
+          name={user.displayName || user.username}
+        />
 
-      <ProfileForm displayName={user.displayName} username={user.username} />
+        <ProfileForm displayName={user.displayName} username={user.username} />
 
-      <EmailForm email={user.email} />
+        <EmailForm email={user.email} />
+      </div>
 
-      <ChangePasswordForm />
+      <div id="settings-security">
+        <ChangePasswordForm />
 
-      <GitTokenPanel
-        tokens={tokensRes.ok ? tokensRes.data : []}
-        loadError={tokensRes.ok ? undefined : tokensRes.message}
-      />
+        <GitTokenPanel
+          tokens={tokensRes.ok ? tokensRes.data : []}
+          loadError={tokensRes.ok ? undefined : tokensRes.message}
+        />
 
-      <SSHKeyPanel
-        keys={sshRes.ok ? sshRes.data : []}
-        loadError={sshRes.ok ? undefined : sshRes.message}
-      />
+        <SSHKeyPanel
+          keys={sshRes.ok ? sshRes.data : []}
+          loadError={sshRes.ok ? undefined : sshRes.message}
+        />
+      </div>
 
-      <PersonalBillingPanel />
+      <div id="settings-billing">
+        <PersonalBillingPanel />
+      </div>
 
-      <ExportDataButton />
+      <div id="settings-data">
+        <ExportDataButton />
 
-      <AccountDangerZone />
+        <AccountDangerZone />
+      </div>
     </>
   );
 }

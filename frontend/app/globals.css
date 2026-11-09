@@ -684,6 +684,27 @@ select:focus {
   padding: 5px 9px;
   border-radius: 6px;
 }
+.settings-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -4px 0 18px;
+}
+.settings-nav a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  transition: border-color 150ms var(--ease), color 150ms var(--ease),
+    background 150ms var(--ease);
+}
+.settings-nav a:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .empty {
   padding: 18px 16px;
   color: var(--muted);
