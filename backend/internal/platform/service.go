@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/nielsuitterdijk22/quill/internal/creem"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
@@ -58,6 +59,12 @@ type Service struct {
 	// the backing org and emailing invites through the IdP's mail service. Nil in
 	// local/dev, where orgs are Quill-only and invites use shareable links.
 	orgs OrgProvisioner
+	// creem starts paid-plan checkout sessions (nil = payments not configured).
+	creem *creem.Client
+	// storageProbe measures a tenant's git-byte usage for the free-plan storage
+	// gate. Defaults to the Forgejo-backed storageUsage; tests override it to
+	// avoid a live git backend.
+	storageProbe func(ctx context.Context, tenantID uuid.UUID) (int64, error)
 }
 
 // OrgProvisioner abstracts the external-IdP operations Quill drives when managing
@@ -82,7 +89,7 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{
+	svc := &Service{
 		store:     st,
 		forgejo:   fj,
 		logger:    logger,
@@ -90,6 +97,10 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 		evaluator: policy.NewTypedEvaluator(),
 		cipher:    secretbox.NewDev(),
 	}
+	// Method value: the storage gate's size probe defaults to the Forgejo-backed
+	// measurement; tests swap this field for a fake.
+	svc.storageProbe = svc.storageUsage
+	return svc
 }
 
 // WithRunner overrides the CI runner (used by tests and the HTTP dispatcher
@@ -103,6 +114,14 @@ func (s *Service) WithRunner(r pipeline.Runner) *Service {
 // install the configured encryption key) and returns the service for chaining.
 func (s *Service) WithCipher(c *secretbox.Cipher) *Service {
 	s.cipher = c
+	return s
+}
+
+// WithCreem installs the Creem merchant-of-record client used for plan
+// upgrades (checkout sessions + webhook processing). Absent it, upgrade
+// requests return ErrPaymentsNotConfigured.
+func (s *Service) WithCreem(c *creem.Client) *Service {
+	s.creem = c
 	return s
 }
 

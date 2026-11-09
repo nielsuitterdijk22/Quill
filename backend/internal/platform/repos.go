@@ -68,8 +68,12 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
 		return db.Repository{}, err
 	}
-	// Freemium premium gate: free-plan tenants are capped at FreeMaxRepos.
+	// Freemium premium gates: free-plan tenants are capped at FreeMaxRepos
+	// and 1 GiB of git storage.
 	if err := s.enforceRepoQuota(ctx, project.TenantID); err != nil {
+		return db.Repository{}, err
+	}
+	if err := s.enforceStorageQuota(ctx, project.TenantID); err != nil {
 		return db.Repository{}, err
 	}
 

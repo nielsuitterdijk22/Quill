@@ -2,10 +2,13 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/nielsuitterdijk22/quill/internal/creem"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -177,4 +180,138 @@ func (s *Service) enforcePipelineMinutesQuota(ctx context.Context, tenantID uuid
 		return fmt.Errorf("%w: the free plan includes %d pipeline minutes per month; contact us or upgrade your plan to keep building", ErrLimitReached, FreeMaxPipelineMinutes)
 	}
 	return nil
+}
+
+// storageUsage sums the git-byte size of every repository in the tenant as
+// reported by Forgejo. It mirrors GetBilling's metering so enforcement and the
+// billing view always agree. Repos whose Forgejo linkage or API read fails
+// count as zero bytes, matching the billing view's tolerant behavior.
+func (s *Service) storageUsage(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	if !s.forgejoEnabled() {
+		return 0, nil
+	}
+	projects, err := s.store.ListProjectsByTenantID(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("list projects: %w", err)
+	}
+	var total int64
+	for _, project := range projects {
+		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 500, Offset: 0})
+		if err != nil {
+			return 0, fmt.Errorf("list repositories: %w", err)
+		}
+		for _, r := range repos {
+			if !r.ForgejoOwner.Valid || !r.ForgejoName.Valid {
+				continue
+			}
+			repo, err := s.forgejo.GetRepo(ctx, r.ForgejoOwner.String, r.ForgejoName.String)
+			if err != nil {
+				s.logger.Warn("storage metering: forgejo repo size unavailable", "repo", r.Slug, "error", err)
+				continue
+			}
+			total += repo.Size
+		}
+	}
+	return total, nil
+}
+
+// enforceStorageQuota blocks repository creation when the tenant's free-plan
+// storage allotment is used up. The size probe goes through s.storageProbe so
+// tests can override it without a live Forgejo; the production probe is
+// storageUsage (Forgejo-backed, mirroring GetBilling's metering).
+func (s *Service) enforceStorageQuota(ctx context.Context, tenantID uuid.UUID) error {
+	tenant, err := s.store.GetTenantByID(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("lookup tenant: %w", err)
+	}
+	if tenant.Plan != PlanFree {
+		return nil
+	}
+	used, err := s.storageProbe(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("measure storage: %w", err)
+	}
+	if used >= FreeMaxStorageBytes {
+		return fmt.Errorf("%w: the free plan includes 1 GiB of git storage; contact us or upgrade your plan to keep growing", ErrLimitReached)
+	}
+	return nil
+}
+
+// StartTeamCheckout opens a Creem checkout session for the tenant's upgrade to
+// the Team plan. Tenant-admin only (mirrors GetBilling), because starting a
+// checkout is a billing action. successURL is the page the customer lands on
+// after paying (the org's billing panel).
+func (s *Service) StartTeamCheckout(ctx context.Context, actor Actor, orgSlug, successURL, requestID string) (string, error) {
+	tenant, err := s.getTenant(ctx, orgSlug)
+	if err != nil {
+		return "", err
+	}
+	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
+		return "", err
+	}
+	if s.creem == nil || !s.creem.Enabled() || s.creem.TeamProductID() == "" {
+		return "", ErrPaymentsNotConfigured
+	}
+	co, err := s.creem.CreateCheckout(ctx, s.creem.TeamProductID(), successURL, requestID, map[string]string{
+		"orgSlug": orgSlug,
+	})
+	if err != nil {
+		return "", fmt.Errorf("creem checkout: %w", err)
+	}
+	return co.CheckoutURL, nil
+}
+
+// CreemEvent is the subset of a Creem webhook payload Quill reacts to. Fields
+// are parsed tolerantly (top-level metadata and obj.metadata both accepted) so
+// schema drift in vendor payloads degrades to a no-op instead of a panic.
+type CreemEvent struct {
+	EventType string `json:"eventType"`
+	Obj       struct {
+		ID         string            `json:"id"`
+		ProductID  string            `json:"product_id"`
+		CustomerID string            `json:"customer_id"`
+		Metadata   map[string]string `json:"metadata"`
+	} `json:"obj"`
+	Metadata map[string]string `json:"metadata"`
+}
+
+// ProcessCreemWebhook verifies the signature (if a webhook secret is
+// configured) and applies checkout.completed events mapped to Quill plans. It
+// returns the org slug whose plan changed, or "" for an ignored event. The plan
+// change is executed as the platform (admin) actor — a verified webhook IS the
+// vendor's instruction; usage overage and cancellations come later.
+func (s *Service) ProcessCreemWebhook(ctx context.Context, body []byte, signatureHeader string) (string, error) {
+	if s.creem == nil || !s.creem.WebhookConfigured() {
+		return "", ErrPaymentsNotConfigured
+	}
+	if !creem.VerifySignature([]byte(s.creem.WebhookSecret()), body, signatureHeader, 10*time.Minute) {
+		return "", fmt.Errorf("%w: invalid webhook signature", ErrInvalidInput)
+	}
+	var evt CreemEvent
+	if err := json.Unmarshal(body, &evt); err != nil {
+		return "", fmt.Errorf("%w: malformed webhook payload", ErrInvalidInput)
+	}
+	if evt.EventType != "checkout.completed" {
+		return "", nil
+	}
+	orgSlug := evt.Obj.Metadata["orgSlug"]
+	if orgSlug == "" {
+		orgSlug = evt.Metadata["orgSlug"]
+	}
+	if orgSlug == "" {
+		return "", nil
+	}
+	var plan string
+	switch evt.Obj.ProductID {
+	case s.creem.TeamProductID():
+		plan = PlanTeam
+	default:
+		// Unknown product (e.g. a future enterprise SKU) — nothing to do yet.
+		return "", nil
+	}
+	if _, err := s.SetTenantPlan(ctx, Actor{IsAdmin: true}, orgSlug, plan); err != nil {
+		return "", err
+	}
+	s.logger.Info("creem webhook: plan upgraded", "org", orgSlug, "plan", plan, "product", evt.Obj.ProductID, "customer", evt.Obj.CustomerID)
+	return orgSlug, nil
 }
