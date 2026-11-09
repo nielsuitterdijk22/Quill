@@ -37,6 +37,9 @@ export type Repo = {
   starCount: number;
   viewerHasStarred: boolean;
   createdAt: string;
+  // Forgejo-side last-update time (moves on push), when available — powers
+  // "updated X ago" freshness on list pages.
+  updatedAt?: string;
 };
 
 export type Branch = {
@@ -199,6 +202,9 @@ export type User = {
   isAdmin: boolean;
   isActive: boolean;
   createdAt: string;
+  // Set on /auth/me: the user uploaded a profile picture
+  // (GET /api/v1/users/{id}/avatar).
+  hasAvatar?: boolean;
 };
 
 export type AuthOk = { ok: true; token: string; user: User };

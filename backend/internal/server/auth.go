@@ -3,10 +3,15 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
@@ -26,6 +31,9 @@ type userResponse struct {
 	IsAdmin     bool      `json:"isAdmin"`
 	IsActive    bool      `json:"isActive"`
 	CreatedAt   time.Time `json:"createdAt"`
+	// HasAvatar reports whether the user has an uploaded profile picture
+	// (served at GET /users/{id}/avatar). Only filled where it matters (/me).
+	HasAvatar bool `json:"hasAvatar,omitempty"`
 }
 
 func newUserResponse(u db.User) userResponse {
@@ -146,7 +154,94 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "user no longer exists")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, newUserResponse(user))
+	resp := newUserResponse(user)
+	if _, err := s.store.GetUserAvatar(r.Context(), user.ID); err == nil {
+		resp.HasAvatar = true
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// avatarLimits constrain profile-picture uploads: content types served safely
+// by <img> tags and a size a Postgres bytea column can carry without pain.
+var avatarAllowedTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/webp": true,
+	"image/gif":  true,
+}
+
+const avatarMaxBytes = 2 << 20 // 2 MiB
+
+// handleUpdateAvatar stores (or replaces) the signed-in user's profile picture.
+// The raw request body is the image bytes; the Content-Type header carries the
+// media type. PUT /me/avatar.
+func (s *Server) handleUpdateAvatar(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
+	if !avatarAllowedTypes[mediaType] {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "profile picture must be a PNG, JPEG, WebP or GIF image")
+		return
+	}
+	body := http.MaxBytesReader(w, r.Body, avatarMaxBytes+1)
+	data, err := io.ReadAll(body)
+	if err != nil || len(data) == 0 || len(data) > avatarMaxBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "too_large", "profile picture must be at most 2 MiB")
+		return
+	}
+	if err := s.store.UpsertUserAvatar(r.Context(), id.UserID, mediaType, data); err != nil {
+		s.writePlatformError(w, err, "could not save the picture")
+		return
+	}
+	s.logAudit(r, "profile.avatar_updated", "user", id.UserID.String(), map[string]any{
+		"bytes": len(data), "type": mediaType,
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDeleteAvatar removes the signed-in user's profile picture. DELETE /me/avatar.
+func (s *Server) handleDeleteAvatar(w http.ResponseWriter, r *http.Request) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := s.store.DeleteUserAvatar(r.Context(), id.UserID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not delete the picture")
+		return
+	}
+	s.logAudit(r, "profile.avatar_deleted", "user", id.UserID.String(), nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGetUserAvatar serves a user's profile picture publicly (so <img> tags
+// render without a bearer) with a short cache. Unknown user or no picture: 404
+// with no information leak. GET /users/{id}/avatar.
+func (s *Server) handleGetUserAvatar(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Error(w, http.StatusNotFound, "not_found", "no such user")
+		return
+	}
+	avatar, err := s.store.GetUserAvatar(r.Context(), id)
+	if err != nil {
+		httpx.Error(w, http.StatusNotFound, "not_found", "no such user")
+		return
+	}
+	w.Header().Set("Content-Type", avatar.MediaType)
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	etag := fmt.Sprintf(`"%d-%s"`, avatar.UpdatedAt.Unix(), id)
+	w.Header().Set("ETag", etag)
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(avatar.Data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(avatar.Data)
 }
 
 // handleMyContributions proxies the signed-in user's Forgejo contribution

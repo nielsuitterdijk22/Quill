@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getReposByProject } from "../../lib/api";
+import { timeAgo } from "../../lib/timeago";
 import { getToken } from "../../lib/session";
 import { VisibilityBadge } from "../../components/repo";
 
@@ -79,8 +80,16 @@ export default async function OwnerNamespacePage({
               href={`/${encodeURIComponent(project.slug)}/${encodeURIComponent(r.slug)}`}
             >
               <span className="tree-icon">▤</span>
-              <span className="nm">{r.name}</span>
-              <span className="sub">· {r.slug}</span>
+              <div className="pr-main">
+                <span className="nm">{r.name}</span>
+                {(r.description || r.updatedAt) && (
+                  <span className="sub">
+                    {r.updatedAt
+                      ? `Updated ${timeAgo(r.updatedAt)}`
+                      : r.description}
+                  </span>
+                )}
+              </div>
               <span className="spacer" />
               <VisibilityBadge visibility={r.visibility} />
             </Link>

@@ -9,6 +9,7 @@ import {
   GovernanceSecretsEnvironments,
 } from "../../components/settings/ProjectGovernanceSettings";
 import { AccountDangerZone } from "./AccountDangerZone";
+import { AvatarUploadPanel } from "./AvatarUploadPanel";
 import { ChangePasswordForm } from "./ChangePasswordForm";
 import { EmailForm } from "./EmailForm";
 import { ExportDataButton } from "./ExportDataButton";
@@ -114,6 +115,12 @@ async function AccountTab({
           </p>
         </div>
       </div>
+
+      <AvatarUploadPanel
+        userId={user.id}
+        hasAvatar={!!user.hasAvatar}
+        name={user.displayName || user.username}
+      />
 
       <ProfileForm displayName={user.displayName} username={user.username} />
 

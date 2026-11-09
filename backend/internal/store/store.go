@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -207,4 +208,39 @@ func (s *Store) InTx(ctx context.Context, fn func(q *db.Queries) error) error {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 	return nil
+}
+
+// UserAvatar is a user's stored profile picture.
+type UserAvatar struct {
+	MediaType string
+	Data      []byte
+	UpdatedAt time.Time
+}
+
+// UpsertUserAvatar replaces (or inserts) a user's profile picture. Hand-written
+// to avoid a code-generator re-run (see migration 000022).
+func (s *Store) UpsertUserAvatar(ctx context.Context, userID uuid.UUID, mediaType string, data []byte) error {
+	const q = `
+		INSERT INTO user_avatars (user_id, media_type, data, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (user_id) DO UPDATE
+		SET media_type = EXCLUDED.media_type, data = EXCLUDED.data, updated_at = now()`
+	_, err := s.pool.Exec(ctx, q, userID, mediaType, data)
+	return err
+}
+
+// GetUserAvatar returns a user's profile picture, or pgx.ErrNoRows when the
+// user has none.
+func (s *Store) GetUserAvatar(ctx context.Context, userID uuid.UUID) (UserAvatar, error) {
+	const q = `SELECT media_type, data, updated_at FROM user_avatars WHERE user_id = $1`
+	var a UserAvatar
+	err := s.pool.QueryRow(ctx, q, userID).Scan(&a.MediaType, &a.Data, &a.UpdatedAt)
+	return a, err
+}
+
+// DeleteUserAvatar removes a user's profile picture. Idempotent.
+func (s *Store) DeleteUserAvatar(ctx context.Context, userID uuid.UUID) error {
+	const q = `DELETE FROM user_avatars WHERE user_id = $1`
+	_, err := s.pool.Exec(ctx, q, userID)
+	return err
 }

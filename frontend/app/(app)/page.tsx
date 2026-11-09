@@ -65,7 +65,11 @@ export default async function DashboardPage() {
 
   const recentPulls = myPulls.ok ? myPulls.data.pulls.slice(0, 6) : [];
   const openPRs = myPulls.ok ? myPulls.data.pulls.filter((p) => p.pull.state === "open").length : 0;
-  const avatarUrl = avatarFromIdp;
+  // Uploaded profile picture wins (settings -> upload); IdP picture as a future
+  // fallback; initials when neither exists.
+  const avatarUrl = user.hasAvatar
+    ? `/api/backend/users/${encodeURIComponent(user.id)}/avatar`
+    : avatarFromIdp;
 
   return (
     <>

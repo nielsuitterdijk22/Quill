@@ -199,6 +199,9 @@ func (s *Server) setupRoutes() {
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/meta", s.handleMeta)
 
+		// Public profile pictures (rendered in <img> tags, no bearer).
+		r.Get("/users/{id}/avatar", s.handleGetUserAvatar)
+
 		// Forgejo webhook receiver: auto-triggers pipelines on push / pull_request.
 		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
 		r.Post("/webhooks/forgejo", s.handleWebhook)
@@ -278,6 +281,8 @@ func (s *Server) setupRoutes() {
 			r.Get("/me/billing", s.handleMyBilling)
 			r.Post("/me/billing/checkout", s.handleMyBillingCheckout)
 			r.Get("/me/contributions", s.handleMyContributions)
+			r.Put("/me/avatar", s.handleUpdateAvatar)
+			r.Delete("/me/avatar", s.handleDeleteAvatar)
 			r.Route("/tenants", func(r chi.Router) {
 				r.Route("/{tenant}", func(r chi.Router) {
 					r.Route("/policies", func(r chi.Router) {
