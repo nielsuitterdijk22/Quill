@@ -86,6 +86,7 @@ resource "scaleway_container" "api" {
     CREEM_API_KEY                  = var.creem_api_key
     CREEM_WEBHOOK_SECRET           = var.creem_webhook_secret
     CREEM_TEAM_PRODUCT_ID          = var.creem_team_product_id
+    CREEM_PRO_PRODUCT_ID           = var.creem_pro_product_id
   }
 
   liveness_probe {

@@ -161,3 +161,59 @@ func (s *Server) handleCreemWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 }
+
+// handleMyBilling returns the caller's personal account billing view (plan,
+// usage, limits) — the meters behind the settings page's billing panel.
+func (s *Server) handleMyBilling(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	view, err := s.platform.GetPersonalBilling(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not load billing")
+		return
+	}
+	resp := billingResponse{
+		Plan:  view.Plan,
+		Usage: billingUsage(view.Usage),
+	}
+	if view.Limits != nil {
+		resp.Limits = &billingLimits{
+			Repos:           view.Limits.Repos,
+			StorageBytes:    view.Limits.StorageBytes,
+			PipelineMinutes: view.Limits.PipelineMinutes,
+		}
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// handleMyBillingCheckout starts a Creem checkout session for upgrading the
+// caller's personal account to the Pro plan. 501 when payments aren't
+// configured mirrors the org flow.
+func (s *Server) handleMyBillingCheckout(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	successURL := "/settings?upgraded=1"
+	if len(s.cfg.CORSAllowedOrigins) > 0 && s.cfg.CORSAllowedOrigins[0] != "" {
+		successURL = s.cfg.CORSAllowedOrigins[0] + successURL
+	}
+	requestID := fmt.Sprintf("user-%s-%d", actor.UserID, time.Now().Unix())
+	url, err := s.platform.StartPersonalCheckout(r.Context(), actor, successURL, requestID)
+	if err != nil {
+		if errors.Is(err, platform.ErrPaymentsNotConfigured) {
+			httpx.Error(w, http.StatusNotImplemented, "not_configured", "Card payments are not activated on this server yet — contact us to upgrade early.")
+			return
+		}
+		s.writePlatformError(w, err, "could not start checkout")
+		return
+	}
+	s.logAudit(r, "billing.personal_checkout_started", "user", actor.UserID.String(), map[string]any{
+		"user": actor.UserID.String(),
+	})
+	httpx.JSON(w, http.StatusOK, map[string]any{"url": url})
+}

@@ -27,6 +27,7 @@ type Config struct {
 	APIKey        string
 	WebhookSecret string
 	TeamProductID string
+	ProProductID  string // the individual "Pro" plan product
 	BaseURL       string // overridable for tests; empty = DefaultBaseURL
 }
 
@@ -64,6 +65,12 @@ func (c *Client) TeamProductID() string {
 // verification by the platform layer.
 func (c *Client) WebhookSecret() string {
 	return c.cfg.WebhookSecret
+}
+
+// ProProductID returns the configured product id for Quill's individual Pro
+// plan (personal-account checkout sessions sell this).
+func (c *Client) ProProductID() string {
+	return c.cfg.ProProductID
 }
 
 // Checkout is the subset of a Creem checkout session Quill uses.

@@ -257,3 +257,9 @@ variable "creem_team_product_id" {
   type        = string
   default     = "unset"
 }
+
+variable "creem_pro_product_id" {
+  description = "Creem product id for Quill's individual Pro plan (personal-account upgrades)."
+  type        = string
+  default     = "unset"
+}

@@ -228,3 +228,85 @@ func TestTeamCheckoutFlow(t *testing.T) {
 		t.Fatalf("unrelated event: slug=%q err=%v", slug, err)
 	}
 }
+
+// TestPersonalBillingAndProUpgrade covers the individual (non-org) freemium
+// surfaces: the account's billing view reads its own per-account tenant, the
+// Pro checkout resolves to that same tenant, and the verified pro webhook
+// flips the plan to pro (lifting the caps).
+func TestPersonalBillingAndProUpgrade(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+
+	userID := scopeMakeUser(t, st, "pro-user")
+	// Provision the per-account tenant the way a fresh Zitadel first login
+	// does (auth/zitadel.go): tenant slug = username, user row linked.
+	tenant, err := st.CreateTenant(ctx, db.CreateTenantParams{Slug: "pro-user", Name: "pro-user"})
+	if err != nil {
+		t.Fatalf("create account tenant: %v", err)
+	}
+	if _, err := st.SetUserTenant(ctx, db.SetUserTenantParams{
+		ID:       userID,
+		TenantID: uuid.NullUUID{UUID: tenant.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("link account tenant: %v", err)
+	}
+	if err := svc.CreatePersonalProject(ctx, userID, "pro-user"); err != nil {
+		t.Fatalf("personal project: %v", err)
+	}
+
+	// The personal billing view reports the account tenant: free plan, caps set.
+	view, err := svc.GetPersonalBilling(ctx, Actor{UserID: userID})
+	if err != nil {
+		t.Fatalf("GetPersonalBilling: %v", err)
+	}
+	if view.Plan != PlanFree || view.Limits == nil || view.Limits.Repos == nil || *view.Limits.Repos != FreeMaxRepos {
+		t.Fatalf("personal view = %+v, want free with caps", view)
+	}
+
+	// Unconfigured payments: the personal checkout is truthful.
+	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, "https://app/s", "req-1"); !errors.Is(err, ErrPaymentsNotConfigured) {
+		t.Fatalf("unconfigured personal checkout: want ErrPaymentsNotConfigured, got %v", err)
+	}
+
+	// Configured Creem with a Pro product: checkout URL returned; the repo
+	// gate still applies (free).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"id":"ch_pro","checkout_url":"https://pay.creem.io/s/pro-session"}`)
+	}))
+	defer srv.Close()
+	svc.WithCreem(creem.New(creem.Config{
+		APIKey:        "sk_test",
+		WebhookSecret: "whsec_test",
+		ProProductID:  "prod_pro",
+		BaseURL:       srv.URL,
+	}))
+	url, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, "https://app/s", "req-2")
+	if err != nil || url != "https://pay.creem.io/s/pro-session" {
+		t.Fatalf("personal checkout: url=%q err=%v", url, err)
+	}
+
+	// Legacy accounts (no per-account tenant) get the clear error.
+	legacy := scopeMakeUser(t, st, "legacy-user")
+	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: legacy}, "https://app/s", "req-3"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("legacy checkout: want ErrInvalidInput, got %v", err)
+	}
+
+	// A verified pro checkout.completed webhook flips the plan to Pro.
+	body := []byte(`{"eventType":"checkout.completed","obj":{"id":"ch_pro","product_id":"prod_pro","customer_id":"cus_1","metadata":{"tenantSlug":"pro-user"}}}`)
+	ts := time.Now().Unix()
+	mac := hmac.New(sha256.New, []byte("whsec_test"))
+	mac.Write([]byte(fmt.Sprintf("%d.", ts)))
+	mac.Write(body)
+	sig := fmt.Sprintf("t=%d,sha256=%s", ts, hex.EncodeToString(mac.Sum(nil)))
+	slug, err := svc.ProcessCreemWebhook(ctx, body, sig)
+	if err != nil || slug != "pro-user" {
+		t.Fatalf("pro webhook: slug=%q err=%v", slug, err)
+	}
+	view, err = svc.GetPersonalBilling(ctx, Actor{UserID: userID})
+	if err != nil {
+		t.Fatalf("billing after webhook: %v", err)
+	}
+	if view.Plan != PlanPro || view.Limits != nil {
+		t.Fatalf("plan after pro webhook = %q limits=%+v, want pro/unlimited", view.Plan, view.Limits)
+	}
+}

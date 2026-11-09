@@ -273,6 +273,10 @@ func (s *Server) setupRoutes() {
 			r.Post("/me/ssh-keys", s.handleAddSSHKey)
 			r.Delete("/me/ssh-keys/{id}", s.handleDeleteSSHKey)
 			r.Get("/me/projects", s.handleListMyProjects)
+			// Personal billing: the caller's own account plan, usage, and the
+			// Pro upgrade checkout (per-account tenants from signup).
+			r.Get("/me/billing", s.handleMyBilling)
+			r.Post("/me/billing/checkout", s.handleMyBillingCheckout)
 			r.Get("/me/contributions", s.handleMyContributions)
 			r.Route("/tenants", func(r chi.Router) {
 				r.Route("/{tenant}", func(r chi.Router) {

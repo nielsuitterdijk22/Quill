@@ -17,6 +17,7 @@ import (
 // (usage-based invoicing / internal dogfooding).
 const (
 	PlanFree       = "free"
+	PlanPro        = "pro" // the individual paid plan: a personal account's upgrade
 	PlanTeam       = "team"
 	PlanEnterprise = "enterprise"
 	PlanInternal   = "internal"
@@ -74,7 +75,29 @@ func (s *Service) GetBilling(ctx context.Context, actor Actor, orgSlug string) (
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return BillingView{}, err
 	}
+	return s.billingView(ctx, tenant)
+}
 
+// GetPersonalBilling returns the billing view for the caller's own account
+// tenant — the per-account tenant provisioned at signup for freemium gating
+// and the personal Pro checkout. Users on the legacy shared tenant
+// (pre-provisioning accounts) see that tenant's view, which carries the
+// unlimited internal plan.
+func (s *Service) GetPersonalBilling(ctx context.Context, actor Actor) (BillingView, error) {
+	tenantID, err := s.personalTenantID(ctx, actor.UserID)
+	if err != nil {
+		return BillingView{}, err
+	}
+	tenant, err := s.store.GetTenantByID(ctx, tenantID)
+	if err != nil {
+		return BillingView{}, fmt.Errorf("lookup account tenant: %w", err)
+	}
+	return s.billingView(ctx, tenant)
+}
+
+// billingView meters a tenant's usage and attaches its plan's limits. Shared
+// body of the org and personal billing views so every surface agrees.
+func (s *Service) billingView(ctx context.Context, tenant db.Tenant) (BillingView, error) {
 	repos, err := s.store.CountRepositoriesByTenant(ctx, tenant.ID)
 	if err != nil {
 		return BillingView{}, fmt.Errorf("count repositories: %w", err)
@@ -91,11 +114,11 @@ func (s *Service) GetBilling(ctx context.Context, actor Actor, orgSlug string) (
 			return BillingView{}, fmt.Errorf("list projects: %w", err)
 		}
 		for _, p := range projects {
-			repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: p.ID, Limit: 500, Offset: 0})
+			repoRows, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: p.ID, Limit: 500, Offset: 0})
 			if err != nil {
 				return BillingView{}, fmt.Errorf("list repositories: %w", err)
 			}
-			for _, r := range repos {
+			for _, r := range repoRows {
 				if !r.ForgejoOwner.Valid || !r.ForgejoName.Valid {
 					continue
 				}
@@ -125,7 +148,7 @@ func (s *Service) SetTenantPlan(ctx context.Context, actor Actor, orgSlug, plan 
 		return db.Tenant{}, err
 	}
 	switch plan {
-	case PlanFree, PlanTeam, PlanEnterprise, PlanInternal:
+	case PlanFree, PlanPro, PlanTeam, PlanEnterprise, PlanInternal:
 	default:
 		return db.Tenant{}, fmt.Errorf("%w: plan must be one of free|team|enterprise|internal", ErrInvalidInput)
 	}
@@ -253,7 +276,36 @@ func (s *Service) StartTeamCheckout(ctx context.Context, actor Actor, orgSlug, s
 		return "", ErrPaymentsNotConfigured
 	}
 	co, err := s.creem.CreateCheckout(ctx, s.creem.TeamProductID(), successURL, requestID, map[string]string{
-		"orgSlug": orgSlug,
+		"tenantSlug": orgSlug,
+	})
+	if err != nil {
+		return "", fmt.Errorf("creem checkout: %w", err)
+	}
+	return co.CheckoutURL, nil
+}
+
+// StartPersonalCheckout opens a Creem checkout session to upgrade the caller's
+// personal account to the Pro plan. Self-service by definition: the caller's
+// own account tenant is the target, so the authenticated actor is the entire
+// authorization. Users whose accounts predate per-account provisioning sit on
+// the legacy shared tenant (already unlimited) and get a clear error.
+func (s *Service) StartPersonalCheckout(ctx context.Context, actor Actor, successURL, requestID string) (string, error) {
+	user, err := s.store.GetUserByID(ctx, actor.UserID)
+	if err != nil {
+		return "", fmt.Errorf("lookup user: %w", err)
+	}
+	if !user.TenantID.Valid {
+		return "", fmt.Errorf("%w: this account predates personal plans and is already unlimited", ErrInvalidInput)
+	}
+	if s.creem == nil || !s.creem.Enabled() || s.creem.ProProductID() == "" {
+		return "", ErrPaymentsNotConfigured
+	}
+	tenant, err := s.store.GetTenantByID(ctx, user.TenantID.UUID)
+	if err != nil {
+		return "", fmt.Errorf("lookup account tenant: %w", err)
+	}
+	co, err := s.creem.CreateCheckout(ctx, s.creem.ProProductID(), successURL, requestID, map[string]string{
+		"tenantSlug": tenant.Slug,
 	})
 	if err != nil {
 		return "", fmt.Errorf("creem checkout: %w", err)
@@ -294,24 +346,32 @@ func (s *Service) ProcessCreemWebhook(ctx context.Context, body []byte, signatur
 	if evt.EventType != "checkout.completed" {
 		return "", nil
 	}
-	orgSlug := evt.Obj.Metadata["orgSlug"]
-	if orgSlug == "" {
-		orgSlug = evt.Metadata["orgSlug"]
+	tenantSlug := evt.Obj.Metadata["tenantSlug"]
+	if tenantSlug == "" {
+		tenantSlug = evt.Obj.Metadata["orgSlug"] // pre-personal-plan events
 	}
-	if orgSlug == "" {
+	if tenantSlug == "" {
+		tenantSlug = evt.Metadata["tenantSlug"]
+	}
+	if tenantSlug == "" {
+		tenantSlug = evt.Metadata["orgSlug"]
+	}
+	if tenantSlug == "" {
 		return "", nil
 	}
 	var plan string
 	switch evt.Obj.ProductID {
 	case s.creem.TeamProductID():
 		plan = PlanTeam
+	case s.creem.ProProductID():
+		plan = PlanPro
 	default:
 		// Unknown product (e.g. a future enterprise SKU) — nothing to do yet.
 		return "", nil
 	}
-	if _, err := s.SetTenantPlan(ctx, Actor{IsAdmin: true}, orgSlug, plan); err != nil {
+	if _, err := s.SetTenantPlan(ctx, Actor{IsAdmin: true}, tenantSlug, plan); err != nil {
 		return "", err
 	}
-	s.logger.Info("creem webhook: plan upgraded", "org", orgSlug, "plan", plan, "product", evt.Obj.ProductID, "customer", evt.Obj.CustomerID)
-	return orgSlug, nil
+	s.logger.Info("creem webhook: plan upgraded", "tenant", tenantSlug, "plan", plan, "product", evt.Obj.ProductID, "customer", evt.Obj.CustomerID)
+	return tenantSlug, nil
 }

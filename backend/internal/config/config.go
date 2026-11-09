@@ -188,6 +188,7 @@ func Load() (*Config, error) {
 			APIKey:        getenv("CREEM_API_KEY", ""),
 			WebhookSecret: getenv("CREEM_WEBHOOK_SECRET", ""),
 			TeamProductID: getenv("CREEM_TEAM_PRODUCT_ID", ""),
+			ProProductID:  getenv("CREEM_PRO_PRODUCT_ID", ""),
 		},
 		Forgejo: ForgejoConfig{
 			BaseURL:    getenv("FORGEJO_BASE_URL", "http://localhost:3000"),
