@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/nielsuitterdijk22/quill/internal/creem"
 )
 
 // Config holds all runtime configuration for the backend.
@@ -33,6 +35,7 @@ type Config struct {
 	JWT       JWTConfig
 	Zitadel   ZitadelConfig
 	GitHub    GitHubConfig
+	Creem     creem.Config
 	Forgejo   ForgejoConfig
 	Pipeline  PipelineConfig
 	TempoSync TempoSyncConfig
@@ -181,6 +184,11 @@ func Load() (*Config, error) {
 			ClientID:     getenv("GITHUB_CLIENT_ID", ""),
 			ClientSecret: getenv("GITHUB_CLIENT_SECRET", ""),
 		},
+		Creem: creem.Config{
+			APIKey:        getenv("CREEM_API_KEY", ""),
+			WebhookSecret: getenv("CREEM_WEBHOOK_SECRET", ""),
+			TeamProductID: getenv("CREEM_TEAM_PRODUCT_ID", ""),
+		},
 		Forgejo: ForgejoConfig{
 			BaseURL:    getenv("FORGEJO_BASE_URL", "http://localhost:3000"),
 			AdminToken: getenv("FORGEJO_ADMIN_TOKEN", ""),
@@ -214,6 +222,19 @@ func Load() (*Config, error) {
 	}
 	if isPlaceholder(cfg.GitHub.ClientSecret) {
 		cfg.GitHub.ClientSecret = ""
+	}
+	// Same placeholder rules for the Creem payment credentials: an "unset"
+	// terraform default must leave the upgrade button truthful (not
+	// configured) rather than sending checkouts to a garbage API key.
+	for k, v := range map[string]*string{
+		"CREEM_API_KEY":         &cfg.Creem.APIKey,
+		"CREEM_WEBHOOK_SECRET":  &cfg.Creem.WebhookSecret,
+		"CREEM_TEAM_PRODUCT_ID": &cfg.Creem.TeamProductID,
+	} {
+		if isPlaceholder(*v) {
+			*v = ""
+		}
+		_ = k
 	}
 
 	if cfg.IsProduction() && cfg.JWT.Secret == "" && cfg.Zitadel.Issuer == "" {

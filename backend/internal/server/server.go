@@ -14,6 +14,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
+	"github.com/nielsuitterdijk22/quill/internal/creem"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
@@ -70,6 +71,12 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// when absent, orgs are Quill-only and invites use shareable accept links.
 	if cfg.Zitadel.Issuer != "" && cfg.Zitadel.ManagementToken != "" {
 		platformSvc.WithOrgProvisioner(zitadel.NewClient(cfg.Zitadel.Issuer, cfg.Zitadel.ManagementToken))
+	}
+	// Creem merchant-of-record integration for plan upgrades. With empty
+	// credentials (the default) upgrade requests answer 501 not_configured
+	// and the webhook endpoint refuses events until a secret is set.
+	if cfg.Creem.APIKey != "" || cfg.Creem.WebhookSecret != "" {
+		platformSvc.WithCreem(creem.New(cfg.Creem))
 	}
 
 	// The external IdP (Zitadel) verifies a bearer JWT, provisions the user on
@@ -305,6 +312,7 @@ func (s *Server) setupRoutes() {
 				r.Route("/billing", func(r chi.Router) {
 					r.Get("/", handleBillingGet(s))
 					r.Put("/plan", handleBillingSetPlan(s))
+					r.Post("/checkout", handleBillingCheckout(s))
 				})
 			})
 			r.Post("/invites/{token}/accept", s.handleAcceptInvite)

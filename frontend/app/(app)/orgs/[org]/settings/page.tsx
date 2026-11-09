@@ -144,7 +144,7 @@ export default async function OrgSettingsPage({
               operator; overage and invoicing follow the plan.
             </p>
           </div>
-          <OrgBilling billing={billing} />
+          <OrgBilling org={org.slug} billing={billing} />
         </section>
       )}
 

@@ -83,6 +83,9 @@ resource "scaleway_container" "api" {
     ZITADEL_MANAGEMENT_TOKEN       = var.zitadel_management_token
     GITHUB_CLIENT_ID               = var.github_client_id
     GITHUB_CLIENT_SECRET           = var.github_client_secret
+    CREEM_API_KEY                  = var.creem_api_key
+    CREEM_WEBHOOK_SECRET           = var.creem_webhook_secret
+    CREEM_TEAM_PRODUCT_ID          = var.creem_team_product_id
   }
 
   liveness_probe {

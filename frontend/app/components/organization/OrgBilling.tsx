@@ -1,5 +1,7 @@
 import type { BillingView } from "../../lib/api";
 
+import { UpgradeButton } from "./UpgradeButton";
+
 function formatBytes(bytes: number): string {
   if (bytes >= 1 << 30) return `${(bytes / (1 << 30)).toFixed(2)} GiB`;
   if (bytes >= 1 << 20) return `${(bytes / (1 << 20)).toFixed(1)} MiB`;
@@ -39,7 +41,7 @@ function UsageRow({
 // plan (set by the platform operator) and metered usage against the plan's
 // limits. Free-tier tenants see hard caps (50 repos, 1 GiB, 100 pipeline
 // min/mo); other plans are usage-based with no hard cap.
-export function OrgBilling({ billing }: { billing: BillingView }) {
+export function OrgBilling({ org, billing }: { org: string; billing: BillingView }) {
   const { usage, limits } = billing;
   return (
     <div>
@@ -76,11 +78,13 @@ export function OrgBilling({ billing }: { billing: BillingView }) {
           />
         </tbody>
       </table>
+      {billing.plan === "free" && <UpgradeButton org={org} />}
+
       <p className="subtle">
         Usage is metered from the Quill database (repos, pipeline run durations)
         and Forgejo repository sizes (git storage).
         {billing.plan === "free"
-          ? " The free plan is a hard cap — creating repositories and triggering pipelines stops when a limit is reached. Contact us to upgrade."
+          ? " The free plan is a hard cap — creating repositories and triggering pipelines stops when a limit is reached."
           : " This plan has no hard caps; usage is invoiced monthly."}
       </p>
     </div>

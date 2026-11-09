@@ -49,3 +49,9 @@ backup_bucket_name = "quill-mvp-backups-<random-suffix>"
 # and pass the credentials via -var or CI secrets (never commit real values):
 # github_client_id     = "Iv1...."
 # github_client_secret = "..."
+
+# Creem merchant-of-record (plan upgrades). Leave unset until the account +
+# product exist; the Upgrade button then reports "not activated".
+# creem_api_key         = ""
+# creem_webhook_secret  = ""   # webhook URL: https://api.black-tulip.nl/api/v1/webhooks/creem
+# creem_team_product_id = ""

@@ -28,9 +28,12 @@ var (
 	// so content/branch/commit reads cannot be served.
 	ErrEmptyRepo = errors.New("repository is empty")
 	// ErrLimitReached signals that the tenant's plan quota is exhausted
-	// (repositories or pipeline minutes on the free plan) and the operation
-	// was rejected. The free plan is the freemium premium gate.
+	// (repositories, storage, or pipeline minutes on the free plan) and the
+	// operation was rejected. The free plan is the freemium premium gate.
 	ErrLimitReached = errors.New("plan limit reached")
+	// ErrPaymentsNotConfigured signals that the Creem payment API has no
+	// credentials on this deployment — plan upgrades aren't purchasable yet.
+	ErrPaymentsNotConfigured = errors.New("payments not configured")
 )
 
 // Visibility values accepted for repositories. "internal" is visible to all

@@ -239,3 +239,21 @@ variable "brevo_smtp_from_name" {
   type        = string
   default     = "Quill"
 }
+
+variable "creem_api_key" {
+  description = "Creem merchant-of-record API key. Placeholder on first apply; set a real key (and webhook secret + team product id) to activate plan upgrades."
+  type        = string
+  default     = "unset"
+}
+
+variable "creem_webhook_secret" {
+  description = "Creem webhook signing secret (creem-signature header verification)."
+  type        = string
+  default     = "unset"
+}
+
+variable "creem_team_product_id" {
+  description = "Creem product id for Quill's Team plan (checkout sessions sell this)."
+  type        = string
+  default     = "unset"
+}
