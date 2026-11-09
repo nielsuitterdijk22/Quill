@@ -150,13 +150,25 @@ func loginAs(t *testing.T, user, pass string) string {
 	authReq := fmt.Sprintf("%s/oauth/v2/authorize?response_type=code&client_id=%s&redirect_uri=%s&scope=%s&state=e2e&nonce=e2e&code_challenge=%s&code_challenge_method=S256",
 		authURL, clientID, url.QueryEscape(redirectURI), url.QueryEscape(scope), challenge)
 
-	st, hdr, _ := get(t, c, authReq, nil)
-	if st != http.StatusFound {
-		t.Fatalf("authorize: got %d, want 302", st)
-	}
-	loginPage := hdr.Get("Location")
-	if !strings.HasPrefix(loginPage, "/") {
-		t.Fatalf("authorize redirect not relative: %s", loginPage)
+	st, hdr, page := get(t, c, authReq, nil)
+	// Zitadel serves the login page two ways depending on version/flow state:
+	// a 302 to /ui/login/login?authRequestID=..., or the login form rendered
+	// inline with 200. Both carry the gorilla.csrf.Token + authRequestID the
+	// stepwise login posts, so accept either.
+	switch st {
+	case http.StatusFound:
+		loginPage := hdr.Get("Location")
+		if !strings.HasPrefix(loginPage, "/") {
+			t.Fatalf("authorize redirect not relative: %s", loginPage)
+		}
+		st, _, page = get(t, c, authURL+loginPage, nil)
+		if st != http.StatusOK {
+			t.Fatalf("login page: got %d", st)
+		}
+	case http.StatusOK:
+		// login form is already in `page`
+	default:
+		t.Fatalf("authorize: got %d, want 200 or 302", st)
 	}
 
 	// Zitadel login UI is stepwise: loginname -> password -> mfa/skip ->
@@ -174,10 +186,6 @@ func loginAs(t *testing.T, user, pass string) string {
 		return resp.StatusCode, resp.Header, b
 	}
 
-	st, _, page := get(t, c, authURL+loginPage, nil)
-	if st != http.StatusOK {
-		t.Fatalf("login page: got %d", st)
-	}
 	csrf := extractInput(page, "gorilla.csrf.Token")
 	authID := extractInput(page, "authRequestID")
 	if csrf == "" || authID == "" {
