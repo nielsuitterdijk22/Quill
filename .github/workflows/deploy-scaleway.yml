@@ -157,7 +157,11 @@ jobs:
             -var "brevo_smtp_password=${{ secrets.BREVO_SMTP_KEY }}" \
             -var "brevo_smtp_from=${{ vars.BREVO_SMTP_FROM }}" \
             -var "github_client_id=${{ secrets.GH_CLIENT_ID || secrets.GH_OAUTH_CLIENT_ID || secrets.GH_OAUTH_CLIENTID || secrets.GH_APP_CLIENT_ID || 'unset' }}" \
-            -var "github_client_secret=${{ secrets.GH_CLIENT_SECRET || secrets.GH_OAUTH_CLIENT_SECRET || secrets.GH_OAUTH_CLIENTSECRET || secrets.GH_APP_CLIENT_SECRET || 'unset' }}"
+            -var "github_client_secret=${{ secrets.GH_CLIENT_SECRET || secrets.GH_OAUTH_CLIENT_SECRET || secrets.GH_OAUTH_CLIENTSECRET || secrets.GH_APP_CLIENT_SECRET || 'unset' }}" \
+            -var "creem_api_key=${{ secrets.CREEM_API_KEY }}" \
+            -var "creem_webhook_secret=${{ secrets.CREEM_WEBHOOK_SECRET }}" \
+            -var "creem_pro_product_id=prod_1DLhjZE8dsNwtheT4wHD8H" \
+            -var "creem_team_product_id=prod_7lBOuo7Sq1fahYN6DpQvP"
 
   vm-deploy:
     name: Deploy Forgejo VM stack (SSH)
