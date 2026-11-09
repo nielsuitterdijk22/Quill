@@ -115,25 +115,31 @@ func publicRepoReadPath(r *http.Request) bool {
 		return false
 	}
 	// /api/v1/projects/{project}/repos/{repo}(/...)? — the repos subroute.
+	// chi middlewares see the full request path including the mount prefix.
 	path := r.URL.Path
-	const prefix = "/projects/"
-	const reposSegment = "/repos/"
-	i := strings.Index(path, reposSegment)
-	if i < 0 || !strings.HasPrefix(path, prefix) {
+	const prefix = "/api/v1/projects/"
+	if !strings.HasPrefix(path, prefix) {
 		return false
 	}
-	rest := path[i+len(reposSegment):]
-	// rest is "{repo}" or "{repo}/{...}": repo slug then optional subpath.
-	var sub string
-	if j := strings.Index(rest, "/"); j >= 0 {
-		sub = rest[j+1:]
-		rest = rest[:j]
-	}
-	if rest == "" {
+	rest := path[len(prefix):]
+	j := strings.IndexByte(rest, '/')
+	if j < 0 || !strings.HasPrefix(rest[j:], "/repos") {
 		return false
 	}
-	if sub == "" {
-		return r.Method == http.MethodGet // GET / repos/{repo} — repo metadata
+	if len(rest[j:]) > len("/repos") && rest[j+len("/repos")] != '/' {
+		return false // e.g. "/reposomething" — not the repos route
+	}
+	tail := rest[j+len("/repos"):] // "", "/{repo}", "/{repo}/..."
+	if len(tail) == 0 {
+		return false // "/repos" list/create stays auth-required
+	}
+	tail = tail[1:] // strip the leading "/": "{repo}" or "{repo}/..."
+	sub := ""
+	if k := strings.IndexByte(tail, '/'); k >= 0 {
+		sub = tail[k+1:]
+	} else {
+		// bare repo metadata read
+		return r.Method == http.MethodGet
 	}
 	switch {
 	case sub == "branches" || sub == "contents" || sub == "commits" || sub == "markup":
