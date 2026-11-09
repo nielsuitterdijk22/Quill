@@ -78,7 +78,12 @@ export function OrgBilling({ org, billing }: { org: string; billing: BillingView
           />
         </tbody>
       </table>
-      {billing.plan === "free" && <UpgradeButton org={org} />}
+      {billing.plan === "free" && (
+        <UpgradeButton
+          endpoint={`/api/backend/orgs/${encodeURIComponent(org)}/billing/checkout`}
+          label="Upgrade to Team"
+        />
+      )}
 
       <p className="subtle">
         Usage is metered from the Quill database (repos, pipeline run durations)

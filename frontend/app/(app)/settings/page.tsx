@@ -13,6 +13,7 @@ import { ChangePasswordForm } from "./ChangePasswordForm";
 import { EmailForm } from "./EmailForm";
 import { ExportDataButton } from "./ExportDataButton";
 import { GitTokenPanel } from "./GitTokenPanel";
+import { PersonalBillingPanel } from "./PersonalBillingPanel";
 import { ProfileForm } from "./ProfileForm";
 import { SSHKeyPanel } from "./SSHKeyPanel";
 
@@ -129,6 +130,8 @@ async function AccountTab({
         keys={sshRes.ok ? sshRes.data : []}
         loadError={sshRes.ok ? undefined : sshRes.message}
       />
+
+      <PersonalBillingPanel />
 
       <ExportDataButton />
 
