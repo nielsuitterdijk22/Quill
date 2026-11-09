@@ -6,6 +6,11 @@ import Zitadel from "next-auth/providers/zitadel";
 
 const issuer = process.env.NEXT_PUBLIC_ZITADEL_ISSUER ?? "";
 const clientId = process.env.NEXT_PUBLIC_ZITADEL_CLIENT_ID ?? "";
+// When the Zitadel OIDC app is switched to a confidential client, a secret
+// here enables refresh-token rotation: sessions renew themselves instead of
+// silently going stale after the access token's ~1h TTL (the "session expired"
+// state). Empty keeps today's public PKCE client.
+const clientSecret = process.env.ZITADEL_CLIENT_SECRET ?? "";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -18,10 +23,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         Zitadel({
           issuer,
           clientId,
-          // Public PKCE client — no secret. Tell the OIDC client not to
-          // authenticate at the token endpoint and to use PKCE + state.
-          clientSecret: "",
-          client: { token_endpoint_auth_method: "none" },
+          // Public PKCE client when no secret is set; confidential (basic)
+          // with one, which additionally allows refresh-token use.
+          clientSecret,
+          client: {
+            token_endpoint_auth_method: clientSecret ? "client_secret_basic" : "none",
+          },
           checks: ["pkce", "state"],
           authorization: {
             params: {
@@ -45,6 +52,50 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessToken = account.access_token;
         token.idToken = account.id_token;
         token.expiresAt = account.expires_at;
+        token.refreshToken = account.refresh_token;
+        return token;
+      }
+      // Refresh an expired access token when the provider is confidential.
+      // Without a secret (public client) there is nothing to refresh — the
+      // session goes stale and the app layout sends the user to re-auth
+      // (see /sign-in?stale=1).
+      const expiresAt = (token.expiresAt as number | undefined) ?? 0;
+      if (
+        clientSecret &&
+        expiresAt &&
+        Date.now() / 1000 > expiresAt - 30 &&
+        typeof token.refreshToken === "string" &&
+        token.refreshToken !== ""
+      ) {
+        try {
+          const res = await fetch(`${issuer}/oauth/v2/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: token.refreshToken,
+              client_id: clientId,
+              client_secret: clientSecret,
+            }),
+          });
+          if (res.ok) {
+            const t = (await res.json()) as {
+              access_token?: string;
+              id_token?: string;
+              refresh_token?: string;
+              expires_in?: number;
+            };
+            if (t.access_token) {
+              token.accessToken = t.access_token;
+              if (t.id_token) token.idToken = t.id_token;
+              if (t.refresh_token) token.refreshToken = t.refresh_token;
+              token.expiresAt = Math.floor(Date.now() / 1000) + (t.expires_in ?? 3600);
+            }
+          }
+        } catch {
+          // Network hiccup — leave the token; the layout forces re-auth if
+          // verification keeps failing.
+        }
       }
       return token;
     },

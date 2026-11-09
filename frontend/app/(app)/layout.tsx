@@ -19,10 +19,18 @@ export default async function AppLayout({
   const user = await getSession();
   const token = await getToken();
 
-  // Anonymous visitors get a bare shell: PUBLIC repositories are browsable
-  // without an account (GH-style), so the (app) group stays reachable signed
-  // out — the pages that need auth redirect to /sign-in themselves or the
-  // backend answers 401/404 for anything non-public.
+  // A session that carries a dead access token (the Zitadel token expires
+  // hours before the Auth.js cookie does) must NOT degrade into the anonymous
+  // shell — that half-anonymous state is what made sign-in feel like a loop.
+  // Force a real re-authentication instead.
+  if (!user && token) {
+    redirect("/sign-in?stale=1");
+  }
+
+  // Truly anonymous visitors get a bare shell: PUBLIC repositories are
+  // browsable without an account (GH-style), so the (app) group stays
+  // reachable signed out — the pages that need auth redirect to /sign-in
+  // themselves or the backend answers 401/404 for anything non-public.
   if (!user) {
     return (
       <div className="app app-public">
