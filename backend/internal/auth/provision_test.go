@@ -99,4 +99,19 @@ func TestProvisionUserCreatesPersonalTenant(t *testing.T) {
 	if ident.UserID != id.UserID {
 		t.Fatalf("auth identity user = %s, want %s", ident.UserID, id.UserID)
 	}
+
+	// The fast path must resolve the caller's tenant from the user row —
+	// the per-account tenant — not from the IdP org claims, which map to the
+	// shared default tenant in a single-org deployment. Otherwise projects the
+	// user creates land on the shared tenant and the free gates never meter.
+	idFast, err := v.resolveIdentity(ctx, "unused", "sub-abc-123", "", "")
+	if err != nil {
+		t.Fatalf("resolveIdentity (fast path): %v", err)
+	}
+	if idFast.TenantID != tenant.ID {
+		t.Fatalf("resolveIdentity tenant = %s, want per-account tenant %s", idFast.TenantID, tenant.ID)
+	}
+	if idFast.UserID != id.UserID {
+		t.Fatalf("resolveIdentity user = %s, want %s", idFast.UserID, id.UserID)
+	}
 }

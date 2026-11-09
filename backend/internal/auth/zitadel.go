@@ -194,9 +194,17 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 		if err != nil || !user.IsActive {
 			return Identity{}, ErrInvalidCredentials
 		}
-		tenantID, err := v.resolveTenant(ctx, orgID, orgDomain)
-		if err != nil {
-			return Identity{}, err
+		// The per-account tenant provisioned at signup scopes the user's own
+		// projects and freemium metering. The IdP org-claim tenant only
+		// applies to legacy users without one (pre-provisioning accounts).
+		var tenantID uuid.UUID
+		if user.TenantID.Valid {
+			tenantID = user.TenantID.UUID
+		} else {
+			tenantID, err = v.resolveTenant(ctx, orgID, orgDomain)
+			if err != nil {
+				return Identity{}, err
+			}
 		}
 		return Identity{
 			UserID:   user.ID,
@@ -220,11 +228,15 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 		return Identity{}, ErrInvalidCredentials
 	}
 
-	tenantID, err := v.resolveTenant(ctx, orgID, orgDomain)
-	if err != nil {
-		return Identity{}, err
+	// provisionUser sets the new per-account tenant; keep it. Only fall back
+	// to the IdP org-claim tenant when provisioning left it unset.
+	if id.TenantID == (uuid.UUID{}) {
+		tenantID, err := v.resolveTenant(ctx, orgID, orgDomain)
+		if err != nil {
+			return Identity{}, err
+		}
+		id.TenantID = tenantID
 	}
-	id.TenantID = tenantID
 
 	// Best-effort Forgejo provisioning, off the login path.
 	if v.forgejo != nil && v.forgejo.Enabled() {
