@@ -134,15 +134,37 @@ the local log.
 `backend/tests/live/` (Go, stdlib only) drives the deployed platform: headless Zitadel
 login (PKCE; the login UI is stepwise — POST `/ui/login/loginname` with the **email** as
 loginName, then `/ui/login/password`, then `/ui/login/mfa/prompt` with `skip=true`, each
-with the page's rotating `gorilla.csrf.Token` + `authRequestID`), then the Quill API,
-git clone/push, PRs, pipelines. Run:
+with the page's rotating `gorilla.csrf.Token` + `authRequestID`; Zitadel may serve the
+login page inline with 200 or redirect to it — the helper accepts both), then the Quill
+API, git clone/push, PRs, pipelines. Run:
 `QUILL_LIVE_TEST=1 QUILL_E2E_CLIENT_ID=<zitadel client id> QUILL_E2E_PROJECT_ID=<project id> QUILL_E2E_USER=<email> QUILL_E2E_PASSWORD=<pw> go test ./tests/live/ -v`
-Skipped unless `QUILL_LIVE_TEST=1`, so `./check`/CI never run them. Test users are
-created via the Zitadel mgmt API on the VM (`/v2/users/human`, Host header must be
-`auth.black-tulip.nl`). **After each live round, clean up the test debris:**
-`QUILL_DATABASE_URL=<sdb dsn> FORGEJO_BASE_URL=https://git.black-tulip.nl FORGEJO_ADMIN_TOKEN=<token> ZITADEL_ISSUER=https://auth.black-tulip.nl QUILL_ENV=production go run ./cmd/quill admin purge-e2e --confirm`
+Skipped unless `QUILL_LIVE_TEST=1`, so `./check`/CI never run them. **After each live round, clean up the test debris:**
+`QUILL_DATABASE_URL=<sdb dsn> FORGEJO_BASE_URL=https://git.black-tulip.nl FORGEJO_ADMIN_TOKEN=<token> ZITADEL_ISSUER=https://auth.black-tulip.nl QUILL_SECRET_ENCRYPTION_KEY=<key> QUILL_ENV=production go run ./cmd/quill admin purge-e2e --confirm`
 (re-run until counts are zero; it deletes `e2e-`-prefixed orgs/projects/repos only —
 never users, personal projects, or real content).
+
+**Agent credentials recipe** (agents can and should run the live suite + signed-in
+web-session verification themselves):
+- `QUILL_E2E_USER` / `QUILL_E2E_PASSWORD`: the fixture account
+  `e2e-tester@black-tulip.nl`; its password lives in Secret Manager as
+  `/quill/app/app-e2e-user-password` (`scw secret version access <id> revision=latest`
+  returns base64 — decode with `base64 -d`). If it ever needs resetting: the Zitadel
+  mgmt PAT is in Secret Manager `app-zitadel-management-token` (also base64 on access),
+  then `POST /management/v1/users/<userId>/password` with the PAT as bearer
+  (`userId` from `POST /v2/users` search), then complete the forced password change by
+  logging in once through the UI flow (Zitadel then requires a fresh sign-in).
+- `QUILL_E2E_CLIENT_ID` / `QUILL_E2E_PROJECT_ID`: the GitHub repo variables
+  `NEXT_PUBLIC_ZITADEL_CLIENT_ID` / `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (`gh variable list`).
+- Signed-in web verification without a browser: start the app's own Auth.js OIDC flow
+  (`GET /api/auth/csrf` → `POST /api/auth/signin/zitadel` with the csrfToken), complete
+  the Zitadel stepwise login inside that flow, land the callback on the app, and the
+  session cookie jar holds a signed-in browser session — GET any page (e.g. `/pulls`)
+  and inspect the real HTML. Reference implementation used 2026-11-09: the raw API
+  dance in `tests/live/live_test.go` overlayed on the app's `/api/auth/signin` chain.
+- Secret Manager `version access` returns values base64-encoded (double-encoded for
+  values written via `data=-`); the console/TF state carry the raw values. The
+  `app-forgejo-admin-token` and `app-zitadel-management-token` Secret Manager copies
+  were re-stored cleanly on 2026-11-09.
 
 ### Cost watch
 Current drivers (billing via `scw billing consumption list`): DEV1-S VM (fixed, required
