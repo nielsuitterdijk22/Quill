@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 
 import {
@@ -133,10 +134,11 @@ export default async function DashboardPage() {
             </Link>
           </h2>
           {repos.length === 0 ? (
-            <div className="empty">
-              No repositories yet.{" "}
-              <Link href="/repositories">Create or import one</Link> to get started.
-            </div>
+            <EmptyState
+              title="No repositories yet"
+              body="Create or import one to get started."
+              cta={{ href: "/repositories", label: "Create or import a repository" }}
+            />
           ) : (
             repos.slice(0, 8).map(({ repo, project }) => (
               <Link
@@ -161,7 +163,10 @@ export default async function DashboardPage() {
         <div className="panel">
           <h2>Recent activity</h2>
           {recentPulls.length === 0 ? (
-            <div className="empty">No pull request activity yet.</div>
+            <EmptyState
+              title="No pull request activity yet"
+              body="Recent pull requests you opened or reviewed will appear here."
+            />
           ) : (
             recentPulls.map(({ projectSlug, repoSlug, repoName, pull }) => (
               <Link

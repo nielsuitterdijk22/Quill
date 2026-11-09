@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 
 import { getMyProjects } from "../../lib/api";
@@ -25,9 +26,11 @@ export default async function ProjectsPage() {
           <span className="tag">{projects.length}</span>
         </h2>
         {projects.length === 0 ? (
-          <div className="empty">
-            No projects yet. Create one — it is mirrored into Forgejo.
-          </div>
+          <EmptyState
+            title="No projects yet"
+            body="A project is a team or app namespace that owns repositories and pipelines. It is mirrored into Forgejo automatically."
+            cta={{ href: "/projects/new", label: "New project" }}
+          />
         ) : (
           projects.map((o) => (
             <Link className="row-item" key={o.id} href={`/projects/${o.slug}`}>

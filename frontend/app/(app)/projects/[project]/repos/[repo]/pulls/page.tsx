@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -77,11 +78,15 @@ export default async function PullsPage({
 
       <div className="panel">
         {pulls.length === 0 ? (
-          <div className="empty">
-            {wantClosed
-              ? "No closed pull requests yet."
-              : "No open pull requests. Open one to propose a change."}
-          </div>
+          <EmptyState
+            title={wantClosed ? "No closed pull requests" : "No open pull requests"}
+            body={
+              wantClosed
+                ? "Pull requests land here once merged or closed."
+                : "Open a pull request to propose and review a change."
+            }
+            cta={repo.defaultBranch ? { href: "pulls/new", label: "New pull request" } : undefined}
+          />
         ) : (
           pulls.map((p) => (
             <Link

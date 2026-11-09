@@ -550,6 +550,14 @@ h1 {
 }
 
 /* ---- tables ---------------------------------------------------------------- */
+/* Sticky headers keep column context while scrolling long tables (admin,
+   audit log, members). */
+table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 2;
+}
 table {
   width: 100%;
   border-collapse: collapse;
@@ -670,10 +678,52 @@ select:focus {
 }
 
 /* ---- empty / banner -------------------------------------------------------- */
+.repo-filter {
+  width: 200px;
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 6px;
+}
 .empty {
   padding: 18px 16px;
   color: var(--muted);
   font-size: 13px;
+}
+
+/* Structured empty state (see components/EmptyState). */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 44px 24px;
+  color: var(--muted);
+}
+.empty-state-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--accent-soft);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.empty-state-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-state-body {
+  font-size: 13px;
+  max-width: 380px;
+  line-height: 1.6;
+}
+.empty-state-cta {
+  margin-top: 10px;
 }
 .banner {
   background: color-mix(in oklab, var(--amber) 13%, transparent);
@@ -695,7 +745,7 @@ select:focus {
   padding: 24px;
   background: radial-gradient(
     ellipse 80% 60% at 50% -10%,
-    #1a1540 0%,
+    color-mix(in oklab, var(--accent) 16%, var(--bg)) 0%,
     var(--bg) 70%
   );
 }
@@ -831,6 +881,10 @@ select:focus {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+/* Generic "push the rest right" helper (browsers only use the scoped variants). */
+.spacer {
+  flex: 1;
 }
 
 /* ---- empty repo setup screen ----------------------------------------------- */

@@ -1,3 +1,5 @@
+import { EmptyState } from "@/components/EmptyState";
+import { RepositoryBrowser } from "./RepositoryBrowser";
 import Link from "next/link";
 
 import { getToken } from "../../lib/session";
@@ -45,35 +47,29 @@ export default async function ReposPage() {
         </div>
       </div>
 
-      <div className="panel">
-        <h2>
-          All Repositories
-          <span className="tag">{rows.length}</span>
-        </h2>
-        {rows.length === 0 ? (
-          <div className="empty">No repositories yet. Create one above.</div>
-        ) : (
-          rows.map(({ repo, project }) => (
-            <Link
-              className="row-item"
-              key={repo.id}
-              href={`/${encodeURIComponent(project.slug)}/${encodeURIComponent(repo.slug)}`}
-            >
-              <span className="tree-icon dir">◆</span>
-              <div className="pr-main">
-                <span className="nm">{repo.name}</span>
-                {hasOrgProjects && (
-                  <span className="sub">{project.name}</span>
-                )}
-              </div>
-              <span className="spacer" />
-              {repo.visibility !== "public" && (
-                <span className="tag">{repo.visibility}</span>
-              )}
-            </Link>
-          ))
-        )}
-      </div>
+      {rows.length === 0 ? (
+        <div className="panel">
+          <h2>
+            All Repositories
+            <span className="tag">{rows.length}</span>
+          </h2>
+          <EmptyState
+            title="No repositories yet"
+            body="Create your first repository, or import the repos you already have on GitHub."
+            cta={{ href: newRepoHref, label: "New repository" }}
+          />
+        </div>
+      ) : (
+        <RepositoryBrowser
+          newRepoHref={newRepoHref}
+          rows={rows.map(({ repo, project }) => ({
+            repo,
+            projectSlug: project.slug,
+            projectName: project.name,
+            showProject: hasOrgProjects,
+          }))}
+        />
+      )}
     </>
   );
 }

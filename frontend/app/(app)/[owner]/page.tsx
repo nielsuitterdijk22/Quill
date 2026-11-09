@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -69,9 +70,11 @@ export default async function OwnerNamespacePage({
           <span className="tag">{repos.length}</span>
         </h2>
         {repos.length === 0 ? (
-          <div className="empty">
-            No repositories yet. Create one to get started.
-          </div>
+          <EmptyState
+            title="No repositories yet"
+            body="This namespace is empty. Create its first repository to get started."
+            cta={{ href: `/projects/${encodeURIComponent(project.slug)}/repos/new`, label: "New repository" }}
+          />
         ) : (
           repos.map((r) => (
             <Link

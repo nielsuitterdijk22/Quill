@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -84,11 +85,15 @@ export default async function IssuesPage({
 
       <div className="panel">
         {issues.length === 0 ? (
-          <div className="empty">
-            {wantClosed
-              ? "No closed issues yet."
-              : "No open issues. Create one to track work or report a bug."}
-          </div>
+          <EmptyState
+            title={wantClosed ? "No closed issues" : "No open issues"}
+            body={
+              wantClosed
+                ? "Issues land here once resolved."
+                : "Create one to track work or report a bug."
+            }
+            cta={{ href: "issues/new", label: "New issue" }}
+          />
         ) : (
           issues.map((issue) => (
             <Link

@@ -6,6 +6,7 @@ const SHORTCUTS = [
   { key: "j", desc: "Move selection down in lists" },
   { key: "k", desc: "Move selection up in lists" },
   { key: "Enter", desc: "Open selected item" },
+  { key: "t", desc: "Focus the repository filter" },
   { key: "?", desc: "Show this help" },
   { key: "Esc", desc: "Close this dialog" },
 ];
@@ -63,6 +64,14 @@ export function KeyboardShortcuts() {
           link?.focus();
           return next;
         });
+      }
+      if (e.key === "t") {
+        const input = document.querySelector<HTMLInputElement>("[data-repo-filter]");
+        if (input) {
+          e.preventDefault();
+          input.focus();
+          input.select();
+        }
       }
       if (e.key === "Enter" && selected >= 0) {
         const rows = getNavRows();
