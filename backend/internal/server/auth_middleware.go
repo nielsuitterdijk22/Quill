@@ -102,3 +102,66 @@ func bearerToken(r *http.Request) string {
 	}
 	return ""
 }
+
+// publicRepoReadPath reports whether a request may be served without
+// authentication: the code-browsing reads of a repository (GH-style public repo
+// browsing). The platform layer enforces the real rule — a public repo is
+// world-readable, everything else answers NotFound/Forbidden — so this only
+// decides whether the request is *eligible* for anonymous handling. The
+// patterns keep write operations (POST/PATCH/DELETE, pulls, issues, policies,
+// pipelines, secrets, settings) strictly behind requireAuth.
+func publicRepoReadPath(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		return false
+	}
+	// /api/v1/projects/{project}/repos/{repo}(/...)? — the repos subroute.
+	path := r.URL.Path
+	const prefix = "/projects/"
+	const reposSegment = "/repos/"
+	i := strings.Index(path, reposSegment)
+	if i < 0 || !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := path[i+len(reposSegment):]
+	// rest is "{repo}" or "{repo}/{...}": repo slug then optional subpath.
+	var sub string
+	if j := strings.Index(rest, "/"); j >= 0 {
+		sub = rest[j+1:]
+		rest = rest[:j]
+	}
+	if rest == "" {
+		return false
+	}
+	if sub == "" {
+		return r.Method == http.MethodGet // GET / repos/{repo} — repo metadata
+	}
+	switch {
+	case sub == "branches" || sub == "contents" || sub == "commits" || sub == "markup":
+		return true
+	case strings.HasPrefix(sub, "commits/"), strings.HasPrefix(sub, "contents/"):
+		return true
+	}
+	return false
+}
+
+// requireAuthOrPublicRead is requireAuth relaxed for anonymous code browsing:
+// requests to the public read paths may pass without a token and get an
+// anonymous identity (zero-value Actor), which the platform authorizes only
+// for public repositories. Everything else is exactly requireAuth.
+func (s *Server) requireAuthOrPublicRead(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := bearerToken(r)
+		if token == "" {
+			if c, err := r.Cookie(cookieToken); err == nil {
+				token = c.Value
+			}
+		}
+		if token != "" || !publicRepoReadPath(r) {
+			s.requireAuth(next).ServeHTTP(w, r)
+			return
+		}
+		// Anonymous read on a repo path: let the platform decide visibility.
+		ctx := context.WithValue(r.Context(), identityKey, auth.Identity{})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
@@ -19,13 +20,13 @@ import (
 
 // GetRepo returns a repository's metadata for an authorized actor.
 func (s *Service) GetRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, error) {
-	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
+	repo, _, _, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, false)
 	return repo, err
 }
 
 // ListBranches returns the git branches of a repository.
 func (s *Service) ListBranches(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []forgejo.Branch, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -39,7 +40,7 @@ func (s *Service) ListBranches(ctx context.Context, actor Actor, projectSlug, re
 // ListCommits returns the commit log of a repository at ref, optionally filtered
 // to commits touching path.
 func (s *Service) ListCommits(ctx context.Context, actor Actor, projectSlug, repoSlug, ref, path string, limit int) (db.Repository, []forgejo.Commit, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -56,7 +57,7 @@ func (s *Service) ListCommits(ctx context.Context, actor Actor, projectSlug, rep
 // GetCommit returns a single commit's metadata together with its diff parsed
 // into per-file hunks — what the commit detail page needs in one call.
 func (s *Service) GetCommit(ctx context.Context, actor Actor, projectSlug, repoSlug, sha string) (db.Repository, forgejo.Commit, []forgejo.DiffFile, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, forgejo.Commit{}, nil, err
 	}
@@ -74,7 +75,7 @@ func (s *Service) GetCommit(ctx context.Context, actor Actor, projectSlug, repoS
 // GetContents returns a directory listing or single file at path/ref within a
 // repository. An empty ref resolves to the repository's default branch.
 func (s *Service) GetContents(ctx context.Context, actor Actor, projectSlug, repoSlug, path, ref string) (db.Repository, *forgejo.Contents, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -135,7 +136,7 @@ func (s *Service) attachLastCommits(ctx context.Context, owner, name, ref string
 // repository, for an authorized actor. It is used to render READMEs the way
 // Forgejo would (repo-relative links, references), returning safe HTML.
 func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, projectSlug, repoSlug, text string) (string, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	_, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return "", err
 	}
@@ -151,11 +152,23 @@ func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, projectSlug, 
 // git-side reads. It returns ErrNotFound, ErrForbidden, or ErrUnavailable as
 // appropriate.
 func (s *Service) resolveRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string, requireGit bool) (db.Repository, string, string, error) {
+	return s.resolveRepoChecked(ctx, actor, projectSlug, repoSlug, requireGit, false)
+}
+
+// resolveRepoForRead is the read-path variant used by code browsing: a public
+// repository is visible to everyone — members, other signed-in users, and
+// anonymous callers alike (GH-style open-source browsing). Non-members hit
+// NotFound on private repositories rather than Forbidden so a 404 never leaks
+// the existence of a repo they can't see.
+func (s *Service) resolveRepoForRead(ctx context.Context, actor Actor, projectSlug, repoSlug string, requireGit bool) (db.Repository, string, string, error) {
+	return s.resolveRepoChecked(ctx, actor, projectSlug, repoSlug, requireGit, true)
+}
+
+// resolveRepoChecked implements both variants: member authorization, relaxed
+// by the public-read bypass when allowPublicRead is set.
+func (s *Service) resolveRepoChecked(ctx context.Context, actor Actor, projectSlug, repoSlug string, requireGit, allowPublicRead bool) (db.Repository, string, string, error) {
 	project, err := s.getProject(ctx, projectSlug)
 	if err != nil {
-		return db.Repository{}, "", "", err
-	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
 		return db.Repository{}, "", "", err
 	}
 	repo, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{
@@ -167,6 +180,20 @@ func (s *Service) resolveRepo(ctx context.Context, actor Actor, projectSlug, rep
 	}
 	if err != nil {
 		return db.Repository{}, "", "", fmt.Errorf("lookup repo: %w", err)
+	}
+	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+		if errors.Is(err, ErrForbidden) && allowPublicRead && repo.Visibility == VisibilityPublic {
+			// Public repositories are world-readable: the visibility on the
+			// repo row is the authorization for read-only browsing.
+			if actor.UserID == uuid.Nil {
+				s.logger.Debug("anonymous public repo read", "project", projectSlug, "repo", repoSlug)
+			}
+		} else if errors.Is(err, ErrForbidden) && allowPublicRead && actor.UserID == uuid.Nil {
+			// Anonymous callers must not learn that a non-public repo exists.
+			return db.Repository{}, "", "", ErrNotFound
+		} else {
+			return db.Repository{}, "", "", err
+		}
 	}
 	if !requireGit {
 		return repo, "", "", nil

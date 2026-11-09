@@ -236,9 +236,15 @@ func (s *Server) setupRoutes() {
 			r.Get("/admin/audit-log/export", s.handleExportAuditLog)
 		})
 
-		// Projects and repositories require authentication.
+		// Projects and repositories require authentication — except the
+		// anonymous code-browsing reads of PUBLIC repositories (GH-style:
+		// anyone can read an open-source repo without signing in). The
+		// requireAuthOrPublicRead middleware falls through to requireAuth for
+		// everything that isn't a repo read path, so the rest of this group is
+		// unchanged; the platform layer enforces that only public repos are
+		// actually served to anonymous callers.
 		r.Group(func(r chi.Router) {
-			r.Use(s.requireAuth)
+			r.Use(s.requireAuthOrPublicRead)
 			// GitHub import (token comes from the OAuth cookie, not the Quill JWT).
 			r.Get("/import/github/repos", s.handleListGitHubRepos)
 			r.Post("/import/github", s.handleImportGitHubRepos)
