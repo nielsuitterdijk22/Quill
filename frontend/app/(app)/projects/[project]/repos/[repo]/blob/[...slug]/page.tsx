@@ -86,6 +86,7 @@ export default async function BlobPage({
         repo={params.repo}
         visibility={repo.visibility}
         refName={ref}
+        path={path}
         active="code"
       />
       <PathBreadcrumb

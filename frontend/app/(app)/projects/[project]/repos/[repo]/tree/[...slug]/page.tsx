@@ -106,6 +106,7 @@ export default async function TreePage({
         repo={params.repo}
         visibility={repo.visibility}
         refName={ref}
+        path={path}
         active="code"
       />
       <div className="repo-toolbar">

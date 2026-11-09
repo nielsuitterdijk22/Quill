@@ -72,9 +72,17 @@ export function blobHref(
   return `${repoBase(project, repo)}/blob/${encodeRef(ref)}/${encodePath(path)}`;
 }
 
-// commitsHref links to the commit log at a ref.
-export function commitsHref(project: string, repo: string, ref: string): string {
-  return `${repoBase(project, repo)}/commits/${encodeRef(ref)}`;
+// commitsHref links to the commit log at a ref, optionally scoped to a path so
+// browsing within a directory shows that directory's history and the Code tab
+// returns to the same place.
+export function commitsHref(
+  project: string,
+  repo: string,
+  ref: string,
+  path = "",
+): string {
+  const base = `${repoBase(project, repo)}/commits/${encodeRef(ref)}`;
+  return path ? `${base}/${encodePath(path)}` : base;
 }
 
 // encodePath encodes each path segment while keeping the slashes between them.
@@ -118,18 +126,22 @@ export function RepoHeader({
   repo,
   visibility,
   refName,
+  path = "",
   active,
 }: {
   project: string;
   repo: string;
   visibility: string;
   refName: string;
+  // The path currently being browsed (tree/blob pages): keeps Code + Commits
+  // scoped to it so navigating between them returns to the same place.
+  path?: string;
   active: RepoTab;
 }) {
   const base = repoBase(project, repo);
   const tabs: { key: RepoTab; label: string; href: string }[] = [
-    { key: "code", label: "Code", href: treeHref(project, repo, refName) },
-    { key: "commits", label: "Commits", href: commitsHref(project, repo, refName) },
+    { key: "code", label: "Code", href: treeHref(project, repo, refName, path) },
+    { key: "commits", label: "Commits", href: commitsHref(project, repo, refName, path) },
     { key: "branches", label: "Branches", href: `${base}/branches` },
     { key: "issues", label: "Issues", href: `${base}/issues` },
     { key: "pulls", label: "Pull requests", href: `${base}/pulls` },
