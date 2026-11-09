@@ -312,6 +312,21 @@ func (v *ZitadelVerifier) createUserWithIdentity(ctx context.Context, userID, us
 		if err != nil {
 			return err
 		}
+		// Per-account tenant, mirroring the local register path (auth/service.go):
+		// the tenant's plan gates the account's personal project (freemium caps
+		// are per individual, not pooled) and is the target of the personal
+		// upgrade checkout. Slug mirrors the unique username; a collision is
+		// handled by the caller retrying with a derived username.
+		tenant, err := q.CreateTenant(ctx, db.CreateTenantParams{Slug: strings.ToLower(username), Name: displayName})
+		if err != nil {
+			return fmt.Errorf("create account tenant: %w", err)
+		}
+		if _, err := q.SetUserTenant(ctx, db.SetUserTenantParams{
+			ID:       user.ID,
+			TenantID: uuid.NullUUID{UUID: tenant.ID, Valid: true},
+		}); err != nil {
+			return fmt.Errorf("link account tenant: %w", err)
+		}
 		if _, err := q.CreateAuthIdentity(ctx, db.CreateAuthIdentityParams{
 			UserID:     user.ID,
 			Provider:   ProviderZitadel,
@@ -325,6 +340,7 @@ func (v *ZitadelVerifier) createUserWithIdentity(ctx context.Context, userID, us
 			Username: user.Username,
 			Email:    user.Email,
 			IsAdmin:  user.IsAdmin,
+			TenantID: tenant.ID,
 		}
 		return nil
 	})
