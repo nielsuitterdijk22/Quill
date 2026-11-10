@@ -7,8 +7,7 @@ const API = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
 
 export async function GET(req: NextRequest) {
   // 1. What cookies does the request carry?
-  const cookies: string[] = [];
-  req.cookies.forEach((_v, k) => cookies.push(k));
+  const cookies: string[] = req.cookies.getAll().map((c) => c.name);
 
   // 2. What does auth() (used by the dashboard server components) return?
   let sessionKeys: string[] | null = null;
