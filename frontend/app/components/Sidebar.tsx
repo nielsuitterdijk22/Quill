@@ -316,7 +316,7 @@ export function Sidebar({
     // Individuals get a Policies entry pointing at their personal (global) scope;
     // org-only members manage policies per project instead, so it is hidden.
     ...(hasPersonalProject
-      ? [{ href: POLICIES_HREF, label: "Policies", icon: "🛡" }]
+      ? [{ href: POLICIES_HREF, label: "Policies", icon: "policies" }]
       : []),
     ...SETTINGS_NAV,
     ...(hasOrgProjects ? ORG_NAV : []),

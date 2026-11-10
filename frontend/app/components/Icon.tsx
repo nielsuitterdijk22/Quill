@@ -36,6 +36,7 @@ const ICONS: Record<string, string> = {
   edit: "M8 6L3 14h4l3-6M12 3l2 2-6 8H4l2-2z",
   briefcase: "M2 8c2-2 3-3 6-3s4 1 6 3v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1zM6 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1",
   git: "M14 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM6 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM6 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM4 7v1c0 1 .5 2 4 2M12 8V7c0-2-2-5-6-5",
+  policies: "M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4l5-2zM8 2v12",
 };
 
 export function Icon({ name, size = 16, className = "" }: { name: string; size?: number; className?: string }) {

@@ -54,12 +54,14 @@ export default async function SettingsPage({
         <h1>Settings</h1>
       </div>
 
-      <nav className="settings-nav" aria-label="Settings sections">
-        <a href="#settings-profile"><Icon name="user" size={13} /> Profile</a>
-        <a href="#settings-security"><Icon name="security" size={13} /> Security</a>
-        <a href="#settings-billing"><Icon name="billing" size={13} /> Billing</a>
-        <a href="#settings-data"><Icon name="data" size={13} /> Data</a>
-      </nav>
+      {tab === "account" && (
+        <nav className="settings-nav" aria-label="Settings sections">
+          <a href="#settings-profile"><Icon name="user" size={13} /> Profile</a>
+          <a href="#settings-security"><Icon name="security" size={13} /> Security</a>
+          <a href="#settings-billing"><Icon name="billing" size={13} /> Billing</a>
+          <a href="#settings-data"><Icon name="data" size={13} /> Data</a>
+        </nav>
+      )}
 
       {personalProject && (
         <div className="repo-toolbar">

@@ -9,7 +9,7 @@ import {
   type PipelineRun,
 } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
-import { BrowseError, RepoHeader, fmtDate, repoBase } from "../../../../../../components/repo";
+import { BrowseError, RepoHeader, blobHref, fmtDate, repoBase } from "../../../../../../components/repo";
 import { RunStatusBadge, statusGlyph } from "../../../../../../components/pipelines";
 import { RunWorkflowForm } from "./RunWorkflowForm";
 
@@ -167,7 +167,13 @@ export default async function PipelinesPage({
             <div className="row-item" key={p.workflowPath}>
               <span className="tree-icon">◇</span>
               <div className="pr-main">
-                <span className="nm">{p.name}</span>
+                <Link
+                  href={blobHref(params.project, params.repo, defaultBranch, p.workflowPath)}
+                  className="nm workflow-src-link"
+                  title="View workflow source"
+                >
+                  {p.name}
+                </Link>
                 <span className="sub mono">{p.workflowPath}</span>
               </div>
               <span className="spacer" />

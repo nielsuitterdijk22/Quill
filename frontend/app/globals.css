@@ -4095,3 +4095,9 @@ a.row-item:hover {
   border-radius: 1px;
 }
 
+
+/* Workflow definition name -> source view (pipelines page). */
+.workflow-src-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
