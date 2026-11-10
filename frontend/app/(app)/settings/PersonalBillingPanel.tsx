@@ -48,7 +48,7 @@ export async function PersonalBillingPanel() {
       <h2>Billing</h2>
       <div className="readme-body">
         <p>
-          Plan: <span className="badge accent">{plan}</span>
+          Plan: <span className={`badge ${plan === "free" ? "" : "gold"}`}>{plan}</span>
         </p>
         <table className="policy-table">
           <thead>

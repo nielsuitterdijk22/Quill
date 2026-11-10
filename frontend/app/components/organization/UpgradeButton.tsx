@@ -35,7 +35,7 @@ export function UpgradeButton({
 
   return (
     <div>
-      <button className="pill" onClick={startCheckout} disabled={pending}>
+      <button className="btn gold" onClick={startCheckout} disabled={pending}>
         {pending ? "Opening checkout…" : label}
       </button>
       {notice && <p className="subtle" style={{ marginTop: 8 }}>{notice}</p>}
