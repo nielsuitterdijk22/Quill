@@ -28,6 +28,17 @@ const API = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
 
 const BODYLESS = new Set(["GET", "HEAD"]);
 
+// API flow cookies (set on the shared parent domain by the Go backend) that
+// browser calls through /api/backend/* rely on: the bearer cookie and the
+// GitHub-import OAuth artifacts. Forwarded by name only - the app's own
+// Auth.js cookies must never leak to the backend.
+const API_COOKIE_NAMES = new Set([
+  "quill_token",
+  "quill_gh_token",
+  "quill_gh_state",
+  "quill_gh_project",
+]);
+
 
 // sessionAccessToken decodes the Auth.js session cookie with next-auth/jwt
 // (AUTH_SECRET + the cookie name as salt — the v5 defaults the app signs
@@ -72,6 +83,17 @@ async function proxy(
   const contentType = req.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
 
+  // Forward the API's own flow cookies (e.g. the encrypted GitHub-import
+  // token) so cookie-authenticated endpoints work through the proxy exactly
+  // as they would against the API origin directly.
+  const apiCookies = req.cookies
+    .getAll()
+    .filter((c) => API_COOKIE_NAMES.has(c.name))
+    .map((c) => `${c.name}=${c.value}`);
+  if (apiCookies.length > 0) {
+    headers.set("cookie", apiCookies.join("; "));
+  }
+
   let authorization = req.headers.get("authorization");
   if (!authorization) {
     // auth() returned null inside this Route Handler on the deployed build
@@ -107,6 +129,23 @@ async function proxy(
   for (const h of ["content-type", "content-disposition"]) {
     const v = res.headers.get(h);
     if (v) out.headers.set(h, v);
+  }
+  // Pass redirects and cookies through. The API sets its OAuth flow cookies
+  // on the shared parent domain (QUILL_COOKIE_DOMAIN), so browser flows that
+  // start at /api/backend/* must receive BOTH the Location to follow (e.g.
+  // the GitHub OAuth start -> github.com) and the Set-Cookie headers whose
+  // state the later API callback validates - silently dropping them left the
+  // browser on an empty 302 ("scrambled" page) with the flow broken.
+  if (res.status >= 300 && res.status < 400) {
+    const loc = res.headers.get("location");
+    if (loc) out.headers.set("location", loc);
+  }
+  const setCookies =
+    typeof res.headers.getSetCookie === "function"
+      ? res.headers.getSetCookie()
+      : [];
+  for (const sc of setCookies) {
+    out.headers.append("set-cookie", sc);
   }
   return out;
 }
