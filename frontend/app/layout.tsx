@@ -1,8 +1,5 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import "@fontsource/source-serif-4/500.css";
-import "@fontsource/source-serif-4/600.css";
-
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 

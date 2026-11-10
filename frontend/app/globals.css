@@ -457,10 +457,9 @@ a {
 
 /* ---- typography & page header ---------------------------------------------- */
 h1 {
-  font-family: var(--font-serif, Georgia), serif;
-  font-size: 26px;
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   margin: 0 0 16px;
 }
 
@@ -603,10 +602,9 @@ h1 {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 .panel h2 {
-  font-family: var(--font-serif, Georgia), serif;
-  font-size: 14.5px;
-  font-weight: 550;
-  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--text) 90%, transparent);
   margin: 0;
   padding: 13px 16px;
   border-bottom: 1px solid var(--line);
