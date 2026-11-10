@@ -174,6 +174,27 @@ func (r *actRunner) assemble(plan *model.Plan, cap *logCapture, started time.Tim
 			}
 			jr.StartedAt = jc.started
 			jr.FinishedAt = jc.finished
+			// A failed job with no steps means act couldn't even start it
+			// (container/network/image errors). Surface the job-level lines
+			// as a synthetic "setup" step so the run explains itself in the
+			// UI and the stored logs.
+			if len(jc.setupLogs.Bytes()) > 0 {
+				setupStatus := "success"
+				if jr.Status != StatusSuccess {
+					setupStatus = jc.result
+					if setupStatus == "" {
+						setupStatus = StatusFailure
+					}
+				}
+				jr.Steps = append(jr.Steps, StepResult{
+					Name:       "setup",
+					Type:       StepTypeRun,
+					Status:     setupStatus,
+					Logs:       clampLog(jc.setupLogs.String(), r.maxLogBytes),
+					StartedAt:  jc.started,
+					FinishedAt: jc.finished,
+				})
+			}
 			for _, sid := range jc.order {
 				sc := jc.steps[sid]
 				jr.Steps = append(jr.Steps, StepResult{

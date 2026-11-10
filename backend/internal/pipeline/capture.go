@@ -34,6 +34,10 @@ type jobCapture struct {
 	order    []string
 	started  time.Time
 	finished time.Time
+	// setupLogs carries job-level log lines act emits with no step context -
+	// setup failures like "Error: failed to create network ..." are only
+	// visible here, and losing them made failed runs unexplainable.
+	setupLogs bytes.Buffer
 }
 
 type stepCapture struct {
@@ -89,6 +93,15 @@ func (c *logCapture) Fire(e *logrus.Entry) error {
 
 	stepID := lastStepID(e.Data["stepID"])
 	if stepID == "" {
+		// No step context: this is act's job-level output (setup/teardown
+		// chatter, and crucially the error line when the job can't start).
+		// Keep it so a failed run can always explain itself.
+		if msg := strings.TrimSpace(e.Message); msg != "" {
+			jc.setupLogs.WriteString(msg + "\n")
+			if c.sink != nil {
+				c.sink(jobID, "setup", msg+"\n")
+			}
+		}
 		return nil
 	}
 	sc := jc.steps[stepID]

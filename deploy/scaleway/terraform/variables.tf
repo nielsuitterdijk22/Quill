@@ -89,6 +89,19 @@ variable "sdb_password" {
   sensitive   = true
 }
 
+variable "vm_docker_gid" {
+  description = "Numeric group id of the docker group on the VM host; the dispatch container is added to it so the act runner can dial the engine socket."
+  type        = string
+  default     = "988"
+}
+
+variable "dispatch_secret" {
+  description = "Shared HMAC secret between the api and the pipeline dispatch container. Set it explicitly so api <-> dispatch cannot drift across state regenerations; empty falls back to the generated random_password."
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
 # ---- Serverless SQL databases -----------------------------------------------------
 variable "sdb_version" {
   description = "PostgreSQL major version for the serverless databases."

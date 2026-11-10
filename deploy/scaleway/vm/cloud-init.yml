@@ -90,6 +90,12 @@ write_files:
           image: ${backend_image}
           restart: unless-stopped
           command: ["/quill-dispatch"]
+          # The backend image runs as the unprivileged quill user; the host
+          # docker socket is root:<docker-gid>. Without the socket group the
+          # act runner cannot dial Docker and every pipeline job fails
+          # instantly with no step logs - so add the engine's gid.
+          group_add:
+            - "${docker_gid}"
           environment:
             QUILL_ENV: production
             QUILL_HTTP_ADDR: ":8090"

@@ -48,7 +48,7 @@ resource "scaleway_secret_version" "v" {
     "app/jwt-secret"               = random_password.jwt_secret.result
     "app/secret-encryption-key"    = base64encode(random_password.secret_encryption_key.result)
     "app/webhook-secret"           = random_password.webhook_secret.result
-    "app/dispatch-secret"          = random_password.dispatch_secret.result
+    "app/dispatch-secret"          = local.dispatch_secret
     "app/forgejo-admin-token"      = var.forgejo_admin_token
     "app/zitadel-management-token" = var.zitadel_management_token
     "zitadel/masterkey"            = random_password.zitadel_masterkey.result

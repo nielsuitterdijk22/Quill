@@ -78,7 +78,7 @@ resource "scaleway_container" "api" {
     QUILL_JWT_SECRET               = random_password.jwt_secret.result
     QUILL_SECRET_ENCRYPTION_KEY    = base64encode(random_password.secret_encryption_key.result)
     QUILL_WEBHOOK_SECRET           = random_password.webhook_secret.result
-    QUILL_PIPELINE_DISPATCH_SECRET = random_password.dispatch_secret.result
+    QUILL_PIPELINE_DISPATCH_SECRET = local.dispatch_secret
     FORGEJO_ADMIN_TOKEN            = var.forgejo_admin_token
     ZITADEL_MANAGEMENT_TOKEN       = var.zitadel_management_token
     GITHUB_CLIENT_ID               = var.github_client_id

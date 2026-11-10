@@ -1,6 +1,13 @@
 locals {
   name_prefix = replace(var.project_name, "_", "-")
 
+  # Pipeline dispatch HMAC secret shared by the serverless api and the VM
+  # dispatch container. var.dispatch_secret pins it explicitly (in tfvars,
+  # gitignored) so the two ends can never drift apart the way the generated
+  # random_password did (state regeneration handed the api a new value while
+  # the VM container kept its old one - every pipeline run 401'd instantly).
+  dispatch_secret = coalesce(var.dispatch_secret, random_password.dispatch_secret.result)
+
   # Public hostnames (subdomains of var.domain).
   app_host  = "app.${var.domain}"
   api_host  = "api.${var.domain}"

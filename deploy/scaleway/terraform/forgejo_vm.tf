@@ -56,15 +56,16 @@ resource "scaleway_instance_server" "forgejo" {
   }
 
   cloud_init = templatefile("${path.module}/../vm/cloud-init.yml", {
-    domain   = var.domain
-    git_host = local.git_host
+    domain     = var.domain
+    git_host   = local.git_host
+    docker_gid = var.vm_docker_gid
     # Forgejo's Postgres is the forgejo-db container on this VM (compose
     # service name), not a serverless SDB.
     forgejo_db_host     = "forgejo-db"
     forgejo_db_port     = "5432"
     forgejo_db_user     = "forgejo"
     forgejo_db_password = random_password.forgejo_db.result
-    dispatch_secret     = random_password.dispatch_secret.result
+    dispatch_secret     = local.dispatch_secret
     backup_image        = "${local.registry}/quill-backup:latest"
     backend_image       = "${local.registry}/quill-backend:latest"
     zitadel_image       = "${local.registry}/quill-zitadel:latest"
