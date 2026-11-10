@@ -2553,6 +2553,70 @@ h2.section {
   justify-content: flex-end;
 }
 
+
+/* ---- new issue editor (H5 two-pane) ---------------------------------------- */
+.new-issue-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .new-issue-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.new-issue-editor {
+  padding: 22px 24px;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.new-issue-editor .form-narrow,
+.new-issue-editor.form-narrow {
+  max-width: none;
+}
+.new-issue-title {
+  font-size: 15.5px;
+  padding: 11px 14px;
+}
+.new-issue-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.new-issue-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.new-issue-tips {
+  list-style: none;
+  margin: 0;
+  padding: 4px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.new-issue-tips b {
+  color: var(--text);
+  font-weight: 600;
+}
+.new-issue-note {
+  margin: 0;
+  padding: 4px 20px 18px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 /* ---- light theme ---------------------------------------------------------- */
 /* Applied via data-theme="light" on <html>; toggle is persisted to localStorage
    so the choice survives navigation. Dark is the default (no attribute). */
