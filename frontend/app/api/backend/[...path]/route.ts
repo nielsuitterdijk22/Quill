@@ -33,7 +33,9 @@ const BODYLESS = new Set(["GET", "HEAD"]);
 // (AUTH_SECRET + the cookie name as salt — the v5 defaults the app signs
 // with) and returns the Zitadel access token it carries, if any.
 async function sessionAccessToken(req: NextRequest): Promise<string | null> {
-  const SALT = "authjs.session-token";
+  // Auth.js v5 hardens the cookie to __Host-... when AUTH_URL is https —
+  // use that name for both the lookup and the decode salt.
+  const SALT = "__Host-authjs.session-token";
   const cookie = req.cookies.get(SALT)?.value;
   const secret = process.env.AUTH_SECRET;
   if (!cookie || !secret) return null;
