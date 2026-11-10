@@ -37,12 +37,16 @@ function tipLabel(count: number, date: Date): string {
 }
 
 export function ContributionGraph({ data }: { data: Contribution[] }) {
-  // One floating tooltip for the whole grid: which cell is hovered and where
-  // the pointer is (viewport coords - the tip is position: fixed, so it never
-  // gets clipped by the grid's horizontal scroll container).
+  // One floating tooltip for the whole grid, pinned above the hovered cell
+  // (not the pointer - a cursor-chasing tip reads as flicker). Viewport
+  // coords + position: fixed, so it never gets clipped by the grid's
+  // horizontal scroll container.
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const showTip = (cell: { count: number; date: Date }) => (e: React.MouseEvent) =>
-    setTip({ x: e.clientX, y: e.clientY, text: tipLabel(cell.count, cell.date) });
+  const showTip = (cell: { count: number; date: Date }) => (e: React.MouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Math.min(Math.max(r.left + r.width / 2, 60), window.innerWidth - 60);
+    setTip({ x, y: r.top, text: tipLabel(cell.count, cell.date) });
+  };
 
   // Sum contributions per UTC day.
   const byDay = new Map<string, number>();
@@ -129,7 +133,6 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
                       role="img"
                       aria-label={tipLabel(cell.count, cell.date)}
                       onMouseEnter={showTip(cell)}
-                      onMouseMove={showTip(cell)}
                       onMouseLeave={() => setTip(null)}
                     />
                   ),
@@ -140,7 +143,7 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
         </div>
       </div>
       {tip && (
-        <div className="contrib-tip" style={{ left: tip.x, top: tip.y - 32 }}>
+        <div className="contrib-tip" style={{ left: tip.x, top: tip.y - 30 }}>
           {tip.text}
         </div>
       )}
