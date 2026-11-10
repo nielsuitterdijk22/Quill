@@ -2554,6 +2554,22 @@ h2.section {
 }
 
 
+
+/* Settings chips: the jump is felt — smooth scroll + a visible section marker. */
+.settings-nav a { text-decoration: none; }
+#settings-profile:target,
+#settings-security:target,
+#settings-billing:target,
+#settings-data:target {
+  box-shadow: -3px 0 0 0 var(--accent);
+  border-radius: 4px;
+}
+.settings-nav a:hover::after {
+  content: "\2193";
+  margin-left: 5px;
+  font-size: 10px;
+}
+
 /* ---- new issue editor (H5 two-pane) ---------------------------------------- */
 .new-issue-grid {
   display: grid;

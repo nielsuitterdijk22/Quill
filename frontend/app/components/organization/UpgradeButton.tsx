@@ -1,10 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
+import { useFormState, useFormStatus } from "react-dom";
+
+import { startUpgradeAction } from "../../lib/actions";
+
+function GoldSubmit({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button className="btn gold" type="submit" disabled={pending}>
+      {pending ? "Opening checkout…" : label}
+    </button>
+  );
+}
 
 // UpgradeButton starts a Creem checkout (Team for orgs, Pro for personal
-// accounts). On a server where payments aren't activated yet, the truthful 501
-// is surfaced as honest copy instead of a dead button.
+// accounts) through a server action that attaches the session bearer
+// server-side, so it works regardless of the browser-side proxy. On
+// success the browser is redirected to Creem's hosted checkout.
 export function UpgradeButton({
   endpoint,
   label = "Upgrade to Team",
@@ -12,33 +25,18 @@ export function UpgradeButton({
   endpoint: string;
   label?: string;
 }) {
-  const [pending, setPending] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  async function startCheckout() {
-    setPending(true);
-    setNotice(null);
-    try {
-      const res = await fetch(endpoint, { method: "POST" });
-      const body = (await res.json().catch(() => null)) as { url?: string; message?: string } | null;
-      if (res.ok && body?.url) {
-        window.location.href = body.url;
-        return;
-      }
-      setNotice(body?.message ?? "Could not start the upgrade right now. Please try again.");
-    } catch {
-      setNotice("Could not start the upgrade right now. Please try again.");
-    } finally {
-      setPending(false);
-    }
-  }
+  const [state, action] = useFormState(startUpgradeAction, {});
+  useEffect(() => {
+    if (state.url) window.location.href = state.url;
+  }, [state.url]);
 
   return (
-    <div>
-      <button className="btn gold" onClick={startCheckout} disabled={pending}>
-        {pending ? "Opening checkout…" : label}
-      </button>
-      {notice && <p className="subtle" style={{ marginTop: 8 }}>{notice}</p>}
-    </div>
+    <form action={action}>
+      <input type="hidden" name="endpoint" value={endpoint} />
+      <GoldSubmit label={label} />
+      {state.error && (
+        <p className="subtle" style={{ marginTop: 8 }}>{state.error}</p>
+      )}
+    </form>
   );
 }
