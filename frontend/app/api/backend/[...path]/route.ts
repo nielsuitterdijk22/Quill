@@ -74,6 +74,36 @@ async function proxy(
   ctx: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await ctx.params;
+  if (path[0] === "__debug") {
+    const SALT = "__Host-authjs.session-token";
+    const chunks = req.cookies
+      .getAll()
+      .filter((c) => c.name === SALT || c.name.startsWith(SALT + "."));
+    const joined = chunks.map((c) => c.value).join("");
+    let decodedOk = false;
+    let hasToken = false;
+    if (joined && process.env.AUTH_SECRET) {
+      try {
+        const payload = (await decode({
+          token: joined,
+          secret: process.env.AUTH_SECRET,
+          salt: SALT,
+        })) as { accessToken?: string } | null;
+        decodedOk = !!payload;
+        hasToken = !!payload?.accessToken;
+      } catch {
+        decodedOk = false;
+      }
+    }
+    return NextResponse.json({
+      handler: true,
+      cookieChunks: chunks.length,
+      cookieNames: chunks.map((c) => c.name),
+      authSecret: !!process.env.AUTH_SECRET,
+      decodedOk,
+      hasToken,
+    });
+  }
   const url = new URL(req.url);
   const target = `${API}/api/v1/${path.join("/")}${url.search}`;
 
