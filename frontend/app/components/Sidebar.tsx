@@ -344,8 +344,24 @@ export function Sidebar({
       </div>
 
       <div className="project">
-        <span className="who">Signed in as</span>
-        <b>{user.displayName || user.username}</b>
+        <div className="project-user">
+          {user.hasAvatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              className="project-avatar"
+              src={`/api/backend/users/${encodeURIComponent(user.id)}/avatar`}
+              alt=""
+            />
+          ) : (
+            <div className="project-avatar project-avatar--fallback">
+              {(user.displayName || user.username).slice(0, 1).toUpperCase()}
+            </div>
+          )}
+          <div className="project-user-id">
+            <b>{user.displayName || user.username}</b>
+            <span className="who">@{user.username}</span>
+          </div>
+        </div>
         {hasOrgProjects && (
           <ProjectSwitcher projects={projects} currentProject={currentProject} />
         )}

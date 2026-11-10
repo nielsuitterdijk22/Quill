@@ -35,6 +35,14 @@
   --radius: 9px;
   --radius-lg: 12px;
 
+  /* Elevation: edge-tinted shadows ("glow" depth, not gray). */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in oklab, var(--text) 4%, transparent);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 0 1px color-mix(in oklab, var(--text) 5%, transparent);
+  --shadow-glow: 0 2px 12px color-mix(in oklab, var(--accent) 32%, transparent);
+  --input-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+
   /* Motion: 150ms ease-out is the app-wide interaction duration.
      Honour reduced-motion globally. */
   --ease: cubic-bezier(0.25, 0.8, 0.5, 1);
@@ -58,6 +66,25 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+/* Thin translucent scrollbars (WebKit; Firefox sticks to native). */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--text) 12%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--text) 20%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track { background: transparent; }
 
 a {
   color: inherit;
@@ -91,9 +118,11 @@ a {
 }
 
 .side {
-  background: #0c0e12;
-  border-right: 1px solid var(--line);
-  padding: 18px 14px;
+  background: color-mix(in oklab, var(--panel) 62%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-right: 1px solid color-mix(in oklab, var(--text) 6%, transparent);
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -102,10 +131,14 @@ a {
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   font-weight: 700;
-  font-size: 16px;
-  margin: 2px 6px 16px;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  margin: 2px 6px 18px;
+}
+.brand-dot {
+  color: var(--accent);
 }
 
 /* Top-left app switcher — jumps to sibling tools (Atlas, Tempo, Forge). */
@@ -211,12 +244,53 @@ a {
 }
 
 .project {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  margin: 0 2px 14px;
+  background: color-mix(in oklab, var(--panel) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--text) 6%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0 2px 10px;
   font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: var(--shadow-sm);
+}
+.project-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.project-user-id {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+.project-user-id b {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-user-id .who {
+  font-size: 11px;
+}
+.project-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex: none;
+  object-fit: cover;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.project-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent-soft), var(--accent));
 }
 .project .who {
   color: var(--muted);
@@ -310,10 +384,13 @@ a {
   padding: 8px 10px;
   border-radius: 8px;
   color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 .nav a.active {
   background: var(--row-selected);
   color: var(--text);
+  font-weight: 600;
 }
 .nav a.active .ic {
   color: var(--accent-soft);
@@ -347,13 +424,15 @@ a {
 }
 
 .main {
-  padding: 22px 26px;
-  max-width: 1100px;
+  padding: 28px 34px;
+  max-width: 1200px;
 }
 
 /* ---- typography & page header ---------------------------------------------- */
 h1 {
-  font-size: 18px;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   margin: 0 0 16px;
 }
 
@@ -456,9 +535,14 @@ h1 {
 }
 .card {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in oklab, var(--text) 6%, transparent);
   border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 150ms var(--ease), transform 150ms var(--ease);
+}
+.card:hover {
+  box-shadow: var(--shadow-md);
 }
 .card .k {
   font-size: 12px;
@@ -478,16 +562,16 @@ h1 {
 /* ---- panels ---------------------------------------------------------------- */
 .panel {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in oklab, var(--text) 6%, transparent);
   border-radius: var(--radius-lg);
   overflow: hidden;
   margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
 }
 .panel h2 {
   font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  font-weight: 600;
+  color: color-mix(in oklab, var(--text) 85%, transparent);
   margin: 0;
   padding: 13px 16px;
   border-bottom: 1px solid var(--line);
@@ -585,8 +669,8 @@ tbody tr:hover {
 
 /* ---- buttons --------------------------------------------------------------- */
 .btn {
-  font: 12px/1 inherit;
-  padding: 7px 12px;
+  font: 600 12px/1 inherit;
+  padding: 8px 14px;
   border-radius: 7px;
   border: 1px solid var(--line);
   background: var(--btn);
@@ -613,12 +697,15 @@ select:focus-visible {
   cursor: not-allowed;
 }
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent-soft) 45%, var(--accent)), var(--accent));
+  border-color: transparent;
   color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, var(--shadow-glow);
 }
 .btn.primary:hover {
-  opacity: 0.9;
+  filter: brightness(1.08);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 4px 18px color-mix(in oklab, var(--accent) 42%, transparent);
 }
 .btn.link {
   border-color: #2d2a4d;
@@ -654,6 +741,7 @@ select {
   border-radius: 8px;
   padding: 9px 10px;
   font: 13px/1.45 inherit;
+  box-shadow: var(--input-shadow);
   transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
 }
 textarea {
@@ -722,16 +810,17 @@ select:focus {
   color: var(--muted);
 }
 .empty-state-icon {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
-  color: var(--accent-soft);
-  font-size: 12px;
-  margin-bottom: 4px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 32%, transparent), color-mix(in oklab, var(--accent) 12%, transparent));
+  color: #fff;
+  font-size: 13px;
+  margin-bottom: 6px;
+  box-shadow: var(--shadow-glow);
 }
 .empty-state-title {
   font-size: 14px;
@@ -772,12 +861,14 @@ select:focus {
 }
 .auth-card {
   width: 100%;
-  max-width: 360px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  max-width: 380px;
+  background: color-mix(in oklab, var(--panel) 80%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid color-mix(in oklab, var(--text) 8%, transparent);
   border-radius: 16px;
-  padding: 32px 28px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+  padding: 36px 32px;
+  box-shadow: var(--shadow-md), 0 0 80px color-mix(in oklab, var(--accent) 14%, transparent);
 }
 .auth-brand {
   display: flex;
@@ -1159,8 +1250,14 @@ select:focus {
 .rtabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in oklab, var(--text) 7%, transparent);
   margin-bottom: 18px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .rtabs a {
   padding: 8px 13px;
@@ -1174,7 +1271,9 @@ select:focus {
 }
 .rtabs a.active {
   color: var(--text);
+  font-weight: 600;
   border-bottom-color: var(--accent);
+  box-shadow: 0 1px 0 var(--accent);
 }
 
 /* Toolbar above the file tree: branch selector + actions. */
@@ -2418,6 +2517,13 @@ h2.section {
   --input: #f0f2f8;
   --well: #f0f2f8;
   --skeleton: #e6e9f2;
+
+  /* Light elevation: softer, dark-tinted. */
+  --shadow-sm: 0 1px 2px rgba(16, 18, 28, 0.06),
+    0 0 0 1px rgba(16, 18, 28, 0.05);
+  --shadow-md: 0 8px 24px rgba(16, 18, 28, 0.1),
+    0 0 0 1px rgba(16, 18, 28, 0.06);
+  --input-shadow: inset 0 1px 2px rgba(16, 18, 28, 0.04);
 }
 [data-theme="light"] body {
   background: var(--bg);
@@ -3481,21 +3587,21 @@ h2.section {
   margin-bottom: 22px;
 }
 .profile-avatar {
-  width: 64px;
-  height: 64px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--line);
   flex: none;
+  box-shadow: var(--shadow-md), 0 0 0 3px color-mix(in oklab, var(--accent) 40%, transparent);
 }
 .profile-avatar--fallback {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
-  color: var(--accent-soft);
+  background: linear-gradient(180deg, var(--accent-soft), var(--accent));
+  color: #fff;
   font-weight: 700;
-  font-size: 22px;
+  font-size: 26px;
 }
 .profile-id {
   min-width: 0;
