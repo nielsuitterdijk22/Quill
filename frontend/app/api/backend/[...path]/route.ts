@@ -22,12 +22,26 @@
 // routes are matched before afterFiles rewrites).
 
 import { NextRequest, NextResponse } from "next/server";
-
-import { auth } from "../../../auth";
+import { decode } from "next-auth/jwt";
 
 const API = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
 
 const BODYLESS = new Set(["GET", "HEAD"]);
+
+
+// sessionAccessToken decodes the Auth.js session cookie with next-auth/jwt
+// (AUTH_SECRET + the cookie name as salt — the v5 defaults the app signs
+// with) and returns the Zitadel access token it carries, if any.
+async function sessionAccessToken(req: NextRequest): Promise<string | null> {
+  const SALT = "authjs.session-token";
+  const cookie = req.cookies.get(SALT)?.value;
+  const secret = process.env.AUTH_SECRET;
+  if (!cookie || !secret) return null;
+  const payload = (await decode({ token: cookie, secret, salt: SALT })) as
+    | { accessToken?: string }
+    | null;
+  return payload?.accessToken ?? null;
+}
 
 function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin") ?? req.headers.get("referer");
@@ -53,8 +67,10 @@ async function proxy(
 
   let authorization = req.headers.get("authorization");
   if (!authorization) {
-    const session = await auth();
-    const token = (session as { accessToken?: string } | null)?.accessToken;
+    // auth() returned null inside this Route Handler on the deployed build
+    // (works in server components, not here) — so the session JWT is decoded
+    // straight from the cookie with the same secret NextAuth signed it with.
+    const token = await sessionAccessToken(req);
     if (token) {
       if (!BODYLESS.has(req.method) && !sameOrigin(req)) {
         return NextResponse.json(
