@@ -94,7 +94,9 @@ func (c *Client) CreateCheckout(ctx context.Context, productID, successURL, requ
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/api/v1/checkouts", bytes.NewReader(body))
+	// Creem's API lives under /v1 (the old /api/v1 prefix their docs once
+	// showed was removed; /api/v1/checkouts now 404s before key validation).
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+"/v1/checkouts", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
