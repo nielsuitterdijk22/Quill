@@ -57,9 +57,9 @@ func (s *Server) handleForgejoDiag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"username":  username,
-		"entries":   entries,
-		"count":     len(entries),
+		"username": username,
+		"entries":  entries,
+		"count":    len(entries),
 	})
 }
 
