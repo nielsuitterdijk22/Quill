@@ -75,6 +75,7 @@ async function proxy(
 ) {
   const { path } = await ctx.params;
 
+  const url = new URL(req.url);
   const target = `${API}/api/v1/${path.join("/")}${url.search}`;
 
   const headers = new Headers();
