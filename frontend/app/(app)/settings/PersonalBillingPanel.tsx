@@ -75,7 +75,7 @@ export async function PersonalBillingPanel() {
           </p>
         )}
         {plan === "free" && (
-          <UpgradeButton endpoint="/api/backend/me/billing/checkout" label="Upgrade to Pro" />
+          <UpgradeButton endpoint="/me/billing/checkout" label="Upgrade to Pro" />
         )}
       </div>
     </div>

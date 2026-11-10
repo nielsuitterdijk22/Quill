@@ -32,7 +32,13 @@ export async function startUpgradeAction(
   _prev: { url?: string; error?: string },
   formData: FormData,
 ): Promise<{ url?: string; error?: string }> {
-  const endpoint = String(formData.get("endpoint") ?? "");
+  // Callers may pass either an API-relative path (/me/billing/checkout) or the
+  // legacy browser-proxy form (/api/backend/me/billing/checkout); normalize so
+  // the fetch below never double-prefixes with API_BASE + /api/v1.
+  const endpoint = String(formData.get("endpoint") ?? "").replace(
+    /^\/api\/backend(?=\/)/,
+    "",
+  );
   if (!endpoint.startsWith("/")) return { error: "Invalid request." };
   const { getToken } = await import("./session");
   const token = await getToken();

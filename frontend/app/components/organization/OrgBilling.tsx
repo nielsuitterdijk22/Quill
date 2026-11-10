@@ -80,7 +80,7 @@ export function OrgBilling({ org, billing }: { org: string; billing: BillingView
       </table>
       {billing.plan === "free" && (
         <UpgradeButton
-          endpoint={`/api/backend/orgs/${encodeURIComponent(org)}/billing/checkout`}
+          endpoint={`/orgs/${encodeURIComponent(org)}/billing/checkout`}
           label="Upgrade to Team"
         />
       )}
