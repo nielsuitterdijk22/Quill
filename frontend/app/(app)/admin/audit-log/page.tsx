@@ -22,7 +22,7 @@ const ACTION_CATEGORIES = [
 export default async function AuditLogPage({
   searchParams,
 }: {
-  searchParams: { action?: string; since?: string; until?: string; offset?: string };
+  searchParams: { action?: string; actor?: string; since?: string; until?: string; offset?: string };
 }) {
   const user = await requireSession();
   if (!user.isAdmin) notFound();
@@ -31,12 +31,14 @@ export default async function AuditLogPage({
   if (!token) notFound();
 
   const action = searchParams.action ?? "";
+  const actor = searchParams.actor ?? "";
   const since = searchParams.since ?? "";
   const until = searchParams.until ?? "";
   const offset = Math.max(0, parseInt(searchParams.offset ?? "0", 10) || 0);
 
   const res = await listAuditLog(token, {
     action: action || undefined,
+    actor: actor || undefined,
     since: since || undefined,
     until: until || undefined,
     limit: PAGE_SIZE,
@@ -45,6 +47,7 @@ export default async function AuditLogPage({
 
   const exportUrl = auditLogExportUrl({
     action: action || undefined,
+    actor: actor || undefined,
     since: since || undefined,
     until: until || undefined,
   });
@@ -61,7 +64,8 @@ export default async function AuditLogPage({
     );
   }
 
-  const { entries, total } = res.data;
+  const { entries, total, actors } = res.data;
+  const actorOptions = actors ?? [];
   const prevOffset = Math.max(0, offset - PAGE_SIZE);
   const nextOffset = offset + PAGE_SIZE;
 
@@ -86,6 +90,15 @@ export default async function AuditLogPage({
               </option>
             ))}
           </select>
+          <span className="audit-filter-sep">by</span>
+          <select name="actor" defaultValue={actor}>
+            <option value="">All users</option>
+            {actorOptions.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
           <span className="audit-filter-sep">from</span>
           <input
             type="date"
@@ -101,7 +114,7 @@ export default async function AuditLogPage({
           <button type="submit" className="btn small">
             Apply
           </button>
-          {(action || since || until) && (
+          {(action || actor || since || until) && (
             <Link href="/admin/audit-log" className="btn ghost small">
               Clear
             </Link>
@@ -125,7 +138,7 @@ export default async function AuditLogPage({
         <div className="pagination">
           {offset > 0 ? (
             <Link
-              href={buildPageUrl({ action, since, until, offset: prevOffset })}
+              href={buildPageUrl({ action, actor, since, until, offset: prevOffset })}
               className="btn ghost"
             >
               ← Previous
@@ -135,7 +148,7 @@ export default async function AuditLogPage({
           )}
           {nextOffset < total && (
             <Link
-              href={buildPageUrl({ action, since, until, offset: nextOffset })}
+              href={buildPageUrl({ action, actor, since, until, offset: nextOffset })}
               className="btn ghost"
             >
               Next →
@@ -149,12 +162,14 @@ export default async function AuditLogPage({
 
 function buildPageUrl(params: {
   action: string;
+  actor: string;
   since: string;
   until: string;
   offset: number;
 }): string {
   const q = new URLSearchParams();
   if (params.action) q.set("action", params.action);
+  if (params.actor) q.set("actor", params.actor);
   if (params.since) q.set("since", params.since);
   if (params.until) q.set("until", params.until);
   if (params.offset > 0) q.set("offset", String(params.offset));

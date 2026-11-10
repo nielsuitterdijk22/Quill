@@ -81,6 +81,7 @@ type Querier interface {
 	GetUserByUsername(ctx context.Context, lower string) (User, error)
 	CountAuditLogFiltered(ctx context.Context, arg CountAuditLogFilteredParams) (int64, error)
 	InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) (AuditLog, error)
+	ListAuditLogActors(ctx context.Context) ([]string, error)
 	ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilteredParams) ([]AuditLog, error)
 	ListAuthIdentitiesForUser(ctx context.Context, userID uuid.UUID) ([]AuthIdentity, error)
 	// Every enabled policy of a kind across the scopes governing a repo: the repo

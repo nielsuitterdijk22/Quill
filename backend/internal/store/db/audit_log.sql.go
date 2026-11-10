@@ -61,6 +61,7 @@ WHERE
   ($1::text = '' OR action LIKE $1 || '%')
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
+  AND ($6::text = '' OR actor_username = $6)
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $5
 `
@@ -71,6 +72,7 @@ type ListAuditLogFilteredParams struct {
 	Until        pgtype.Timestamptz `json:"until"`
 	Limit        int32              `json:"limit"`
 	Offset       int32              `json:"offset"`
+	Actor        string             `json:"actor"`
 }
 
 func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilteredParams) ([]AuditLog, error) {
@@ -80,6 +82,7 @@ func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilt
 		arg.Until,
 		arg.Limit,
 		arg.Offset,
+		arg.Actor,
 	)
 	if err != nil {
 		return nil, err
@@ -116,12 +119,14 @@ WHERE
   ($1::text = '' OR action LIKE $1 || '%')
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
+  AND ($4::text = '' OR actor_username = $4)
 `
 
 type CountAuditLogFilteredParams struct {
 	ActionPrefix string             `json:"actionPrefix"`
 	Since        pgtype.Timestamptz `json:"since"`
 	Until        pgtype.Timestamptz `json:"until"`
+	Actor        string             `json:"actor"`
 }
 
 func (q *Queries) CountAuditLogFiltered(ctx context.Context, arg CountAuditLogFilteredParams) (int64, error) {
@@ -129,10 +134,38 @@ func (q *Queries) CountAuditLogFiltered(ctx context.Context, arg CountAuditLogFi
 		arg.ActionPrefix,
 		arg.Since,
 		arg.Until,
+		arg.Actor,
 	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const listAuditLogActors = `-- name: ListAuditLogActors :many
+SELECT DISTINCT actor_username
+FROM audit_log
+WHERE actor_username <> ''
+ORDER BY actor_username
+`
+
+func (q *Queries) ListAuditLogActors(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAuditLogActors)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var actor_username string
+		if err := rows.Scan(&actor_username); err != nil {
+			return nil, err
+		}
+		items = append(items, actor_username)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // ensure time import is used

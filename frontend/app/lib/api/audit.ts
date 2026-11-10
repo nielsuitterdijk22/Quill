@@ -17,14 +17,16 @@ export type AuditLogResult = {
   total: number;
   limit: number;
   offset: number;
+  actors?: string[];
 };
 
 export function listAuditLog(
   token: string,
-  params?: { action?: string; since?: string; until?: string; limit?: number; offset?: number },
+  params?: { action?: string; actor?: string; since?: string; until?: string; limit?: number; offset?: number },
 ): Promise<Result<AuditLogResult>> {
   const q = new URLSearchParams();
   if (params?.action) q.set("action", params.action);
+  if (params?.actor) q.set("actor", params.actor);
   if (params?.since) q.set("since", params.since);
   if (params?.until) q.set("until", params.until);
   if (params?.limit) q.set("limit", String(params.limit));
@@ -35,11 +37,14 @@ export function listAuditLog(
 
 export function auditLogExportUrl(params?: {
   action?: string;
+  actor?: string;
   since?: string;
   until?: string;
 }): string {
   const q = new URLSearchParams();
   if (params?.action) q.set("action", params.action);
+  if (params?.actor) q.set("actor", params.actor);
+  if (params?.actor) q.set("actor", params.actor);
   if (params?.since) q.set("since", params.since);
   if (params?.until) q.set("until", params.until);
   const qs = q.toString();

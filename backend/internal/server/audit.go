@@ -82,6 +82,7 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	actionPrefix := q.Get("action")
+	actor := q.Get("actor")
 	since, until := parseAuditDateRange(q.Get("since"), q.Get("until"))
 
 	limit := int32(100)
@@ -99,6 +100,7 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		Until:        until,
 		Limit:        limit,
 		Offset:       offset,
+		Actor:        actor,
 	}
 	entries, err := s.store.ListAuditLogFiltered(r.Context(), params)
 	if err != nil {
@@ -111,9 +113,15 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		ActionPrefix: actionPrefix,
 		Since:        since,
 		Until:        until,
+		Actor:        actor,
 	})
 	if err != nil {
 		total = 0
+	}
+
+	actors, err := s.store.ListAuditLogActors(r.Context())
+	if err != nil {
+		actors = []string{}
 	}
 
 	out := make([]auditLogResponse, 0, len(entries))
@@ -126,6 +134,7 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		"total":   total,
 		"limit":   limit,
 		"offset":  offset,
+		"actors":  actors,
 	})
 }
 
@@ -134,6 +143,7 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExportAuditLog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	actionPrefix := q.Get("action")
+	actor := q.Get("actor")
 	since, until := parseAuditDateRange(q.Get("since"), q.Get("until"))
 
 	// Fetch up to 50 000 rows for export.
@@ -143,6 +153,7 @@ func (s *Server) handleExportAuditLog(w http.ResponseWriter, r *http.Request) {
 		Until:        until,
 		Limit:        50000,
 		Offset:       0,
+		Actor:        actor,
 	})
 	if err != nil {
 		s.logger.Error("export audit log failed", "error", err)
@@ -154,6 +165,7 @@ func (s *Server) handleExportAuditLog(w http.ResponseWriter, r *http.Request) {
 	s.logAudit(r, "admin.audit_log_exported", "audit_log", "", map[string]any{
 		"rows":          len(entries),
 		"action_filter": actionPrefix,
+		"actor_filter":  actor,
 	})
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
