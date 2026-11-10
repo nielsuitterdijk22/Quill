@@ -269,12 +269,7 @@ func (s *Server) handleMyContributions(w http.ResponseWriter, r *http.Request) {
 	entries, err := s.forgejo.UserHeatmap(r.Context(), user.ForgejoUsername.String)
 	if err != nil {
 		s.logger.Warn("fetch contribution heatmap failed", "user", user.ForgejoUsername.String, "error", err)
-		httpx.JSON(w, http.StatusOK, map[string]any{
-			"contributions": []any{},
-			// TEMPORARY: surface the Forgego error so the cause is readable
-			// from outside the container (no logs reachable via scw CLI).
-			"_error": err.Error(),
-		})
+		httpx.JSON(w, http.StatusOK, empty)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"contributions": entries})
