@@ -25,10 +25,10 @@ const nextConfig = {
     const reserved =
       "projects|settings|admin|repositories|pulls|pipelines|sign-in|sign-up|login|register|api";
     return [
-      {
-        source: "/api/backend/:path*",
-        destination: `${api}/api/v1/:path*`,
-      },
+      // /api/backend/* is served by the app/api/backend/[...path] route
+      // handler (auth-aware proxy). A rewrite here SHADOWS it — Next serves
+      // the rewrite instead of the filesystem route, silently bypassing
+      // the session injection. Do not reintroduce.
       // Short namespace URL: /{owner}/{repo}/sub-path → /projects/{owner}/repos/{repo}/sub-path
       // Lets /{owner}/{repo}/... resolve via the existing /projects/[project]/repos/[repo]/...
       // pages without duplicating every page file.
