@@ -112,7 +112,16 @@ async function proxy(
   }
   if (authorization) headers.set("authorization", authorization);
 
-  const init: RequestInit & { duplex?: "half" } = { method: req.method, headers };
+  // Redirects must reach the BROWSER, not be followed server-side: an
+  // automatic follow turned the GitHub OAuth round-trip into GitHub's login
+  // page HTML streamed back through the app's own URL (the "scrambled" page),
+  // swallowing the API's flow cookies. Manual mode relays the API's 302 and
+  // Set-Cookie untouched so the browser does the navigating.
+  const init: RequestInit & { duplex?: "half" } = {
+    method: req.method,
+    headers,
+    redirect: "manual",
+  };
   if (!BODYLESS.has(req.method)) {
     init.body = await req.arrayBuffer();
     if (init.body.byteLength === 0) delete init.body;
