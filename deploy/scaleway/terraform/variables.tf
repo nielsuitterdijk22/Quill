@@ -160,6 +160,13 @@ variable "forgejo_admin_token" {
   sensitive   = true
 }
 
+variable "zitadel_client_secret" {
+  description = "Zitadel client secret for the web app's confidential OIDC app (empty = public PKCE client)."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "zitadel_management_token" {
   description = "Zitadel machine-user PAT for the Management API. Retrieved from the zitadel container logs on first boot (scripts/provision.sh)."
   type        = string

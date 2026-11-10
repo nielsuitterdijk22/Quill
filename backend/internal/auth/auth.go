@@ -33,6 +33,11 @@ type TokenVerifier interface {
 	// Verify validates the token and returns the mapped identity, or
 	// ErrInvalidCredentials on failure.
 	Verify(ctx context.Context, token string) (Identity, error)
+	// Healthy reports whether the verifier can currently validate tokens
+	// (an external provider has its keys loaded). Drives /readyz so a
+	// wedged instance — one that cannot reach the IdP's JWKS — is restarted
+	// by the platform instead of quietly 401-ing every login.
+	Healthy() bool
 	// DeleteUser removes the IdP-side user (by subject) so a deleted account's
 	// session can't resurrect it on the next request. A missing user is success.
 	DeleteUser(ctx context.Context, subject string) error

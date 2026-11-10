@@ -150,6 +150,7 @@ jobs:
             -var "letsencrypt_email=${{ vars.LETSENCRYPT_EMAIL }}" \
             -var "forgejo_admin_token=${{ secrets.FORGEJO_ADMIN_TOKEN }}" \
             -var "zitadel_management_token=${{ secrets.ZITADEL_MANAGEMENT_TOKEN }}" \
+            -var "zitadel_client_secret=${{ secrets.ZITADEL_CLIENT_SECRET }}" \
             -var "sdb_user=${{ secrets.SDB_USER }}" \
             -var "sdb_password=${{ secrets.SDB_PASSWORD }}" \
             -var "create_dns_zone=false" \

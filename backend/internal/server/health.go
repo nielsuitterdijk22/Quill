@@ -24,6 +24,14 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// An instance whose external-IdP keys are missing cannot verify any login
+	// (the "sign-in loop" wedge). Failing readiness makes the platform's
+	// liveness probe restart it instead of serving 401s — healthy instances
+	// and non-Zitadel deployments are unaffected.
+	if s.externalAuthEnabled() && !s.verifier.Healthy() {
+		httpx.Error(w, http.StatusServiceUnavailable, "not_ready", "identity provider keys unavailable")
+		return
+	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 

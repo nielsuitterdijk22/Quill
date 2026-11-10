@@ -234,8 +234,15 @@ func loginAs(t *testing.T, user, pass string) string {
 		"client_id":     {clientID},
 		"code_verifier": {verifier},
 	}
+	// Confidential OIDC app: authenticate the token exchange with the client
+	// secret (Basic auth). Uses the app's env-var pattern: skipped when unset
+	// (public PKCE client, e.g. local development against a public app).
+	clientSecret := os.Getenv("QUILL_E2E_CLIENT_SECRET")
 	treq, _ := http.NewRequest(http.MethodPost, authURL+"/oauth/v2/token", strings.NewReader(tokForm.Encode()))
 	treq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if clientSecret != "" {
+		treq.SetBasicAuth(clientID, clientSecret)
+	}
 	tresp, err := c.Do(treq)
 	if err != nil {
 		t.Fatalf("token exchange: %v", err)

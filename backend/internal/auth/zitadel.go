@@ -73,7 +73,20 @@ func (v *ZitadelVerifier) Enabled() bool { return v.issuer != "" }
 // Provider returns the auth_identities.provider key for Zitadel.
 func (v *ZitadelVerifier) Provider() string { return ProviderZitadel }
 
-// Start fetches the initial JWKS synchronously and refreshes it every 15 minutes.
+// Healthy reports whether the JWKS is currently loaded — the difference
+// between "can verify logins" and the wedged state where every request
+// 401s "invalid or expired token".
+func (v *ZitadelVerifier) Healthy() bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.keySet != nil
+}
+
+// Start fetches the initial JWKS synchronously, then refreshes it: every 15
+// minutes when healthy, every 20 seconds while keys are missing so a wedged
+// instance recovers on its own within seconds of the IdP being reachable
+// again (the production incident pattern: an instance that missed the JWKS
+// fetch rejected every token until redeployed).
 func (v *ZitadelVerifier) Start(ctx context.Context) {
 	if !v.Enabled() {
 		return
@@ -82,9 +95,21 @@ func (v *ZitadelVerifier) Start(ctx context.Context) {
 		v.logger.Warn("initial Zitadel JWKS fetch failed — auth will fail until retry", "error", err)
 	}
 	go func() {
-		t := time.NewTicker(15 * time.Minute)
-		defer t.Stop()
+		var t *time.Ticker
+		defer func() {
+			if t != nil {
+				t.Stop()
+			}
+		}()
 		for {
+			interval := 15 * time.Minute
+			if !v.Healthy() {
+				interval = 20 * time.Second
+			}
+			if t != nil {
+				t.Stop()
+			}
+			t = time.NewTicker(interval)
 			select {
 			case <-ctx.Done():
 				return

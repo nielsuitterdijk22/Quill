@@ -44,3 +44,26 @@ func TestMeta(t *testing.T) {
 		t.Fatalf("unexpected content-type: %q", ct)
 	}
 }
+
+// TestReadyzReflectsIdPHealth pins the sign-in-loop self-heal: with an
+// external IdP configured but its JWKS not loaded (the wedged-instance
+// state), readiness fails so the platform restarts the container; without
+// an external IdP readiness is unaffected.
+func TestReadyzReflectsIdPHealth(t *testing.T) {
+	// No Zitadel configured: ready.
+	srv := newTestServer(t)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("readyz without IdP: %d, want 200", rec.Code)
+	}
+
+	// Zitadel configured but never started (no JWKS): not ready.
+	t.Setenv("ZITADEL_ISSUER", "https://auth.example.test")
+	srv = newTestServer(t)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz with unloaded JWKS: %d, want 503", rec.Code)
+	}
+}

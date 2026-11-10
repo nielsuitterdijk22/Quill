@@ -92,8 +92,10 @@ resource "scaleway_container" "api" {
   liveness_probe {
     interval          = "10s"
     failure_threshold = 3
-    tcp               = true
     timeout           = "5s"
+    http {
+      path = "/readyz"
+    }
   }
 }
 
@@ -137,6 +139,10 @@ resource "scaleway_container" "web" {
   }
   secret_environment_variables = {
     AUTH_SECRET = random_password.jwt_secret.result
+    # Zitadel client secret for the confidential OIDC app: enables Auth.js
+    # refresh-token rotation so sessions renew instead of expiring hourly.
+    # Empty keeps the app a public PKCE client (development).
+    ZITADEL_CLIENT_SECRET = var.zitadel_client_secret
   }
 
   liveness_probe {
