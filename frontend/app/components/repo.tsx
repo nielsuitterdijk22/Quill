@@ -3,7 +3,6 @@
 
 import Link from "next/link";
 
-import { StarButton } from "./StarButton";
 
 import type { Commit, ContentEntry } from "../lib/api";
 
@@ -131,16 +130,12 @@ export function RepoHeader({
   path = "",
   active,
   description,
-  starCount,
-  starred,
 }: {
   project: string;
   repo: string;
   visibility: string;
   refName: string;
   description?: string;
-  starCount?: number;
-  starred?: boolean;
   // The path currently being browsed (tree/blob pages): keeps Code + Commits
   // scoped to it so navigating between them returns to the same place.
   path?: string;
@@ -168,15 +163,6 @@ export function RepoHeader({
           {project}/<b>{repo}</b>
         </h1>
         <VisibilityBadge visibility={visibility} />
-        <span className="spacer" />
-        {starCount !== undefined && starred !== undefined && (
-          <StarButton
-            project={project}
-            repo={repo}
-            starCount={starCount}
-            starred={starred}
-          />
-        )}
       </div>
       {description && (
         <p className="subtle repo-header-desc">{description}</p>

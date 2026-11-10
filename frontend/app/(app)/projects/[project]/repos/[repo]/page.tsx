@@ -171,8 +171,6 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
         refName={ref}
         active="code"
         description={repo.description}
-        starCount={repo.starCount}
-        starred={repo.viewerHasStarred}
       />
 
       <div className="repo-toolbar">
