@@ -22,7 +22,7 @@
 // routes are matched before afterFiles rewrites).
 
 import { NextRequest, NextResponse } from "next/server";
-import { decode } from "next-auth/jwt";
+import { getToken } from "next-auth/jwt";
 
 const API = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
 
@@ -36,30 +36,15 @@ async function sessionAccessToken(req: NextRequest): Promise<string | null> {
   // Auth.js v5 hardens the cookie to __Host-... when AUTH_URL is https —
   // use that name for both the lookup and the decode salt.
   const SALT = "__Host-authjs.session-token";
-  // Sessions carrying access+refresh+id tokens exceed 4 KB, so Auth.js
-  // chunks the cookie into SALT.0, SALT.1, … — reassemble before decoding.
-  const chunks = req.cookies
-    .getAll()
-    .filter((c) => c.name === SALT || c.name.startsWith(SALT + "."))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const cookie =
-    chunks.length === 0
-      ? undefined
-      : chunks.length === 1 && chunks[0].name === SALT
-        ? chunks[0].value
-        : chunks
-            .filter((c) => c.name !== SALT)
-            .map((c) => c.value)
-            .join("");
   const secret = process.env.AUTH_SECRET;
-  if (!cookie || !secret) return null;
-  // The v5 session cookie is an encrypted JWE by default — decode only
-  // decrypts when asked to (returns null otherwise, which is what bit us).
-  const payload = (await decode({
-    token: cookie,
+  if (!secret) return null;
+  // getToken resolves the (possibly __Host- prefixed, possibly chunked)
+  // session cookie from the request, reassembles it, and decrypts the JWE —
+  // everything that had to be hand-rolled before and kept failing.
+  const payload = (await getToken({
+    req,
     secret,
     salt: SALT,
-    encryption: true,
   })) as { accessToken?: string } | null;
   return payload?.accessToken ?? null;
 }
