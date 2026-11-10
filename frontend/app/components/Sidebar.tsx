@@ -12,6 +12,7 @@ import { setCurrentProjectAction } from "../lib/actions";
 import type { MyProject, Organization, User } from "../lib/api";
 import { AppSwitcher } from "./AppSwitcher";
 import { AppTile } from "./icons/AppMarks";
+import { Icon } from "./Icon";
 import { ThemeToggle } from "./ThemeToggle";
 
 export type NavItem = {
@@ -22,16 +23,16 @@ export type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: "◧" },
-  { href: "/repositories", label: "Repositories", icon: "⎇" },
-  { href: "/pulls", label: "Pull requests", icon: "⤭" },
-  { href: "/pipelines", label: "Pipelines", icon: "▷" },
+  { href: "/", label: "Dashboard", icon: "dashboard" },
+  { href: "/repositories", label: "Repositories", icon: "repos" },
+  { href: "/pulls", label: "Pull requests", icon: "pulls" },
+  { href: "/pipelines", label: "Pipelines", icon: "pipelines" },
 ];
 
 // SETTINGS_NAV is appended after the scope-aware Policies entry (see below) so
 // the two sit together at the foot of the primary nav.
 const SETTINGS_NAV: NavItem[] = [
-  { href: "/settings", label: "Settings", icon: "⚙" },
+  { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
 // POLICIES_HREF is where the primary-nav "Policies" entry points for an
@@ -42,17 +43,17 @@ const SETTINGS_NAV: NavItem[] = [
 const POLICIES_HREF = "/settings?tab=policies";
 
 const ORG_NAV: NavItem[] = [
-  { href: "/projects", label: "Projects", icon: "⊞" },
+  { href: "/projects", label: "Projects", icon: "projects" },
 ];
 
 // ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin/audit-log", label: "Audit log", icon: "◎" },
+  { href: "/admin/audit-log", label: "Audit log", icon: "eye" },
 ];
 
 // ORG_ADMIN_NAV holds entries only relevant when org projects exist.
 const ORG_ADMIN_NAV: NavItem[] = [
-  { href: "/admin/users", label: "Users", icon: "◈" },
+  { href: "/admin/users", label: "Users", icon: "user" },
 ];
 
 // Top-level paths that are app routes, not owner namespaces.
@@ -374,7 +375,7 @@ export function Sidebar({
             href={it.href}
             className={navItemActive(it.href) ? "active" : ""}
           >
-            <span className="ic">{it.icon}</span>
+            <Icon name={it.icon} className="nav-icon" />
             {it.label}
             {it.soon && <span className="tag">soon</span>}
           </Link>
@@ -393,7 +394,7 @@ export function Sidebar({
                   isActive(pathname, `/orgs/${o.slug}`) ? "active" : ""
                 }
               >
-                <span className="ic">◱</span>
+                <Icon name="briefcase" className="nav-icon" />
                 {o.name}
                 {o.role === "admin" && <span className="tag">admin</span>}
               </Link>

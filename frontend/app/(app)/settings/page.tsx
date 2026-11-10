@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { Icon } from "@/components/Icon";
+
 import { getMyProjects, listGitTokens, listSSHKeys } from "../../lib/api";
 import type { User } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
@@ -53,10 +55,10 @@ export default async function SettingsPage({
       </div>
 
       <nav className="settings-nav" aria-label="Settings sections">
-        <a href="#settings-profile">Profile</a>
-        <a href="#settings-security">Security</a>
-        <a href="#settings-billing">Billing</a>
-        <a href="#settings-data">Data</a>
+        <a href="#settings-profile"><Icon name="user" size={13} /> Profile</a>
+        <a href="#settings-security"><Icon name="security" size={13} /> Security</a>
+        <a href="#settings-billing"><Icon name="billing" size={13} /> Billing</a>
+        <a href="#settings-data"><Icon name="data" size={13} /> Data</a>
       </nav>
 
       {personalProject && (

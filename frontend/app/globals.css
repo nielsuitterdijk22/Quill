@@ -2570,7 +2570,43 @@ h2.section {
   font-size: 10px;
 }
 
-/* ---- new issue editor (H5 two-pane) ---------------------------------------- */
+
+/* ---- Icon system (SVG, inherits currentColor) ------------------------------ */
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.nav a .icon {
+  color: var(--muted);
+  transition: color 150ms var(--ease);
+}
+.nav a:hover .icon {
+  color: var(--text);
+}
+.nav a.active .icon {
+  color: var(--accent-soft);
+}
+/* Repo tabs */
+.rtabs a .icon {
+  color: var(--muted);
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+.rtabs a.active .icon {
+  color: var(--accent-soft);
+}
+/* Empty states */
+.empty-state .icon {
+  color: #fff;
+}
+/* Settings chips */
+.settings-nav .icon {
+  vertical-align: -2px;
+  margin-right: 3px;
+  color: var(--accent-soft);
+}
+\n/* ---- new issue editor (H5 two-pane) ---------------------------------------- */
 .new-issue-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
