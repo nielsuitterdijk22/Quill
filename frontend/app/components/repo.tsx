@@ -308,9 +308,23 @@ export function firstLine(message: string): string {
 }
 
 // fmtDate renders an ISO timestamp as a short, locale-independent date.
+// fmtDate renders a commit timestamp: relative ("2h ago") when recent
+// (< 4 weeks), absolute ("Nov 5, 2026") when older. The 4-week cutoff
+// matches GitHub behaviour (counts to 4 weeks, then switches to dates).
 export function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
+  const s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 0) return fmtAbsolute(d);
+  if (s < 45) return "just now";
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  if (s < 7 * 86400) return `${Math.round(s / 86400)}d ago`;
+  if (s < 28 * 86400) return `${Math.round(s / 86400 / 7)}w ago`;
+  return fmtAbsolute(d);
+}
+
+function fmtAbsolute(d: Date): string {
   const months = [
     "Jan",
     "Feb",
