@@ -102,6 +102,9 @@ write_files:
             QUILL_LOG_FORMAT: json
             QUILL_PIPELINE_DISPATCH_SECRET: ${dispatch_secret}
             DOCKER_HOST: unix:///var/run/docker.sock
+            # Slim but Actions-compatible runner image (~200MB, Debian+node);
+            # the fat catthehacker/ubuntu:act-* images do not fit the VM disk.
+            QUILL_PIPELINE_UBUNTU_IMAGE: node:22-bookworm
           ports:
             - "8090:8090"  # called by the api container; HMAC-protected
           volumes:
