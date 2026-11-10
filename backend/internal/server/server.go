@@ -199,6 +199,9 @@ func (s *Server) setupRoutes() {
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/meta", s.handleMeta)
 
+		// TEMPORARY: Forgejo admin token diagnostic (remove after use).
+		r.Get("/forgejo-diag", s.handleForgejoDiag)
+
 		// Public profile pictures (rendered in <img> tags, no bearer).
 		r.Get("/users/{id}/avatar", s.handleGetUserAvatar)
 

@@ -35,6 +35,34 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
+// handleForgejoDiag TEMPORARILY reports whether the Forgejo admin token in
+// this container's env can fetch a given user's heatmap. Unauthenticated;
+// deployed for one diagnostic round then removed.
+func (s *Server) handleForgejoDiag(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "username query param required")
+		return
+	}
+	if s.forgejo == nil || !s.forgejo.Enabled() {
+		httpx.JSON(w, http.StatusOK, map[string]any{"forgejo": "disabled"})
+		return
+	}
+	entries, err := s.forgejo.UserHeatmap(r.Context(), username)
+	if err != nil {
+		httpx.JSON(w, http.StatusOK, map[string]any{
+			"username": username,
+			"error":    err.Error(),
+		})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"username":  username,
+		"entries":   entries,
+		"count":     len(entries),
+	})
+}
+
 // handleMeta reports basic service metadata, useful as a frontend connectivity check.
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{
