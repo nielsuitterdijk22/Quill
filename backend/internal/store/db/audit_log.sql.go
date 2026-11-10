@@ -14,9 +14,9 @@ import (
 )
 
 const insertAuditLog = `-- name: InsertAuditLog :one
-INSERT INTO audit_log (actor_user_id, action, target_type, target_id, metadata, ip_address, actor_username)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, actor_user_id, action, target_type, target_id, metadata, created_at, ip_address, actor_username
+INSERT INTO audit_log (actor_user_id, action, target_type, target_id, metadata, ip_address, actor_username, tenant_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, actor_user_id, action, target_type, target_id, metadata, created_at, ip_address, actor_username, tenant_id
 `
 
 type InsertAuditLogParams struct {
@@ -27,6 +27,7 @@ type InsertAuditLogParams struct {
 	Metadata      []byte        `json:"metadata"`
 	IPAddress     string        `json:"ipAddress"`
 	ActorUsername string        `json:"actorUsername"`
+	TenantID      uuid.NullUUID `json:"tenantId"`
 }
 
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) (AuditLog, error) {
@@ -38,6 +39,7 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.Metadata,
 		arg.IPAddress,
 		arg.ActorUsername,
+		arg.TenantID,
 	)
 	var i AuditLog
 	err := row.Scan(
@@ -50,18 +52,20 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		&i.CreatedAt,
 		&i.IPAddress,
 		&i.ActorUsername,
+		&i.TenantID,
 	)
 	return i, err
 }
 
 const listAuditLogFiltered = `-- name: ListAuditLogFiltered :many
-SELECT id, actor_user_id, action, target_type, target_id, metadata, created_at, ip_address, actor_username
+SELECT id, actor_user_id, action, target_type, target_id, metadata, created_at, ip_address, actor_username, tenant_id
 FROM audit_log
 WHERE
   ($1::text = '' OR action LIKE $1 || '%')
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
   AND ($6::text = '' OR actor_username = $6)
+  AND tenant_id IS NOT DISTINCT FROM $7::uuid
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $5
 `
@@ -73,6 +77,7 @@ type ListAuditLogFilteredParams struct {
 	Limit        int32              `json:"limit"`
 	Offset       int32              `json:"offset"`
 	Actor        string             `json:"actor"`
+	TenantID     uuid.NullUUID      `json:"tenantId"`
 }
 
 func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilteredParams) ([]AuditLog, error) {
@@ -83,6 +88,7 @@ func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilt
 		arg.Limit,
 		arg.Offset,
 		arg.Actor,
+		arg.TenantID,
 	)
 	if err != nil {
 		return nil, err
@@ -101,6 +107,7 @@ func (q *Queries) ListAuditLogFiltered(ctx context.Context, arg ListAuditLogFilt
 			&i.CreatedAt,
 			&i.IPAddress,
 			&i.ActorUsername,
+			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}
@@ -120,6 +127,7 @@ WHERE
   AND ($2::timestamptz IS NULL OR created_at >= $2)
   AND ($3::timestamptz IS NULL OR created_at <= $3)
   AND ($4::text = '' OR actor_username = $4)
+  AND tenant_id IS NOT DISTINCT FROM $5::uuid
 `
 
 type CountAuditLogFilteredParams struct {
@@ -127,6 +135,7 @@ type CountAuditLogFilteredParams struct {
 	Since        pgtype.Timestamptz `json:"since"`
 	Until        pgtype.Timestamptz `json:"until"`
 	Actor        string             `json:"actor"`
+	TenantID     uuid.NullUUID      `json:"tenantId"`
 }
 
 func (q *Queries) CountAuditLogFiltered(ctx context.Context, arg CountAuditLogFilteredParams) (int64, error) {
@@ -135,6 +144,7 @@ func (q *Queries) CountAuditLogFiltered(ctx context.Context, arg CountAuditLogFi
 		arg.Since,
 		arg.Until,
 		arg.Actor,
+		arg.TenantID,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -145,11 +155,12 @@ const listAuditLogActors = `-- name: ListAuditLogActors :many
 SELECT DISTINCT actor_username
 FROM audit_log
 WHERE actor_username <> ''
+  AND tenant_id IS NOT DISTINCT FROM $1::uuid
 ORDER BY actor_username
 `
 
-func (q *Queries) ListAuditLogActors(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, listAuditLogActors)
+func (q *Queries) ListAuditLogActors(ctx context.Context, tenantID uuid.NullUUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAuditLogActors, tenantID)
 	if err != nil {
 		return nil, err
 	}

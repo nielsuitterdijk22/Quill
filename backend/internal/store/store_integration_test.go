@@ -202,3 +202,118 @@ func cleanupUser(t *testing.T, st *store.Store, id uuid.UUID) {
 		t.Logf("cleanup user %v: %v", id, err)
 	}
 }
+
+// TestAuditLogTenantScoping pins the hard isolation rule: audit log reads are
+// scoped to the viewer's own tenant, so no admin (platform admin included) can
+// see another tenant's entries, and legacy NULL-tenant entries are visible only
+// to legacy NULL-tenant accounts.
+func TestAuditLogTenantScoping(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+
+	tenantA, err := st.CreateTenant(ctx, db.CreateTenantParams{Slug: "audit-a-" + strings.ToLower(uuid.NewString()[:8]), Name: "Tenant A"})
+	if err != nil {
+		t.Fatalf("create tenant A: %v", err)
+	}
+	tenantB, err := st.CreateTenant(ctx, db.CreateTenantParams{Slug: "audit-b-" + strings.ToLower(uuid.NewString()[:8]), Name: "Tenant B"})
+	if err != nil {
+		t.Fatalf("create tenant B: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM tenants WHERE id IN ($1, $2)", tenantA.ID, tenantB.ID)
+	})
+
+	userIn := func(t *testing.T, name string, tenant uuid.NullUUID) uuid.UUID {
+		t.Helper()
+		u, err := st.CreateUser(ctx, db.CreateUserParams{Username: name, Email: name + "@example.test", DisplayName: name, IsAdmin: true})
+		if err != nil {
+			t.Fatalf("create user %s: %v", name, err)
+		}
+		t.Cleanup(func() { cleanupUser(t, st, u.ID) })
+		if tenant.Valid {
+			if _, err := st.Pool().Exec(ctx, "UPDATE users SET tenant_id = $1 WHERE id = $2", tenant.UUID, u.ID); err != nil {
+				t.Fatalf("set tenant for %s: %v", name, err)
+			}
+		}
+		return u.ID
+	}
+
+	adminA := userIn(t, "audit-admin-a-"+uuid.NewString()[:8], uuid.NullUUID{UUID: tenantA.ID, Valid: true})
+	otherB := userIn(t, "audit-user-b-"+uuid.NewString()[:8], uuid.NullUUID{UUID: tenantB.ID, Valid: true})
+	legacy := userIn(t, "audit-legacy-"+uuid.NewString()[:8], uuid.NullUUID{})
+
+	insert := func(actor uuid.UUID, action string, tenant uuid.NullUUID) int64 {
+		t.Helper()
+		e, err := st.InsertAuditLog(ctx, db.InsertAuditLogParams{
+			ActorUserID:   uuid.NullUUID{UUID: actor, Valid: true},
+			Action:        action,
+			TargetType:    "user",
+			TargetID:      actor.String(),
+			Metadata:      []byte(`{}`),
+			ActorUsername: action,
+			TenantID:      tenant,
+		})
+		if err != nil {
+			t.Fatalf("insert audit %s: %v", action, err)
+		}
+		return e.ID
+	}
+
+	idA := insert(adminA, "auth.sign_in", uuid.NullUUID{UUID: tenantA.ID, Valid: true})
+	idB := insert(otherB, "auth.sign_in", uuid.NullUUID{UUID: tenantB.ID, Valid: true})
+	idL := insert(legacy, "auth.sign_in", uuid.NullUUID{})
+
+	// Tenant A's admin sees only tenant A entries.
+	got, err := st.ListAuditLogFiltered(ctx, db.ListAuditLogFilteredParams{
+		TenantID: uuid.NullUUID{UUID: tenantA.ID, Valid: true},
+		Limit:    100,
+		Offset:   0,
+	})
+	if err != nil {
+		t.Fatalf("list for tenant A: %v", err)
+	}
+	ids := map[int64]bool{}
+	for _, e := range got {
+		ids[e.ID] = true
+	}
+	if ids[idA] != true || ids[idB] == true || ids[idL] == true {
+		t.Fatalf("tenant A view leaked: a=%v b=%v legacy=%v", ids[idA], ids[idB], ids[idL])
+	}
+
+	// Tenant B's view is likewise isolated.
+	got, err = st.ListAuditLogFiltered(ctx, db.ListAuditLogFilteredParams{
+		TenantID: uuid.NullUUID{UUID: tenantB.ID, Valid: true},
+		Limit:    100,
+		Offset:   0,
+	})
+	if err != nil {
+		t.Fatalf("list for tenant B: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != idB {
+		t.Fatalf("tenant B view: got %d entries, want exactly its own", len(got))
+	}
+
+	// A legacy (NULL tenant) admin sees only NULL-tenant entries.
+	got, err = st.ListAuditLogFiltered(ctx, db.ListAuditLogFilteredParams{
+		TenantID: uuid.NullUUID{},
+		Limit:    100,
+		Offset:   0,
+	})
+	if err != nil {
+		t.Fatalf("list for legacy: %v", err)
+	}
+	for _, e := range got {
+		if e.TenantID.Valid {
+			t.Fatalf("legacy view leaked entry %d from tenant %v", e.ID, e.TenantID.UUID)
+		}
+	}
+	foundL := false
+	for _, e := range got {
+		if e.ID == idL {
+			foundL = true
+		}
+	}
+	if !foundL {
+		t.Fatalf("legacy view missing its own entry")
+	}
+}

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +16,23 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
+// viewerTenant returns the authenticated account's tenant: the hard scope for
+// all audit log reads. Entries from other tenants are invisible to every
+// viewer, platform admins included.
+func (s *Server) viewerTenant(r *http.Request) (uuid.NullUUID, error) {
+	id, ok := identityFrom(r.Context())
+	if !ok {
+		return uuid.NullUUID{}, errAuditNoIdentity
+	}
+	user, err := s.store.GetUserByID(r.Context(), id.UserID)
+	if err != nil {
+		return uuid.NullUUID{}, err
+	}
+	return user.TenantID, nil
+}
+
+var errAuditNoIdentity = errors.New("audit read requires an authenticated identity")
+
 // logAudit writes a best-effort audit log entry. It never fails the calling
 // handler — errors are logged at warn level and swallowed.
 func (s *Server) logAudit(r *http.Request, action, targetType, targetID string, metadata map[string]any) {
@@ -26,8 +44,15 @@ func (s *Server) logAudit(r *http.Request, action, targetType, targetID string, 
 	}
 
 	actorID := uuid.NullUUID{}
+	tenantID := uuid.NullUUID{}
 	if id.UserID != (uuid.UUID{}) {
 		actorID = uuid.NullUUID{UUID: id.UserID, Valid: true}
+		// The tenant stamp comes from the user row, not the identity: identity
+		// resolves a fallback (IdP-org) tenant for legacy accounts, but the
+		// read path filters by users.tenant_id - mismatch would mis-scope.
+		if u, err := s.store.GetUserByID(r.Context(), id.UserID); err == nil {
+			tenantID = u.TenantID
+		}
 	}
 
 	_, err = s.store.InsertAuditLog(r.Context(), db.InsertAuditLogParams{
@@ -38,6 +63,7 @@ func (s *Server) logAudit(r *http.Request, action, targetType, targetID string, 
 		Metadata:      raw,
 		IPAddress:     r.RemoteAddr,
 		ActorUsername: id.Username,
+		TenantID:      tenantID,
 	})
 	if err != nil {
 		s.logger.Warn("audit log write failed", "action", action, "error", err)
@@ -94,6 +120,12 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		offset = int32(o)
 	}
 
+	viewerTenant, err := s.viewerTenant(r)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load audit scope")
+		return
+	}
+
 	params := db.ListAuditLogFilteredParams{
 		ActionPrefix: actionPrefix,
 		Since:        since,
@@ -101,6 +133,7 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		Limit:        limit,
 		Offset:       offset,
 		Actor:        actor,
+		TenantID:     viewerTenant,
 	}
 	entries, err := s.store.ListAuditLogFiltered(r.Context(), params)
 	if err != nil {
@@ -114,12 +147,13 @@ func (s *Server) handleListAuditLog(w http.ResponseWriter, r *http.Request) {
 		Since:        since,
 		Until:        until,
 		Actor:        actor,
+		TenantID:     viewerTenant,
 	})
 	if err != nil {
 		total = 0
 	}
 
-	actors, err := s.store.ListAuditLogActors(r.Context())
+	actors, err := s.store.ListAuditLogActors(r.Context(), viewerTenant)
 	if err != nil {
 		actors = []string{}
 	}
@@ -145,8 +179,13 @@ func (s *Server) handleExportAuditLog(w http.ResponseWriter, r *http.Request) {
 	actionPrefix := q.Get("action")
 	actor := q.Get("actor")
 	since, until := parseAuditDateRange(q.Get("since"), q.Get("until"))
+	viewerTenant, err := s.viewerTenant(r)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load audit scope")
+		return
+	}
 
-	// Fetch up to 50 000 rows for export.
+	// Fetch up to 50 000 rows for export - only within the viewer's tenant.
 	entries, err := s.store.ListAuditLogFiltered(r.Context(), db.ListAuditLogFilteredParams{
 		ActionPrefix: actionPrefix,
 		Since:        since,
@@ -154,6 +193,7 @@ func (s *Server) handleExportAuditLog(w http.ResponseWriter, r *http.Request) {
 		Limit:        50000,
 		Offset:       0,
 		Actor:        actor,
+		TenantID:     viewerTenant,
 	})
 	if err != nil {
 		s.logger.Error("export audit log failed", "error", err)

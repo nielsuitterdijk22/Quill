@@ -21,6 +21,7 @@ type AuditLog struct {
 	CreatedAt     time.Time     `json:"createdAt"`
 	IPAddress     string        `json:"ipAddress"`
 	ActorUsername string        `json:"actorUsername"`
+	TenantID      uuid.NullUUID `json:"tenantId"`
 }
 
 type AuthIdentity struct {
