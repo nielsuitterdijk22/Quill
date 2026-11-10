@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 import type { Contribution } from "../lib/api";
 
 // ContributionGraph renders a GitHub-style commit calendar: 53 weeks of daily
@@ -24,7 +28,22 @@ function level(count: number): number {
   return 4;
 }
 
+// tipLabel renders the hover text for a day cell: "3 contributions on Nov 9".
+function tipLabel(count: number, date: Date): string {
+  const day = `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
+  return count === 0
+    ? `No contributions on ${day}`
+    : `${count} contribution${count === 1 ? "" : "s"} on ${day}`;
+}
+
 export function ContributionGraph({ data }: { data: Contribution[] }) {
+  // One floating tooltip for the whole grid: which cell is hovered and where
+  // the pointer is (viewport coords - the tip is position: fixed, so it never
+  // gets clipped by the grid's horizontal scroll container).
+  const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const showTip = (cell: { count: number; date: Date }) => (e: React.MouseEvent) =>
+    setTip({ x: e.clientX, y: e.clientY, text: tipLabel(cell.count, cell.date) });
+
   // Sum contributions per UTC day.
   const byDay = new Map<string, number>();
   for (const e of data) {
@@ -107,7 +126,11 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
                     <i
                       key={cell.key}
                       className={`contrib-cell lvl-${level(cell.count)}`}
-                      title={`${cell.count} contribution${cell.count === 1 ? "" : "s"} on ${cell.key}`}
+                      role="img"
+                      aria-label={tipLabel(cell.count, cell.date)}
+                      onMouseEnter={showTip(cell)}
+                      onMouseMove={showTip(cell)}
+                      onMouseLeave={() => setTip(null)}
                     />
                   ),
                 )}
@@ -116,6 +139,11 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
           </div>
         </div>
       </div>
+      {tip && (
+        <div className="contrib-tip" style={{ left: tip.x, top: tip.y - 32 }}>
+          {tip.text}
+        </div>
+      )}
     </div>
   );
 }

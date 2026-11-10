@@ -4058,3 +4058,20 @@ a.row-item:hover {
 .blob-markdown {
   padding: 16px 20px;
 }
+
+/* Floating contribution-day tooltip (position: fixed - viewport coords). */
+.contrib-tip {
+  position: fixed;
+  z-index: 70;
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
