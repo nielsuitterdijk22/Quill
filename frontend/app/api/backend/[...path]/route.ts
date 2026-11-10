@@ -53,9 +53,14 @@ async function sessionAccessToken(req: NextRequest): Promise<string | null> {
             .join("");
   const secret = process.env.AUTH_SECRET;
   if (!cookie || !secret) return null;
-  const payload = (await decode({ token: cookie, secret, salt: SALT })) as
-    | { accessToken?: string }
-    | null;
+  // The v5 session cookie is an encrypted JWE by default — decode only
+  // decrypts when asked to (returns null otherwise, which is what bit us).
+  const payload = (await decode({
+    token: cookie,
+    secret,
+    salt: SALT,
+    encryption: true,
+  })) as { accessToken?: string } | null;
   return payload?.accessToken ?? null;
 }
 
