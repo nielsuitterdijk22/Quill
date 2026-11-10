@@ -65,19 +65,19 @@ export default async function SettingsPage({
         <div className="repo-toolbar">
           <div className="state-tabs">
             <Link className={tab === "account" ? "active" : ""} href="/settings">
-              <span className="ic">⚙</span> Account
+              <Icon name="settings" size={13} /> Account
             </Link>
             <Link
               className={tab === "policies" ? "active" : ""}
               href="/settings?tab=policies"
             >
-              <span className="ic">🛡</span> Policies
+              <Icon name="security" size={13} /> Policies
             </Link>
             <Link
               className={tab === "secrets" ? "active" : ""}
               href="/settings?tab=secrets"
             >
-              <span className="ic">🔑</span> Secrets &amp; environments
+              <Icon name="lock" size={13} /> Secrets &amp; environments
             </Link>
           </div>
         </div>

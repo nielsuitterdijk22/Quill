@@ -425,7 +425,7 @@ export function Sidebar({
                   repoTabActive(pathname, t.key, repoCtx) ? "active" : ""
                 }
               >
-                <span className="ic">{t.icon}</span>
+                <Icon name="arrow_right" className="nav-icon" />
                 {t.label}
               </Link>
             ))}
