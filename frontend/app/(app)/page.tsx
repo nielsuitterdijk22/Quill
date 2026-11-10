@@ -11,7 +11,6 @@ import {
   type MyProject,
 } from "../lib/api";
 import { getProfileAvatar, getToken, requireSession } from "../lib/session";
-import { authGet } from "../lib/api/client";
 import { resolveCurrentProject } from "../lib/projects";
 import { ContributionGraph } from "../components/ContributionGraph";
 import { VisibilityBadge } from "../components/repo";
@@ -65,16 +64,6 @@ export default async function DashboardPage() {
       ])
     : [[], { ok: false as const, status: 0, message: "" }];
 
-  // TEMPORARY diagnostic: what did the contributions helper actually get?
-  const contribDiag = token
-    ? await (async () => {
-        const [viaHelper, viaRaw] = await Promise.all([
-          getMyContributions(token).then((r) => "helper:" + r.length),
-          getContribDiag(token),
-        ]);
-        return viaHelper + "|" + viaRaw;
-      })()
-    : null;
 
   const recentPulls = myPulls.ok ? myPulls.data.pulls.slice(0, 6) : [];
   const openPRs = myPulls.ok ? myPulls.data.pulls.filter((p) => p.pull.state === "open").length : 0;
@@ -86,8 +75,6 @@ export default async function DashboardPage() {
 
   return (
     <>
-      {/* TEMPORARY diagnostic (remove after the contributions fix) */}
-      <div id="contrib-diag" data-tok={token ? 1 : 0} data-diag={contribDiag ?? "unset"} />
       {meta === null && (
         <div className="banner">
           Can&apos;t reach the Quill backend. Start it with{" "}
@@ -204,15 +191,4 @@ export default async function DashboardPage() {
       </div>
     </>
   );
-}
-
-// TEMPORARY diagnostic helper (remove with the contrib-diag div).
-async function getContribDiag(token: string): Promise<string> {
-  const res = await authGet<{ contributions?: { timestamp: number; contributions: number }[] }>(
-    token,
-    "/api/v1/me/contributions",
-  );
-  return res.ok
-    ? `ok:${res.data.contributions?.length ?? "nofield"}`
-    : `fail:${res.status}:${res.message}`;
 }

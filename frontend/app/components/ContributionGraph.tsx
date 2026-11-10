@@ -32,12 +32,17 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
     byDay.set(key, (byDay.get(key) ?? 0) + e.contributions);
   }
 
-  // Build the grid ending today, aligned so each column is a Sun–Sat week.
+  // Build the grid ending in the week of "today", aligned so each column is a
+  // Sun-Sat week. The anchor is the Sunday of today's week; the leftmost column
+  // starts 52 weeks earlier. Subtracting a fixed 370-day span and then walking
+  // back to Sunday (the old approach) ends the grid days before today, which
+  // dropped all activity from the trailing partial week - the graph looked
+  // empty right after committing.
   const today = new Date();
   const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  // Walk back to the Sunday that starts the leftmost column.
-  const start = new Date(end.getTime() - (WEEKS * 7 - 1) * DAY_MS);
-  start.setUTCDate(start.getUTCDate() - start.getUTCDay());
+  const weekAnchor = new Date(end);
+  weekAnchor.setUTCDate(weekAnchor.getUTCDate() - weekAnchor.getUTCDay());
+  const start = new Date(weekAnchor.getTime() - (WEEKS - 1) * 7 * DAY_MS);
 
   const weeks: { key: string; count: number; date: Date }[][] = [];
   let total = 0;
