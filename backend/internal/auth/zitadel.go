@@ -45,6 +45,10 @@ type ZitadelVerifier struct {
 	mgmtToken string
 	mu        sync.RWMutex
 	keySet    jwk.Set
+	// lastFailureRefresh limits refetches after a failed verification to one
+	// per minute, so a flood of legitimately-expired tokens can't hammer the
+	// IdP while a genuine key rotation still recovers within one request.
+	lastFailureRefresh time.Time
 }
 
 // NewZitadelVerifier builds a verifier from configuration. Call Start to fetch
@@ -122,6 +126,25 @@ func (v *ZitadelVerifier) Start(ctx context.Context) {
 	}()
 }
 
+// tryFailureRefresh refetches the JWKS at most once per minute after a failed
+// verification. It reports whether a fresh key set was actually fetched.
+func (v *ZitadelVerifier) tryFailureRefresh(ctx context.Context) bool {
+	v.mu.Lock()
+	cool := time.Since(v.lastFailureRefresh) > time.Minute
+	if cool {
+		v.lastFailureRefresh = time.Now()
+	}
+	v.mu.Unlock()
+	if !cool {
+		return false
+	}
+	if err := v.refresh(ctx); err != nil {
+		v.logger.Warn("zitadel verify: live JWKS refetch failed", "error", err)
+		return false
+	}
+	return true
+}
+
 func (v *ZitadelVerifier) refresh(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -150,13 +173,32 @@ func (v *ZitadelVerifier) Verify(ctx context.Context, token string) (Identity, e
 		v.mu.RUnlock()
 	}
 
-	tok, err := jwt.Parse(
-		[]byte(token),
-		jwt.WithKeySet(ks, jws.WithInferAlgorithmFromKey(true)),
-		jwt.WithIssuer(v.issuer),
-		jwt.WithValidate(true),
-		jwt.WithAcceptableSkew(30*time.Second),
-	)
+	parse := func(ks jwk.Set) (jwt.Token, error) {
+		return jwt.Parse(
+			[]byte(token),
+			jwt.WithKeySet(ks, jws.WithInferAlgorithmFromKey(true)),
+			jwt.WithIssuer(v.issuer),
+			jwt.WithValidate(true),
+			jwt.WithAcceptableSkew(30*time.Second),
+		)
+	}
+	tok, err := parse(ks)
+	if err != nil {
+		// The token may be signed with a key rotation the cached JWKS hasn't
+		// seen yet (the background refresh runs every 15 minutes; Zitadel
+		// adds new keys ahead of that). Refetch live and retry once before
+		// rejecting — otherwise every fresh token 401s until the next
+		// background refresh or a container restart (production incident:
+		// "invalid or expired token" minutes after a working deploy).
+		if v.tryFailureRefresh(ctx) {
+			v.mu.RLock()
+			ks = v.keySet
+			v.mu.RUnlock()
+			if tok, err = parse(ks); err == nil {
+				v.logger.Info("zitadel verify: recovered after live JWKS refetch")
+			}
+		}
+	}
 	if err != nil {
 		// Log the concrete reason: signature mismatch, issuer mismatch, expiry, or
 		// a non-JWT (opaque) token. Include the token's own iss/aud when parseable
