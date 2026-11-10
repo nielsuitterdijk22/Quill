@@ -66,7 +66,15 @@ export default async function DashboardPage() {
     : [[], { ok: false as const, status: 0, message: "" }];
 
   // TEMPORARY diagnostic: what did the contributions helper actually get?
-  const contribDiag = token ? await getContribDiag(token) : null;
+  const contribDiag = token
+    ? await (async () => {
+        const [viaHelper, viaRaw] = await Promise.all([
+          getMyContributions(token).then((r) => "helper:" + r.length),
+          getContribDiag(token),
+        ]);
+        return viaHelper + "|" + viaRaw;
+      })()
+    : null;
 
   const recentPulls = myPulls.ok ? myPulls.data.pulls.slice(0, 6) : [];
   const openPRs = myPulls.ok ? myPulls.data.pulls.filter((p) => p.pull.state === "open").length : 0;
