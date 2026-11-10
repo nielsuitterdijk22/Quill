@@ -85,14 +85,11 @@ export default async function OwnerNamespacePage({
               <span className="tree-icon">▤</span>
               <div className="pr-main">
                 <span className="nm">{r.name}</span>
-                {(r.description || r.updatedAt) && (
-                  <span className="sub">
-                    {r.updatedAt
-                      ? `Updated ${timeAgo(r.updatedAt)}`
-                      : r.description}
-                  </span>
-                )}
+                {r.description && <span className="sub">{r.description}</span>}
               </div>
+              {r.updatedAt && (
+                <span className="when sub">Updated {timeAgo(r.updatedAt)}</span>
+              )}
               <span className="spacer" />
               <VisibilityBadge visibility={r.visibility} />
             </Link>

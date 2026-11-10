@@ -170,9 +170,10 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
         visibility={repo.visibility}
         refName={ref}
         active="code"
+        description={repo.description}
+        starCount={repo.starCount}
+        starred={repo.viewerHasStarred}
       />
-
-      {repo.description && <p className="subtle">{repo.description}</p>}
 
       <div className="repo-toolbar">
         <BranchSelector

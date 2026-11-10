@@ -58,9 +58,10 @@ export function RepositoryBrowser({
             <span className="tree-icon dir">◆</span>
             <div className="pr-main">
               <span className="nm">{repo.name}</span>
-              {showProject && <span className="sub">{projectName}</span>}
+              <span className="sub">
+                {repo.description || (showProject ? projectName : "")}
+              </span>
             </div>
-            {repo.description && <span className="msg">{repo.description}</span>}
             <span className="spacer" />
             {repo.updatedAt && (
               <span className="when sub">Updated {relTime(repo.updatedAt)}</span>
