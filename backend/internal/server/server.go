@@ -64,6 +64,11 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// until the broker/worker PRs land.
 	if cfg.Pipeline.QueueMode {
 		platformSvc.WithQueueMode()
+		// PR A2: each enqueue wakes the broker so an ephemeral CI instance is
+		// ensured without any polling component (the sweeper is the backstop).
+		if cfg.Pipeline.BrokerURL != "" {
+			platformSvc.WithBroker(cfg.Pipeline.BrokerURL, cfg.Pipeline.DispatchSecret)
+		}
 	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()

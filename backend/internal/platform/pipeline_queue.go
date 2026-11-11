@@ -1,10 +1,17 @@
 package platform
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -147,7 +154,56 @@ func (s *Service) enqueueSpec(ctx context.Context, run db.PipelineRun, tenantID 
 	if err := s.store.EnqueuePipelineJob(ctx, run.ID, tenantID, raw); err != nil {
 		return fmt.Errorf("enqueue job: %w", err)
 	}
+	s.wakeBroker()
 	return nil
+}
+
+// wakeBroker asks the CI broker to ensure a worker exists. Fire-and-forget:
+// a lost wake costs latency only — the broker's cron sweeper still drains the
+// queue — so failures are logged, never propagated to the trigger request.
+func (s *Service) wakeBroker() {
+	url, secret := s.brokerURL, s.dispatchSecret()
+	if url == "" || secret == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		wakeOnce(ctx, url, secret, s.logger)
+	}()
+}
+
+// dispatchSecret returns the configured dispatch HMAC secret (empty when the
+// queue/dispatch trust group is not configured).
+func (s *Service) dispatchSecret() string { return s.dispatchSecretValue }
+
+// WithBroker wires the queue-mode wake path (serverless epic, PR A2).
+func (s *Service) WithBroker(url, dispatchSecret string) *Service {
+	s.brokerURL, s.dispatchSecretValue = strings.TrimRight(url, "/"), dispatchSecret
+	return s
+}
+
+// wakeOnce signs and POSTs a wake-up. Same HMAC scheme as every dispatch leg.
+func wakeOnce(ctx context.Context, url, secret string, logger *slog.Logger) {
+	body := []byte("{}")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+"/wake", bytes.NewReader(body))
+	if err != nil {
+		logger.Warn("broker wake: build request", "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	req.Header.Set("X-Quill-Dispatch-Signature", hex.EncodeToString(mac.Sum(nil)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.Info("broker wake failed (sweeper will drain)", "error", err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		logger.Info("broker wake refused", "status", resp.StatusCode)
+	}
 }
 
 // ClaimQueuedJob claims the oldest claimable queue row for workerID and flips

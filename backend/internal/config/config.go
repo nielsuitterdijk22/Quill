@@ -164,6 +164,11 @@ type PipelineConfig struct {
 	// through /api/v1/internal/dispatch/*. Off = the legacy inline/VM-dispatch
 	// path (rollback = leave it unset). Serverless epic, PR A1.
 	QueueMode bool
+	// BrokerURL is the CI broker's wake endpoint (serverless epic, PR A2).
+	// In queue mode each enqueue POSTs a signed wake so the broker can boot
+	// an ephemeral CI worker instance without any polling component. Empty
+	// disables the fast path; the cron sweeper still drains.
+	BrokerURL string
 }
 
 // Load reads configuration from the environment.
@@ -205,6 +210,7 @@ func Load() (*Config, error) {
 			DispatchURL:    getenv("QUILL_PIPELINE_DISPATCH_URL", ""),
 			DispatchSecret: getenv("QUILL_PIPELINE_DISPATCH_SECRET", ""),
 			QueueMode:      getbool("QUILL_PIPELINE_QUEUE_MODE"),
+			BrokerURL:      getenv("QUILL_BROKER_URL", ""),
 		},
 		TempoSync: TempoSyncConfig{
 			URL:                 getenv("QUILL_TEMPO_SYNC_URL", ""),

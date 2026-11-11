@@ -123,18 +123,17 @@ the Zitadel DB (the quill SDB stays), job feasibility, If-Match fast-path enable
 Rationale: the VM wedge is the live operational fire (2026-11-11 hard reboot), and every
 item here works while Forgejo still exists.
 
-CI worker shape (decided unless the spike disproves it): the job container runs a small Quill
-worker binary that fetches the job from the queue and executes the workflow with **act
-embedded as a Go library** — the same code (`internal/pipeline/act_runner.go`) that already
-runs the owner's ci.yml on the VM today. The alternative — running an unmodified
-`gitea-act-runner --ephemeral` — cannot take "here is the job" directly: it registers with a
-server and pulls work over the gitea/Forgejo actions protocol, and the only server speaking
-that protocol is Forgejo, which this roadmap deletes. Ephemeral registration would therefore
-trap a Forgejo-shaped protocol in the target architecture. Sole open risk: act's step
-isolation (namespace/chroot-style mounts) may not run under the gVisor job sandbox; the
-spike answers it by running the owner's real ci.yml through a job. Only on an unfixable
-failure does ephemeral registration become the fallback (with the separate cost of what it
-would register against). Record in DECISIONS.md at A3 time.
+CI worker shape — **resolved by implementation (2026-11-11, DECISIONS.md):** act v0.2.89
+executes every step through the Docker daemon (no host/"in-process" mode exists), and gVisor
+cannot host Docker — so the worker is **not** a Serverless Job but an **ephemeral Scaleway
+instance** ensured by the broker: cloud-init installs Docker and runs the ciworker container
+(the queue-draining Go binary with act as a library — the same `internal/pipeline` runner
+code that runs the owner's ci.yml on the VM today); the worker self-terminates the instance
+on idle (Terminator hook; the broker TTL-kills anything wedged >3h), keeping the original
+gitea-act-runner `--ephemeral` idea rejected: it registers over the Forgejo actions protocol
+this roadmap deletes. Same-binary portability holds: the ciworker image runs unmodified in
+warm pools later with self-termination disabled. The 2026-11-11 spike's /mnt findings stay
+relevant only for the future job-based maintenance work, not the CI worker.
 
 **PR A1 — Job queue in Postgres.** _Status: SHIPPED 2026-11-11 (flag off, inert). Migration
 000024 pipeline_queue; claim/heartbeat/report at /api/v1/internal/dispatch/* (HMAC, same
@@ -148,34 +147,39 @@ Risks: queue semantics (visibility timeout) in Postgres without a queue library 
 dumb (claimed_at + heartbeat). Tests: integration gated on `QUILL_TEST_DATABASE_URL`; live
 pipeline round-trip. Rollback: revert; VM dispatch path kept behind a config flag until A3.
 
-**PR A2 — Broker container.** Scope: new Serverless Container `dispatch-broker`
-(min_scale 0), HMAC-verified webhook surface (reuse `internal/dispatch` signature
-verification), claims queued jobs, starts one Serverless Job per job via
-`scaleway-sdk-go` (new dependency — DECISIONS entry; justified over shelling `scw` in a
-container; also used later by maintenance-job launches). Risks: broker scale-out races
-(covered by the SKIP LOCKED claim); per-job startup latency (~seconds, acceptable).
-Tests: unit (HMAC, claim concurrency with N goroutines), live e2e pipeline run.
-Rollback: flip `QUILL_PIPELINE_DISPATCH_URL` back to the VM.
+**PR A2 — Broker container.** _Status: SHIPPED 2026-11-11 (code + local round trip;
+deploy wiring pending — see follow-ups)._ Scope: new Serverless Container `dispatch-broker`
+(min_scale 0), HMAC-verified `/wake` surface (same `X-Quill-Dispatch-Signature`
+scheme/secret as the dispatch API), single-flight ensure of ONE tagged ephemeral worker
+instance via `scaleway-sdk-go` v1.38.0 (list-before-create; TTL-kill for instances stuck
+>3h; cloud-init carries Docker install + the ciworker container run). Local verification:
+the full queue round trip (enqueue → signed wake → claim → apply-style heartbeat → act
+execution of a real workflow in Docker → report → run/steps recorded green) passed against
+a local api + scratch Postgres. Remaining deploy work: terraform for the broker container +
+cron sweeper hitting `/wake` every few minutes (missed-wake backstop), registry image.
+Risks: broker scale-out races (covered by the SKIP LOCKED claim); per-job startup latency
+(~1–2 min instance boot on cold wake, acceptable). Rollback: flip `QUILL_PIPELINE_QUEUE_MODE`
+off — the api returns to inline VM dispatch.
 
-**PR A3 — CI worker image + job definition.** Scope: Dockerfile extending the backend
-build with toolchains (go, node 22, git; < 2 GB, `--platform=linux/amd64`); worker
-entrypoint: claim via API -> fetch workspace (still from the Forgejo URL for now) -> run
-act (existing runner code) -> stream logs as chunked objects to the bucket -> report
-result (CI minutes metered against the job's `tenant_id`). Runtime portability: the image
-is a plain OCI image with a config-driven work/cache dir — it must run unmodified as a
-Serverless Job today and as a warm-pool workload (Kapsule) later; `scaleway` specifics
-stay in env/config, never compiled in. Spike-adjusted (2026-11-11): bulk writable data in
-the job — workspace clone, act's ActionCacheDir, kaniko caches — must target `/mnt`
-(the disk-backed local-storage volume): `/tmp` in jobs is RAM-tmpfs and counts against
-`memory_limit`. Pin `local_storage_capacity` generously. Risks: log streaming latency;
-workflow steps
+**PR A3 — CI worker.** _Status: SHIPPED 2026-11-11 (code + local round trip; deploy wiring
+pending)._ Scope — amended by the act-no-host-mode finding (DECISIONS.md): **an ephemeral
+Scaleway instance, not a Serverless Job.** The ciworker is a plain Go binary
+(`cmd/ciworker`) draining the queue (claim via API → heartbeat → run act on the instance's
+host Docker → report; CI minutes metered against the job's `tenant_id`), taking its workdir
+and act cache dir from env (portability rule kept: runs unmodified in warm pools later;
+self-termination — poweroff → poll stopped → delete — is a Terminator hook driven by
+SCW_INSTANCE_ID, disabled when absent). Workspace clone still comes from the Forgejo URL
+until Phase B. Deploy work pending: `Dockerfile.ciworker` (backend build + toolchains:
+go, node 22, git; `--platform=linux/amd64`), terraform for the IAM instance key, and the
+ciworker image push from the deploy workflow. Risks: log streaming latency; workflow steps
 needing an image build — kaniko baked into the runner image when first needed (decided
 2026-11-11: kaniko first, a dedicated buildkit backend as the later upgrade), deferred
-until a repo actually builds images — follow-up.
-Tests: live-run the owner's real ci.yml through a job and compare logs/results with a VM
-run done in parallel. Rollback: keep the VM dispatch active as shadow/fallback for one
-week; then remove the act runner + dispatch from the VM compose/cloud-init (forgejo,
-caddy, zitadel stay).
+until a repo actually builds images — follow-up. Tests: unit (drain loop, fake queue with
+HMAC validation; terminator poll loop) + the local Docker round trip done; remaining:
+live-run the owner's real ci.yml through an ephemeral instance and compare with a VM run.
+Rollback: keep the VM dispatch active as shadow/fallback for one week (flag stays off);
+then remove the act runner + dispatch from the VM compose/cloud-init (forgejo, caddy,
+zitadel stay until their phases).
 
 ## Phase B — the own git engine
 

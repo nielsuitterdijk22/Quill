@@ -46,6 +46,10 @@ type Service struct {
 	// serverless epic's Postgres queue); see pipeline_queue.go. Off = the
 	// legacy inline/VM-dispatch path.
 	queueMode bool
+	// brokerURL + dispatchSecretValue wire the queue-mode wake path: each
+	// enqueue POSTs a signed wake so the broker boots an ephemeral CI worker.
+	brokerURL           string
+	dispatchSecretValue string
 	// evaluator turns the policies governing a gate plus typed facts into a
 	// verdict (unanimous-allow across scopes). The typed evaluator is the hot
 	// path: no per-request Rego compile. The embedded-OPA evaluator stays as the
