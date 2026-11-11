@@ -124,6 +124,12 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		GitHubInstance:        "github.com",
 		ActionCacheDir:        actionCacheDir,
 		ActionCache:           &runner.GoGitActionCache{Path: actionCacheDir},
+		// One job at a time: the dispatcher shares the VM with forgejo,
+		// zitadel and the databases, and two concurrent builds (go + next)
+		// have wedged the entire box - ssh banners timed out, auth/git down
+		// for the duration (2026-11-11). Serializing halves the memory peak;
+		// runs get slower on multi-job workflows but the platform stays up.
+		ConcurrentJobs: 1,
 	}
 	rn, err := runner.New(cfg)
 	if err != nil {

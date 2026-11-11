@@ -210,6 +210,9 @@ export function LiveLogs({
             }}
           >
             <summary>
+              <span className={`run-glyph ${gi === groups.length - 1 ? "running" : "success"}`}>
+                {gi === groups.length - 1 ? "⏳" : "✓"}
+              </span>
               <span className="nm">
                 {g.jobKey !== g.stepName ? `${g.jobKey} / ${g.stepName}` : g.stepName}
               </span>
