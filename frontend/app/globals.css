@@ -4109,8 +4109,11 @@ a.row-item:hover {
    A plain pill, no pointer arrow: a rotated-square caret reads as
    crooked next to the rounded pill, and the pill + hover ring already
    connect the day to the text. */
+.contrib {
+  position: relative;
+}
 .contrib-tip {
-  position: fixed;
+  position: absolute;
   z-index: 70;
   transform: translate(-50%, -100%);
   padding: 5px 10px;
@@ -4131,4 +4134,10 @@ a.row-item:hover {
 .workflow-src-link:hover {
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* Sidebar footer build version. */
+.copy-sha {
+  font-size: 11px;
+  opacity: 0.7;
 }

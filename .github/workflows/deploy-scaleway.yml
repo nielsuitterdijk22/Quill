@@ -86,7 +86,8 @@ jobs:
             --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.black-tulip.nl \
             --build-arg NEXT_PUBLIC_ZITADEL_CLIENT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_CLIENT_ID }} \
             --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=${{ vars.NEXT_PUBLIC_ZITADEL_PROJECT_ID }} \
-            --build-arg QUILL_API_BASE_URL=https://api.black-tulip.nl
+            --build-arg QUILL_API_BASE_URL=https://api.black-tulip.nl \
+            --build-arg NEXT_PUBLIC_GIT_SHA=${{ github.sha }}
           docker push ${{ vars.REGISTRY }}/quill-web:${{ github.sha }}
           docker tag ${{ vars.REGISTRY }}/quill-web:${{ github.sha }} ${{ vars.REGISTRY }}/quill-web:latest
           docker push ${{ vars.REGISTRY }}/quill-web:latest

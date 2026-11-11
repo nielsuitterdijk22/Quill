@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { Contribution } from "../lib/api";
 
@@ -38,14 +38,22 @@ function tipLabel(count: number, date: Date): string {
 
 export function ContributionGraph({ data }: { data: Contribution[] }) {
   // One floating tooltip for the whole grid, pinned above the hovered cell
-  // (not the pointer - a cursor-chasing tip reads as flicker). Viewport
-  // coords + position: fixed, so it never gets clipped by the grid's
-  // horizontal scroll container.
+  // (not the pointer - a cursor-chasing tip reads as flicker). Coordinates
+  // are PANEL-RELATIVE and the tip is position: absolute inside this
+  // component, so scrolling the page can never leave the pill stranded away
+  // from its cell (the old position: fixed + viewport-coords version did
+  // exactly that, and it read as "crooked" whenever the page scrolled).
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   const showTip = (cell: { count: number; date: Date }) => (e: React.MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = Math.min(Math.max(r.left + r.width / 2, 60), window.innerWidth - 60);
-    setTip({ x, y: r.top, text: tipLabel(cell.count, cell.date) });
+    const el = e.currentTarget as HTMLElement;
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const cr = el.getBoundingClientRect();
+    const pr = wrap.getBoundingClientRect();
+    const half = tipHalfWidth();
+    const x = Math.min(Math.max(cr.left + cr.width / 2 - pr.left, half + 8), pr.width - half - 8);
+    setTip({ x, y: cr.top - pr.top, text: tipLabel(cell.count, cell.date) });
   };
 
   // Sum contributions per UTC day.
@@ -94,7 +102,7 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
   });
 
   return (
-    <div className="contrib">
+    <div className="contrib" ref={wrapRef}>
       <div className="contrib-head">
         <span className="contrib-total">{total} contributions in the last year</span>
         <div className="contrib-legend">
@@ -149,4 +157,10 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
       )}
     </div>
   );
+}
+
+// tipHalfWidth estimates half the pill's width for panel clamping; the date
+// label is short and an underestimate only clamps slightly early.
+function tipHalfWidth(): number {
+  return 95;
 }

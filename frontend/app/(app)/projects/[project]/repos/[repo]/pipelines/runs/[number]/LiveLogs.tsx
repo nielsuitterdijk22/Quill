@@ -200,7 +200,9 @@ export function LiveLogs({
           <details
             className="pipeline-step"
             key={gi}
-            open
+            // Only the newest group (the stage currently streaming) renders
+            // unfolded; earlier stages collapse as the run progresses.
+            open={gi === groups.length - 1}
             onToggle={(e) => {
               // Folding a group changes the height; keep following the tail
               // only if we were at the bottom already.

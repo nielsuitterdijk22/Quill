@@ -15,6 +15,15 @@ import { AppTile } from "./icons/AppMarks";
 import { Icon } from "./Icon";
 import { ThemeToggle } from "./ThemeToggle";
 
+// versionSha returns the short git sha this frontend was built from
+// (NEXT_PUBLIC_GIT_SHA, baked in by CI), or "" in local dev. Shown in the
+// sidebar footer so it's always visible which version is live.
+function versionSha(): string {
+  const sha = process.env.NEXT_PUBLIC_GIT_SHA ?? "";
+  return sha ? sha.slice(0, 7) : "";
+}
+
+
 export type NavItem = {
   href: string;
   label: string;
@@ -451,6 +460,12 @@ export function Sidebar({
           >
             Apache 2.0
           </a>
+          {versionSha() && (
+            <>
+              {" "}
+              · <span className="mono copy-sha">{versionSha()}</span>
+            </>
+          )}
         </div>
       </div>
     </aside>
