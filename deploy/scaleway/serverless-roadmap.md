@@ -54,6 +54,35 @@ them and migrating after real data lands means re-writing every manifest ever wr
 Everything else in this roadmap (container sizing, broker design, runner command surface,
 route names) is reversible.
 
+## Operations during the epic (production continuity)
+
+Production keeps running and deploying the whole time — the plan has no big-bang moment.
+Everything lands additive behind config flags or as new resources; the only visible
+cutovers are DNS changes (git, auth) and per-repo migration windows. Rules for the whole
+epic:
+
+- **Normal cadence**: every PR merges to main, CI deploys (sha-pinned), live e2e +
+  `purge-e2e` after each deploy. Nothing freezes; unrelated feature work can interleave.
+- **Warm fallback per phase**:
+  - Phase A: the VM dispatch stays as shadow/fallback for one week; a bad CI run means
+    flipping `QUILL_PIPELINE_DISPATCH_URL` back to the VM.
+  - Phase B: all git-engine code deploys inside the api container but stays inert —
+    flags off by default, `git.<domain>` still points at Forgejo. Nobody sees the new
+    engine until the Phase D DNS cutover.
+  - Phase C: auth cutover is one DNS change; the VM Zitadel stays stopped-but-kept for
+    two weeks — restart + repoint is the full rollback.
+  - Phase D: repos migrate one at a time behind a read-only window (minutes, off-hours);
+    Forgejo stays up and serving until every repo reports migrated+verified.
+- **Rollback is always revert-the-commit + flag/DNS flip**, never a data restore — which
+  is why no PR deletes what it replaces; teardown (D2) waits for a green dogfooding week,
+  and the VM volume is kept two weeks beyond that.
+- **Accepted degradation** (no external users yet): seconds-long cold starts at cutover,
+  read-only minutes per migrating repo, occasional windows. Zero-downtime choreography
+  would cost more than it protects at dogfooding scale — revisit when real users appear.
+- **Standing hazards** (house rules): no cron watch-loops while iterating (they keep the
+  api hot and burn SDB CPU); VM maintenance only via `docker compose up -d --no-deps`
+  so forgejo/caddy/zitadel are never dragged along (the 2026-11-11 RCA).
+
 ## PR 0 — GO/NO-GO SPIKE (blocking; findings + DECISIONS entry only)
 
 One Go probe program, run with live creds. The ref-CAS decision is already made (Postgres
