@@ -34,10 +34,14 @@ resource "scaleway_container_namespace" "quill" {
 
 resource "scaleway_container" "api" {
   lifecycle {
-    # Image updates flow through the registry: CI pushes the "latest" tag and
-    # Scaleway auto-redeploys. Letting terraform update registry_image races
-    # Scaleway's rolling redeploy and intermittently fails with 412.
-    ignore_changes = [registry_image, deploy]
+    # registry_image is MANAGED again: deploys pin image_tag to the git SHA, so
+    # every apply updates the image and forces a new container revision (that
+    # is what actually redeploys). The old ignore_changes - justified by 412
+    # races when per-sha updates raced a "latest" auto-redeploy - left the
+    # image frozen, which is how builds kept silently not going live
+    # ("changes didn't land", 2026-11-11). CI pushes the sha tag before this
+    # apply runs, so the image always exists.
+    ignore_changes = [deploy]
   }
 
   namespace_id   = scaleway_container_namespace.quill.id
@@ -103,10 +107,14 @@ resource "scaleway_container" "api" {
 
 resource "scaleway_container" "web" {
   lifecycle {
-    # Image updates flow through the registry: CI pushes the "latest" tag and
-    # Scaleway auto-redeploys. Letting terraform update registry_image races
-    # Scaleway's rolling redeploy and intermittently fails with 412.
-    ignore_changes = [registry_image, deploy]
+    # registry_image is MANAGED again: deploys pin image_tag to the git SHA, so
+    # every apply updates the image and forces a new container revision (that
+    # is what actually redeploys). The old ignore_changes - justified by 412
+    # races when per-sha updates raced a "latest" auto-redeploy - left the
+    # image frozen, which is how builds kept silently not going live
+    # ("changes didn't land", 2026-11-11). CI pushes the sha tag before this
+    # apply runs, so the image always exists.
+    ignore_changes = [deploy]
   }
 
   namespace_id   = scaleway_container_namespace.quill.id
