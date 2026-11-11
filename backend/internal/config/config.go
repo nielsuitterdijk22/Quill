@@ -156,8 +156,14 @@ type PipelineConfig struct {
 	// API falls back to the in-process act runner for tests and simple dev setups.
 	DispatchURL string
 	// DispatchSecret signs API -> dispatcher requests. Leave empty only for local
-	// development on a trusted Docker network.
+	// development on a trusted Docker network. The same secret authenticates
+	// worker traffic on the internal dispatch endpoints (claim/report).
 	DispatchSecret string
+	// QueueMode switches the CI trigger path to enqueue-only: runs are
+	// persisted as pending with a queue row, and a worker claims execution
+	// through /api/v1/internal/dispatch/*. Off = the legacy inline/VM-dispatch
+	// path (rollback = leave it unset). Serverless epic, PR A1.
+	QueueMode bool
 }
 
 // Load reads configuration from the environment.
@@ -198,6 +204,7 @@ func Load() (*Config, error) {
 		Pipeline: PipelineConfig{
 			DispatchURL:    getenv("QUILL_PIPELINE_DISPATCH_URL", ""),
 			DispatchSecret: getenv("QUILL_PIPELINE_DISPATCH_SECRET", ""),
+			QueueMode:      getbool("QUILL_PIPELINE_QUEUE_MODE"),
 		},
 		TempoSync: TempoSyncConfig{
 			URL:                 getenv("QUILL_TEMPO_SYNC_URL", ""),
@@ -257,6 +264,15 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getbool reads a truthy flag: 1/t/true/yes/on (case-insensitive).
+func getbool(key string) bool {
+	switch strings.ToLower(getenv(key, "")) {
+	case "1", "t", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // isPlaceholder reports whether a configured secret is really a placeholder

@@ -136,8 +136,12 @@ spike answers it by running the owner's real ci.yml through a job. Only on an un
 failure does ephemeral registration become the fallback (with the separate cost of what it
 would register against). Record in DECISIONS.md at A3 time.
 
-**PR A1 — Job queue in Postgres.** Scope: queue rows for pipeline jobs (carrying
-`tenant_id` for metering from day one); dispatch handler refactored from "execute
+**PR A1 — Job queue in Postgres.** _Status: SHIPPED 2026-11-11 (flag off, inert). Migration
+000024 pipeline_queue; claim/heartbeat/report at /api/v1/internal/dispatch/* (HMAC, same
+dispatch secret); QUILL_PIPELINE_QUEUE_MODE gates the trigger path; SKIP LOCKED claims,
+10-min visibility timeout + heartbeat, tenant stamped at enqueue. Tests-first, all green;
+rollback = flag stays off. Worker = PR A2/A3._ Scope: queue rows for pipeline jobs
+(carrying tenant_id for metering from day one); dispatch handler refactored from "execute
 immediately" to "enqueue + return run id" using `SELECT ... FOR UPDATE SKIP LOCKED`;
 API gains `POST /api/v1/internal/dispatch/claim` (HMAC, same `dispatch_secret`).
 Risks: queue semantics (visibility timeout) in Postgres without a queue library — keep it

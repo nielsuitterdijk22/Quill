@@ -42,6 +42,10 @@ type Service struct {
 	// runner dispatches CI workflows. In compose this is an HTTP client to the
 	// standalone dispatcher; tests can still inject an in-process runner.
 	runner pipeline.Runner
+	// queueMode switches the CI trigger path to enqueue-only execution (the
+	// serverless epic's Postgres queue); see pipeline_queue.go. Off = the
+	// legacy inline/VM-dispatch path.
+	queueMode bool
 	// evaluator turns the policies governing a gate plus typed facts into a
 	// verdict (unanimous-allow across scopes). The typed evaluator is the hot
 	// path: no per-request Rego compile. The embedded-OPA evaluator stays as the

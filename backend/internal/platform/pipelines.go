@@ -289,6 +289,14 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		return db.PipelineRun{}, translateForgejoRead(err)
 	}
 
+	commitSHA := s.resolveCommitSHA(ctx, owner, name, ref)
+
+	// Queue mode (serverless epic): persist the run and enqueue it; a worker
+	// claims execution through the dispatch API (see pipeline_queue.go).
+	if s.queueMode {
+		return s.EnqueuePipelineRun(ctx, repo, in, yaml, commitSHA, triggeredBy)
+	}
+
 	workflowName := pipeline.WorkflowName(yaml, path)
 	pl, err := s.store.UpsertPipeline(ctx, db.UpsertPipelineParams{
 		RepoID:       repo.ID,
@@ -298,8 +306,6 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("upsert pipeline: %w", err)
 	}
-
-	commitSHA := s.resolveCommitSHA(ctx, owner, name, ref)
 
 	next, err := s.store.NextRunNumber(ctx, pl.ID)
 	if err != nil {

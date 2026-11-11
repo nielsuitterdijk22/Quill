@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
@@ -242,5 +243,108 @@ func (s *Store) GetUserAvatar(ctx context.Context, userID uuid.UUID) (UserAvatar
 func (s *Store) DeleteUserAvatar(ctx context.Context, userID uuid.UUID) error {
 	const q = `DELETE FROM user_avatars WHERE user_id = $1`
 	_, err := s.pool.Exec(ctx, q, userID)
+	return err
+}
+
+// ---- pipeline execution queue ------------------------------------------------
+// Hand-written (migration 000024): started as an alternative to a sqlc re-run,
+// which is still incompatible with the committed generated files. Claim uses
+// FOR UPDATE SKIP LOCKED so concurrent workers never double-claim.
+
+// PipelineQueueJob is one claimable pipeline execution on the queue.
+type PipelineQueueJob struct {
+	ID        uuid.UUID
+	RunID     uuid.UUID
+	TenantID  uuid.NullUUID
+	Spec      []byte
+	Status    string
+	Attempts  int32
+	ClaimedBy string
+	ClaimedAt pgtype.Timestamptz
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// EnqueuePipelineJob inserts a pending queue row carrying the full JSON
+// JobSpec for runID. The tenant is stamped here (nullable like audit_log) so
+// metering never depends on a join surviving tenant deletion.
+func (s *Store) EnqueuePipelineJob(ctx context.Context, runID uuid.UUID, tenantID uuid.NullUUID, spec []byte) error {
+	const q = `INSERT INTO pipeline_queue (run_id, tenant_id, spec) VALUES ($1, $2, $3)`
+	_, err := s.pool.Exec(ctx, q, runID, tenantID, spec)
+	return err
+}
+
+// ClaimPipelineJob claims the oldest claimable row for worker. A claimed row
+// becomes reclaimable after staleAfter without a heartbeat (dead-worker
+// recovery). Returns pgx.ErrNoRows when there is nothing to claim.
+func (s *Store) ClaimPipelineJob(ctx context.Context, worker string, staleAfter time.Duration) (PipelineQueueJob, error) {
+	const q = `
+		UPDATE pipeline_queue
+		SET status = 'claimed', claimed_by = $1, claimed_at = now(), attempts = attempts + 1, updated_at = now()
+		WHERE id = (
+			SELECT id FROM pipeline_queue
+			WHERE status = 'pending'
+			   OR (status = 'claimed' AND claimed_at < now() - make_interval(secs => $2::double precision))
+			ORDER BY created_at
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, run_id, tenant_id, spec, status, attempts, claimed_by, claimed_at, created_at, updated_at`
+	var j PipelineQueueJob
+	err := s.pool.QueryRow(ctx, q, worker, staleAfter.Seconds()).Scan(
+		&j.ID, &j.RunID, &j.TenantID, &j.Spec, &j.Status, &j.Attempts, &j.ClaimedBy, &j.ClaimedAt, &j.CreatedAt, &j.UpdatedAt,
+	)
+	return j, err
+}
+
+// HeartbeatPipelineJob refreshes a claim's liveness. It only succeeds while
+// the row is still claimed by the same worker: a reclaimed (or finished) row
+// refuses the old worker's heartbeat and the caller should abandon its run.
+func (s *Store) HeartbeatPipelineJob(ctx context.Context, id uuid.UUID, worker string) (bool, error) {
+	const q = `
+		UPDATE pipeline_queue SET claimed_at = now(), updated_at = now()
+		WHERE id = $1 AND claimed_by = $2 AND status = 'claimed'`
+	ct, err := s.pool.Exec(ctx, q, id, worker)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() == 1, nil
+}
+
+// GetPipelineQueueJob loads a queue row by id (for the report/heartbeat paths).
+func (s *Store) GetPipelineQueueJob(ctx context.Context, id uuid.UUID) (PipelineQueueJob, error) {
+	const q = `
+		SELECT id, run_id, tenant_id, spec, status, attempts, claimed_by, claimed_at, created_at, updated_at
+		FROM pipeline_queue WHERE id = $1`
+	var j PipelineQueueJob
+	err := s.pool.QueryRow(ctx, q, id).Scan(
+		&j.ID, &j.RunID, &j.TenantID, &j.Spec, &j.Status, &j.Attempts, &j.ClaimedBy, &j.ClaimedAt, &j.CreatedAt, &j.UpdatedAt,
+	)
+	return j, err
+}
+
+// FinishPipelineJob marks a claimed row done. Refuses rows claimed by a
+// different worker (a stale worker reporting late after a reclaim): returns
+// false, nil in that case.
+func (s *Store) FinishPipelineJob(ctx context.Context, id uuid.UUID, worker string) (bool, error) {
+	const q = `
+		UPDATE pipeline_queue SET status = 'done', updated_at = now()
+		WHERE id = $1 AND claimed_by = $2 AND status = 'claimed'`
+	ct, err := s.pool.Exec(ctx, q, id, worker)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() == 1, nil
+}
+
+// SetPipelineRunRunning flips a pending queued run to running, stamping
+// started_at only on the first claim (a reclaimed run keeps its start time).
+// Rows already running are left untouched (idempotent).
+func (s *Store) SetPipelineRunRunning(ctx context.Context, runID uuid.UUID) error {
+	const q = `
+		UPDATE pipeline_runs
+		SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+		WHERE id = $1 AND status = 'pending'`
+	_, err := s.pool.Exec(ctx, q, runID)
 	return err
 }

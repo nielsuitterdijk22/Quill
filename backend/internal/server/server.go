@@ -58,6 +58,13 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	if cfg.Pipeline.DispatchURL != "" {
 		platformSvc.WithRunner(pipeline.NewHTTPRunner(cfg.Pipeline.DispatchURL, cfg.Pipeline.DispatchSecret))
 	}
+	// Queue mode (serverless epic, PR A1): the trigger path persists runs and
+	// enqueues; execution moves to workers claiming via the internal dispatch
+	// endpoints. Off by default — production keeps the inline VM-dispatch path
+	// until the broker/worker PRs land.
+	if cfg.Pipeline.QueueMode {
+		platformSvc.WithQueueMode()
+	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()
 	// requires the key in production, so the dev fallback only applies locally.
@@ -205,6 +212,16 @@ func (s *Server) setupRoutes() {
 		// Forgejo webhook receiver: auto-triggers pipelines on push / pull_request.
 		// Authenticated by an HMAC signature (QUILL_WEBHOOK_SECRET), not a JWT.
 		r.Post("/webhooks/forgejo", s.handleWebhook)
+
+		// Internal pipeline-queue surface for CI workers (serverless epic,
+		// PR A1). Authenticated by X-Quill-Dispatch-Signature
+		// (QUILL_PIPELINE_DISPATCH_SECRET) — no JWT, no tenant context: the
+		// caller is trusted infrastructure, not a user.
+		r.Route("/internal/dispatch", func(r chi.Router) {
+			r.Post("/claim", s.handleDispatchClaim)
+			r.Post("/heartbeat", s.handleDispatchHeartbeat)
+			r.Post("/report", s.handleDispatchReport)
+		})
 
 		// Creem merchant-of-record events (plan upgrades). Signature-verified
 		// inside the handler; no Quill auth involved.
