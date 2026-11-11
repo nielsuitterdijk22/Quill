@@ -6,8 +6,10 @@ and runtime portability designed in now, async maintenance as Serverless Jobs, a
 irreversible decisions called out explicitly (see "Get right the first time").
 
 Target architecture: all compute scales to zero; git over HTTPS only (no SSH). The only
-always-on floor left is RDB Postgres (~EUR 5/mo) plus object storage / Secret Manager pennies.
-The DEV1-S VM (Forgejo, Caddy, act runner, Zitadel-on-VM) is fully deprecated.
+always-on floor left is the RDB Postgres instance for **Zitadel's** database (~EUR 5/mo);
+the quill metadata DB stays on the scale-to-zero SDB (storage-only when idle, decided
+2026-11-11) — plus object storage / Secret Manager pennies. The DEV1-S VM (Forgejo, Caddy,
+act runner, Zitadel-on-VM) is fully deprecated.
 
 Grounding (verified in-repo): Forgejo client inventory (`backend/internal/forgejo`,
 ~48 methods at ~80 call sites in `internal/{platform,server,auth}`), the dispatch side already
@@ -17,14 +19,14 @@ persistent pool billed ~EUR 22/mo CPU — predicts Zitadel-on-serverless-DB beha
 
 ## Forgejo call-site classification
 
-| Class | Methods | End state |
-|---|---|---|
-| Identity/org mirroring | CreateUser/GetUser/RenameUser/DeleteUser/CreateOrg/GetOrg/DeleteOrg/GetOrCreateOrg/AddOrgMember/ListSSHKeys/Add/DeleteSSHKey/CreateAccessToken/SetUserPassword | Dropped or Quill-native in Postgres. SSH keys dropped (no git-SSH). Users already exist in `users`; org mirroring was pure Forgejo overhead |
-| Repo CRUD | Create/CreateUser/OrgRepo, GetRepo, EditRepo, DeleteRepo, ListOrgRepos, ForkRepo, MigrateRepo | Quill Postgres row (already exists) + own git layer. GitHub import becomes `git clone --mirror` + bucket write |
-| Git reads | ListBranches/ListCommits/GetCommit/GetCommitDiff/GetContents/RenderMarkup/GetPullDiff/UserHeatmap/Version | gitea git module (MIT) over hydrated packs. RenderMarkup switches to goldmark (new dep, DECISIONS entry). Version dropped |
-| PRs/issues/reviews/comments | ListPulls, GetPull, CreatePull, MergePull, reviews, issue comments, CountOpenPulls | PR/issue model moves into Quill's Postgres (suite identity contract is already `(repo_slug, quill_pr_number)`). Diff/merge mechanics via gitea git module |
-| Policy enforcement | Get/Upsert/DeleteBranchProtection | Quill already owns policy tables; enforcement moves into the receive-pack pre-receive hook |
-| CI plumbing | system webhooks -> dispatch on VM | Replaced by post-receive hook -> broker (Phase A) |
+| Class                       | Methods                                                                                                                                                        | End state                                                                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity/org mirroring      | CreateUser/GetUser/RenameUser/DeleteUser/CreateOrg/GetOrg/DeleteOrg/GetOrCreateOrg/AddOrgMember/ListSSHKeys/Add/DeleteSSHKey/CreateAccessToken/SetUserPassword | Dropped or Quill-native in Postgres. SSH keys dropped (no git-SSH). Users already exist in `users`; org mirroring was pure Forgejo overhead               |
+| Repo CRUD                   | Create/CreateUser/OrgRepo, GetRepo, EditRepo, DeleteRepo, ListOrgRepos, ForkRepo, MigrateRepo                                                                  | Quill Postgres row (already exists) + own git layer. GitHub import becomes `git clone --mirror` + bucket write                                            |
+| Git reads                   | ListBranches/ListCommits/GetCommit/GetCommitDiff/GetContents/RenderMarkup/GetPullDiff/UserHeatmap/Version                                                      | gitea git module (MIT) over hydrated packs. RenderMarkup switches to goldmark (new dep, DECISIONS entry). Version dropped                                 |
+| PRs/issues/reviews/comments | ListPulls, GetPull, CreatePull, MergePull, reviews, issue comments, CountOpenPulls                                                                             | PR/issue model moves into Quill's Postgres (suite identity contract is already `(repo_slug, quill_pr_number)`). Diff/merge mechanics via gitea git module |
+| Policy enforcement          | Get/Upsert/DeleteBranchProtection                                                                                                                              | Quill already owns policy tables; enforcement moves into the receive-pack pre-receive hook                                                                |
+| CI plumbing                 | system webhooks -> dispatch on VM                                                                                                                              | Replaced by post-receive hook -> broker (Phase A)                                                                                                         |
 
 ## Get right the first time (irreversible decisions)
 
@@ -35,7 +37,7 @@ them and migrating after real data lands means re-writing every manifest ever wr
    one; parsers must tolerate unknown fields forward-compatibly (lenient decode).
 2. **Ref-CAS semantics** — Postgres is the correctness referee for ref updates from day
    one (one row per repo, `SELECT ... FOR UPDATE` compare-and-swap). S3 `If-Match` on the
-   manifest object is an optional *fast path only*, never the source of truth: even when
+   manifest object is an optional _fast path only_, never the source of truth: even when
    enabled, the Postgres row is the commit point and the manifest object is a reproducible
    view of it. This keeps correctness independent of a platform feature Scaleway may change.
 3. **tenant_id propagation** — every repo row, push record, CI job row, and the manifest
@@ -57,7 +59,7 @@ route names) is reversible.
 One Go probe program, run with live creds. The ref-CAS decision is already made (Postgres
 referee); the spike verifies the rest:
 
-1. **S3 If-Match behavior** on Scaleway Object Storage — as the *optional fast path*
+1. **S3 If-Match behavior** on Scaleway Object Storage — as the _optional fast path_
    only: PutObject with `If-Match` / `If-None-Match: *`, observe 412 vs overwrite, and
    whether ETags are stable across reads. If unsupported, we simply run without the fast
    path; no fallback work is needed because Postgres is already the referee.
@@ -68,27 +70,34 @@ referee); the spike verifies the rest:
    container images for pack hydration and act's action cache; git binary present in the
    final images; gVisor sandbox limitations for the CI job (no privileged ops).
 4. **Cost baselines**: one cold start and one CI round (the owner's real 2-job ci.yml) in
-   GB-seconds; smallest RDB instance price vs the ~EUR 5/mo assumption; SDB CPU while the
-   api idles at min_scale=0 (keep the `quill` SDB unless the spike says otherwise).
+   GB-seconds; RDB instance price for the Zitadel DB (the ~EUR 5/mo floor); confirm the
+   quill SDB CPU stays 0 while the api idles at min_scale=0 (decision already made: the
+   quill DB stays on the SDB).
 5. **Zitadel**: scale-to-zero behavior — DB pool footprint (the Forgejo lesson suggests an
    RDB instance for the Zitadel DB), cold-start time, SMTP via the existing admin-API
    script (`scripts/zitadel-smtp.sh`).
 
 Risks: none (read-mostly; one test write to a scratch bucket). Tests: the probe is the test.
-Rollback: n/a. Exit criteria recorded in DECISIONS.md: networking mode, SDB-vs-RDB for the
-quill + zitadel DBs, job feasibility, If-Match fast-path enablement.
+Rollback: n/a. Exit criteria recorded in DECISIONS.md: networking mode, RDB sizing for
+the Zitadel DB (the quill SDB stays), job feasibility, If-Match fast-path enablement.
 
 ## Phase A — CI off the VM (first feature PRs; independent of the git engine)
 
 Rationale: the VM wedge is the live operational fire (2026-11-11 hard reboot), and every
 item here works while Forgejo still exists.
 
-Design deviation from the original sketch, flagged: the worker reuses
-`internal/pipeline`'s act-as-a-library runner rather than registering ephemeral act runners
-against Forgejo's actions protocol. Rationale: the actions protocol dies with Forgejo
-anyway, and reusing the proven runner code halves the job image surface. If the spike
-shows act-as-library cannot run under gVisor, fall back to ephemeral runner registration.
-Record in DECISIONS.md.
+CI worker shape (decided unless the spike disproves it): the job container runs a small Quill
+worker binary that fetches the job from the queue and executes the workflow with **act
+embedded as a Go library** — the same code (`internal/pipeline/act_runner.go`) that already
+runs the owner's ci.yml on the VM today. The alternative — running an unmodified
+`gitea-act-runner --ephemeral` — cannot take "here is the job" directly: it registers with a
+server and pulls work over the gitea/Forgejo actions protocol, and the only server speaking
+that protocol is Forgejo, which this roadmap deletes. Ephemeral registration would therefore
+trap a Forgejo-shaped protocol in the target architecture. Sole open risk: act's step
+isolation (namespace/chroot-style mounts) may not run under the gVisor job sandbox; the
+spike answers it by running the owner's real ci.yml through a job. Only on an unfixable
+failure does ephemeral registration become the fallback (with the separate cost of what it
+would register against). Record in DECISIONS.md at A3 time.
 
 **PR A1 — Job queue in Postgres.** Scope: queue rows for pipeline jobs (carrying
 `tenant_id` for metering from day one); dispatch handler refactored from "execute
@@ -234,13 +243,14 @@ and restart.
 **PR D2 — Cutover + teardown.** Scope: switch pipeline triggers to Quill's post-receive
 hook (drop the Forgejo system webhook), run the live e2e suite + one dogfooding week, then
 terraform: delete `forgejo_vm.tf` resources, the VM's dispatch, the `ssh.` DNS record, the
-VM compose stack's zitadel/forgejo, the Flexible IP. The floor afterwards: **RDB Postgres
-(~EUR 5/mo) + backup object storage (cents) + Secret Manager versions (cents)**;
-per-request costs = container invocations (fractions of a cent; cold starts add seconds of
-GB-time) and CI jobs (a 2-job, ~4-min workflow at 2 GB ≈ single-digit cents; measure in
-the spike). Rollback: none past terraform destroy except backups — hence the VM root
-volume (`delete_on_termination=false`) is kept for two weeks; a restored Forgejo VM is the
-full-fidelity fallback until the volume is finally deleted.
+VM compose stack's zitadel/forgejo, the Flexible IP. The floor afterwards: **the RDB
+instance for Zitadel's DB (~EUR 5/mo) — the quill metadata DB stays on the scale-to-zero
+SDB (storage-only when idle) — + backup object storage (cents) + Secret Manager versions
+(cents)**; per-request costs = container invocations (fractions of a cent; cold starts add
+seconds of GB-time) and CI jobs (a 2-job, ~4-min workflow at 2 GB ≈ single-digit cents;
+measure in the spike). Rollback: none past terraform destroy except backups — hence the VM
+root volume (`delete_on_termination=false`) is kept for two weeks; a restored Forgejo VM is
+the full-fidelity fallback until the volume is finally deleted.
 
 ## Auth/tenancy design (PR B6)
 
@@ -262,7 +272,7 @@ full-fidelity fallback until the volume is finally deleted.
   anywhere; the Forgejo identity-mapping columns (`forgejo_org_name`, `forgejo_username`)
   die in D1's migration, not before (live probes still use them).
 - **Tenant metering**: pushes, storage bytes (manifest sum), and CI minutes metered per
-  tenant_at_id from day one, feeding the existing freemium gates (`SumPipelineMinutesByTenant`,
+  `tenant_id` from day one, feeding the existing freemium gates (`SumPipelineMinutesByTenant`,
   storage gate).
 
 ## Repo migration tool (PR D1)
@@ -318,14 +328,27 @@ full-fidelity fallback until the volume is finally deleted.
 - Cost watch: after D2, one billing check via `scw billing consumption list`; no standing
   cron watch-loops (cost-watch rule).
 
-## Open questions for the spike / owner
+## Open questions / resolved questions
 
-1. S3 If-Match verdict — decides only whether the fast path is enabled; Postgres is the
-   referee either way.
-2. SDB vs smallest RDB for the quill metadata DB — the target says RDB floor ~EUR 5/mo;
-   today's quill SDB idles at EUR 0, so this should be a measured choice (the Forgejo pool
-   problem does not apply to the api at min_scale 0).
-3. CI worker shape: act-as-library (proposed) vs ephemeral runner registration — spike
-   decides under gVisor.
-4. Docker-build steps in workflows (kaniko/rootless buildkit) deferred until a repo needs
-   them.
+Resolved 2026-11-11 by the owner:
+
+- **quill DB stays on the SDB** (EUR 0 idle; the api at min_scale=0 demonstrably keeps
+  its SDB cold). Only Zitadel's DB moves to a fixed RDB instance — Zitadel holds persistent
+  connection pools, the exact behavior that made Forgejo's SDB cost ~EUR 22/mo.
+- **Docker builds in user workflows are deferred, not dropped.** Two different
+  "docker build"s exist here: (1) building the platform's own images (backend, web,
+  zitadel, ci-runner) — that stays in the GitHub deploy workflow with ordinary
+  `docker build`, unchanged by this roadmap; Serverless Containers/Jobs receive ready-made
+  images pinned by sha, as today. (2) a _user's pipeline step_ running `docker build` —
+  that worked on the VM only by borrowing the VM's Docker daemon, and the gVisor job
+  sandbox has none. No current workflow does (2), so nothing breaks; when a repo needs
+  it, add a daemonless builder (kaniko or rootless buildkit) to the runner image.
+
+To be answered by the spike (PR 0):
+
+1. S3 If-Match verdict — decides only whether the optional fast path is enabled; Postgres
+   is the referee either way.
+2. Whether act-as-library (the chosen CI worker shape, see Phase A) executes workflows
+   correctly under the gVisor job sandbox — proven by running the owner's real ci.yml
+   through a job. Fallback on unfixable failure: ephemeral runner registration, with the
+   added cost of a compatible registration endpoint.
