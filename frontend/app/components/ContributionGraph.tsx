@@ -143,7 +143,7 @@ export function ContributionGraph({ data }: { data: Contribution[] }) {
         </div>
       </div>
       {tip && (
-        <div className="contrib-tip" style={{ left: tip.x, top: tip.y - 30 }}>
+        <div className="contrib-tip" style={{ left: tip.x, top: tip.y - 10 }}>
           {tip.text}
         </div>
       )}

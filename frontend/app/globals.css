@@ -4067,32 +4067,25 @@ a.row-item:hover {
 }
 
 /* Floating contribution-day tooltip, pinned above the hovered cell
-   (position: fixed - viewport coords, so no clipping by scrollers). */
+   (position: fixed - viewport coords, so no clipping by scrollers).
+   A plain pill, no pointer arrow: a rotated-square caret reads as
+   crooked next to the rounded pill, and the pill + hover ring already
+   connect the day to the text. */
 .contrib-tip {
   position: fixed;
   z-index: 70;
   transform: translate(-50%, -100%);
-  padding: 4px 9px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
   background: var(--text);
   color: var(--bg);
   font-size: 11px;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-}
-.contrib-tip::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -4px;
-  width: 8px;
-  height: 8px;
-  transform: translateX(-50%) rotate(45deg);
-  background: var(--text);
-  border-radius: 1px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 
 
