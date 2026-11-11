@@ -85,6 +85,14 @@ epic:
 
 ## PR 0 — GO/NO-GO SPIKE (blocking; findings + DECISIONS entry only)
 
+_Status: EXECUTED 2026-11-11 — result GO. Probe committed at `scripts/spike-pr0/`; findings in
+DECISIONS.md. Key results: conditional writes confirmed (fast path enabled, Postgres referee
+unchanged); Range GET 206 partial confirmed (streaming premise holds); `/tmp` in Serverless
+Jobs is RAM-tmpfs (a 700 MiB write OOM-killed a 512 MiB-memory job) while `/mnt` is the
+disk-backed local-storage volume; job egress to S3 + api works under gVisor; go/static
+binaries + git run fine. Deferred to their phases: full ci.yml-through-a-job (A3), container
+cold-start vs SDB-idle pairing, Zitadel pool behavior (C1)._
+
 One Go probe program, run with live creds. The ref-CAS decision is already made (Postgres
 referee); the spike verifies the rest:
 
@@ -152,11 +160,14 @@ act (existing runner code) -> stream logs as chunked objects to the bucket -> re
 result (CI minutes metered against the job's `tenant_id`). Runtime portability: the image
 is a plain OCI image with a config-driven work/cache dir — it must run unmodified as a
 Serverless Job today and as a warm-pool workload (Kapsule) later; `scaleway` specifics
-stay in env/config, never compiled in. Risks: log streaming latency; workflow steps
+stay in env/config, never compiled in. Spike-adjusted (2026-11-11): bulk writable data in
+the job — workspace clone, act's ActionCacheDir, kaniko caches — must target `/mnt`
+(the disk-backed local-storage volume): `/tmp` in jobs is RAM-tmpfs and counts against
+`memory_limit`. Pin `local_storage_capacity` generously. Risks: log streaming latency;
+workflow steps
 needing an image build — kaniko baked into the runner image when first needed (decided
 2026-11-11: kaniko first, a dedicated buildkit backend as the later upgrade), deferred
-until a repo actually builds images — follow-up; action-cache
-dir under /tmp spikes job storage (pin `local_storage_capacity` generously).
+until a repo actually builds images — follow-up.
 Tests: live-run the owner's real ci.yml through a job and compare logs/results with a VM
 run done in parallel. Rollback: keep the VM dispatch active as shadow/fallback for one
 week; then remove the act runner + dispatch from the VM compose/cloud-init (forgejo,
@@ -190,12 +201,16 @@ still behind config toggle.
 **PR B2 — Read path (smart HTTP v0 + v2).** Scope: `git.<domain>` becomes a second custom
 domain on the api container (matches "existing permission middleware"); routes
 `/{owner}/{repo}.git/info/refs|git-upload-pack`. First-access hydration: GET manifest ->
-download packs to the configured work dir (`/tmp` on serverless; configurable for warm
-pools) -> serve via upstream `git upload-pack` (shelled out; upstream git does the work).
-Packs are consumed through the `PackSource` interface — full-download implementation now,
-range-request/streaming implementation later without caller changes. Risks: cold-start
-latency on first clone (seconds, acceptable); container memory ceiling for big repos
-(free-tier gate is 1 GiB — fine for now). Tests: gated on `QUILL_TEST_DATABASE_URL` and
+download packs to the configured work dir -> serve via upstream `git upload-pack`
+(shelled out; upstream git does the work). Spike-adjusted (2026-11-11): in the api container
+the writable layer is RAM against `memory_limit` (containers get no disk volume like the
+jobs' `/mnt`), so hydration size must fit the container memory budget — fine at dogfooding
+sizes (free-tier cap 1 GiB; pin `container_memory_mb` accordingly) and the forcing function
+that eventually prioritizes the `PackSource` streaming implementation. Warm pools (Kapsule)
+later get a real disk work dir instead. Packs are consumed through the `PackSource`
+interface — full-download implementation now, range-request/streaming implementation later
+without caller changes. Risks: cold-start latency on first clone (seconds, acceptable);
+memory ceiling for big repos (above). Tests: gated on `QUILL_TEST_DATABASE_URL` and
 `QUILL_TEST_S3_ENDPOINT`: real `git clone` against an httptest server backed by a seeded
 fixture repo; hydration idempotence; manifest-format golden test. Rollback: new host only —
 `git.<domain>` DNS repoints; Forgejo untouched during B.
@@ -379,9 +394,11 @@ Resolved 2026-11-11 by the owner:
 
 To be answered by the spike (PR 0):
 
-1. S3 If-Match verdict — decides only whether the optional fast path is enabled; Postgres
-   is the referee either way.
+1. S3 If-Match verdict — **resolved 2026-11-11: supported; fast path enabled** (Postgres
+   referee unchanged; Range 206 partial also confirmed).
 2. Whether act-as-library (the chosen CI worker shape, see Phase A) executes workflows
-   correctly under the gVisor job sandbox — proven by running the owner's real ci.yml
-   through a job. Fallback on unfixable failure: ephemeral runner registration, with the
-   added cost of a compatible registration endpoint.
+   correctly under the gVisor job sandbox — partially answered by the spike (go static
+   binaries, git, S3 and api egress all work under gVisor); the full proof stays in A3
+   (running the owner's real ci.yml through a job). Fallback on unfixable failure:
+   ephemeral runner registration, with the added cost of a compatible registration
+   endpoint.
