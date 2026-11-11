@@ -115,11 +115,20 @@ rules (tenant isolation, no credential leaks) remain hard constraints regardless
 ### Deploy / redeploy gotchas (learned the hard way)
 
 - Push to `main` → CI builds images (`<sha>` + `latest` tags) and runs `terraform apply`.
-- Serverless containers do **not** reliably auto-redeploy on tag push: after CI finishes,
-  run `scw container container redeploy <container-id>` (ids from `scw container container list`)
-  and wait ~2 min before testing.
-- `latest` can race (an older commit's CI run finishing last overwrites it) — compare the
-  `latest` digest with the `<sha>` tag digest of HEAD before trusting it.
+- Deploys pin `image_tag` to the git SHA (see the workflow apply step): every apply changes
+  `registry_image`, forcing a new container revision — changes always land. Do NOT revert to
+  a pinned `latest`: apply becomes a no-op and nothing redeploys (agents kept finding
+  "changes didn't land" for this reason; 2026-11-11). A manual
+  `scw container container redeploy <id>` (ids via `scw container container list`) is only
+  needed when editing a container straight from a local `terraform apply` that left the tag
+  unchanged.
+- VM compose maintenance: NEVER run bare `docker compose up -d <svc>` for a single service —
+  compose honors `depends_on` and can recreate/restart OTHER services with it (a bare
+  `up -d dispatch` restarted forgejo and took git.black-tulip.nl down for ~2 min on
+  2026-11-11). Use `docker compose up -d --no-deps <svc>` for one service, or
+  `docker compose up -d` only when you genuinely intend to reconcile the whole stack.
+  The compose file interpolates `$STAMP` inside a shell command — expect an interpolation
+  warning from `docker compose config`; it is benign.
 - Local image builds MUST use `--platform=linux/amd64` — Scaleway rejects arm64 with
   "Invalid Image architecture" and the container goes to `error` state (check
   `error_message` in `scw container container get`).

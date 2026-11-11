@@ -140,11 +140,15 @@ jobs:
           SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
         # NOTE: no comments inside the run block — a '#' line after a '\'
         # continuation ends the command early (that is how apply lost its -vars).
-        # image_tag is pinned to "latest": Scaleway auto-redeploys on tag push,
-        # avoiding per-sha container updates that intermittently 412.
+        # image_tag is pinned to the git SHA: a pinned "latest" made apply a
+        # no-op on the containers (registry_image unchanged), and Scaleway does
+        # NOT reliably re-pull the same tag — deploys silently didn't land until
+        # someone ran `scw container container redeploy` by hand. A per-sha pin
+        # changes registry_image on every apply, which forces a new container
+        # revision and a real deployment.
         run: |
           terraform apply -auto-approve -input=false \
-            -var "image_tag=latest" \
+            -var "image_tag=${{ github.sha }}" \
             -var "domain=black-tulip.nl" \
             -var "backup_bucket_name=${{ vars.BACKUP_BUCKET }}" \
             -var "letsencrypt_email=${{ vars.LETSENCRYPT_EMAIL }}" \
