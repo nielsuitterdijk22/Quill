@@ -125,19 +125,18 @@ export default async function RunDetailPage({
         </div>
       ) : (
         run.jobs.map((job) => (
-          <div className="panel" key={job.key}>
-            <h2>
+          <details className="panel job-panel" key={job.key} open={job.status !== "success"}>
+            <summary>
               <span className={`run-glyph ${job.status}`}>
                 {statusGlyph(job.status)}
-              </span>{" "}
+              </span>
               {job.name}
               {job.runsOn && <span className="sub mono"> · {job.runsOn}</span>}
               <span className="sub">
                 · {runDuration(job.startedAt, job.finishedAt)}
               </span>
-              <span className="spacer" />
               <RunStatusBadge status={job.status} />
-            </h2>
+            </summary>
             {job.steps.map((step, i) => (
               <details className="pipeline-step" key={i} open={step.status === "failure"}>
                 <summary>
@@ -151,7 +150,7 @@ export default async function RunDetailPage({
                 <StepLogs logs={step.logs} />
               </details>
             ))}
-          </div>
+          </details>
         ))
       )}
     </>

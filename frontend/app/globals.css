@@ -3059,6 +3059,35 @@ h2.section {
 .pipeline-step > summary::-webkit-details-marker {
   display: none;
 }
+/* Fold affordance: a little chevron on the right, flipping when open. */
+.pipeline-step > summary::after,
+.job-panel > summary::after {
+  content: "";
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  padding: 2.5px;
+  transform: rotate(-45deg);
+  margin-left: auto;
+  opacity: 0.55;
+  flex: none;
+}
+.pipeline-step[open] > summary::after,
+.job-panel[open] > summary::after {
+  transform: rotate(45deg);
+}
+.job-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+.job-panel > summary::-webkit-details-marker {
+  display: none;
+}
 .step-logs {
   margin: 0;
   padding: 10px 12px;
@@ -3078,6 +3107,15 @@ h2.section {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+/* The log streamer owns its scrolling: appends tail inside this box instead
+   of yanking the whole page around, and stops tailing while the reader has
+   scrolled up into history. */
+.live-logs-scroll {
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
 }
 .live-logs .logs {
   margin: 0;

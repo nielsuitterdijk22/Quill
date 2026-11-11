@@ -44,9 +44,26 @@ export function LiveLogs({
   const [done, setDone] = useState(false);
   const [error, setError] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // Scroll lives INSIDE this container: new lines append and the container
+  // scrolls itself to the bottom, but only while the viewer is already at the
+  // bottom (stick-to-bottom). The page itself never jumps around.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
   const router = useRouter();
   const { getToken } = useQuillAuth();
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  };
+
+  const scrollToBottom = () => {
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  };
 
   const logsUrl =
     `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}` +
@@ -112,7 +129,6 @@ export function LiveLogs({
                 const ll = JSON.parse(edata) as LogLine;
                 setLines((prev) => [...prev, ll]);
                 if (eid > 0) lastId = eid;
-                bottomRef.current?.scrollIntoView({ behavior: "smooth" });
               } catch {
                 // ignore malformed events
               }
@@ -171,28 +187,42 @@ export function LiveLogs({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logsUrl]);
 
+  useEffect(() => {
+    scrollToBottom();
+  }, [lines]);
+
   const groups = groupLines(lines);
 
   return (
     <div className="live-logs">
-      {groups.map((g, gi) => (
-        <details className="pipeline-step" key={gi} open>
-          <summary>
-            <span className="nm">
-              {g.jobKey !== g.stepName ? `${g.jobKey} / ${g.stepName}` : g.stepName}
-            </span>
-          </summary>
-          <pre className="logs">{g.lines.join("")}</pre>
-        </details>
-      ))}
+      <div className="live-logs-scroll" ref={scrollRef} onScroll={onScroll}>
+        {groups.map((g, gi) => (
+          <details
+            className="pipeline-step"
+            key={gi}
+            open
+            onToggle={(e) => {
+              // Folding a group changes the height; keep following the tail
+              // only if we were at the bottom already.
+              if ((e.target as HTMLDetailsElement).open) scrollToBottom();
+            }}
+          >
+            <summary>
+              <span className="nm">
+                {g.jobKey !== g.stepName ? `${g.jobKey} / ${g.stepName}` : g.stepName}
+              </span>
+            </summary>
+            <pre className="logs">{g.lines.join("")}</pre>
+          </details>
+        ))}
 
-      {!done && !error && (
-        <div className="log-tail">
-          <span className="run-glyph running">⏳</span>{" "}
-          {reconnecting ? "Reconnecting to log stream…" : "Streaming logs…"}
-          <div ref={bottomRef} />
-        </div>
-      )}
+        {!done && !error && (
+          <div className="log-tail">
+            <span className="run-glyph running">⏳</span>{" "}
+            {reconnecting ? "Reconnecting to log stream…" : "Streaming logs…"}
+          </div>
+        )}
+      </div>
 
       {error && (
         <div className="banner">

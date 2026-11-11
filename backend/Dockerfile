@@ -14,7 +14,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-a
 # ---- run ----
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates git
-RUN adduser -D -H -u 10001 quill
+# No -H: create the home directory. The pipeline dispatcher runs act from this
+# image, and act resolves caches/tooling under HOME; a missing home made every
+# `uses:` step fail silently (run aborted with all steps "skipped").
+RUN adduser -D -u 10001 quill
 COPY --from=build /out/quill-api /quill-api
 COPY --from=build /out/quill-dispatch /quill-dispatch
 EXPOSE 8080

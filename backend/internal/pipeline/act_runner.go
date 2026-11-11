@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -93,6 +94,19 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 	}
 	defer cleanup()
 
+	// Action cache dir: act fetches remote actions (actions/checkout,
+	// actions/setup-go, ...) into rc.ActionCacheDir, which defaults to
+	// ~/.cache/act. The backend image creates its user with -H (no home), so
+	// that default is unwritable there and every uses: step errored in its
+	// pre-step silently - the job failed with all steps "skipped" and nothing
+	// in the logs. Pin a temp dir we mkdir ourselves (override with
+	// QUILL_PIPELINE_ACTION_CACHE).
+	actionCacheDir := filepath.Join(os.TempDir(), "quill-act-cache")
+	if d := strings.TrimSpace(os.Getenv("QUILL_PIPELINE_ACTION_CACHE")); d != "" {
+		actionCacheDir = d
+	}
+	_ = os.MkdirAll(actionCacheDir, 0o755)
+
 	cfg := &runner.Config{
 		Workdir:               workdir,
 		BindWorkdir:           false,
@@ -108,6 +122,8 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		Secrets:               mapOrEmpty(spec.Secrets),
 		Vars:                  map[string]string{},
 		GitHubInstance:        "github.com",
+		ActionCacheDir:        actionCacheDir,
+		ActionCache:           &runner.GoGitActionCache{Path: actionCacheDir},
 	}
 	rn, err := runner.New(cfg)
 	if err != nil {
