@@ -124,7 +124,9 @@ result (CI minutes metered against the job's `tenant_id`). Runtime portability: 
 is a plain OCI image with a config-driven work/cache dir — it must run unmodified as a
 Serverless Job today and as a warm-pool workload (Kapsule) later; `scaleway` specifics
 stay in env/config, never compiled in. Risks: log streaming latency; workflow steps
-needing rootless buildkit/kaniko (defer until a repo needs it — follow-up); action-cache
+needing an image build — kaniko baked into the runner image when first needed (decided
+2026-11-11: kaniko first, a dedicated buildkit backend as the later upgrade), deferred
+until a repo actually builds images — follow-up; action-cache
 dir under /tmp spikes job storage (pin `local_storage_capacity` generously).
 Tests: live-run the owner's real ci.yml through a job and compare logs/results with a VM
 run done in parallel. Rollback: keep the VM dispatch active as shadow/fallback for one
@@ -342,7 +344,9 @@ Resolved 2026-11-11 by the owner:
   images pinned by sha, as today. (2) a _user's pipeline step_ running `docker build` —
   that worked on the VM only by borrowing the VM's Docker daemon, and the gVisor job
   sandbox has none. No current workflow does (2), so nothing breaks; when a repo needs
-  it, add a daemonless builder (kaniko or rootless buildkit) to the runner image.
+  image builds, the daemonless builder of choice is **kaniko** (decided 2026-11-11), with a
+  dedicated buildkit deployment as the possible later upgrade if kaniko's limits bite
+  (remote caching, complex builds).
 
 To be answered by the spike (PR 0):
 
