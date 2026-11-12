@@ -16,6 +16,8 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/creem"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/gitengine"
+	"github.com/nielsuitterdijk22/quill/internal/objectstore"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/projectsync"
@@ -69,6 +71,20 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		if cfg.Pipeline.BrokerURL != "" {
 			platformSvc.WithBroker(cfg.Pipeline.BrokerURL, cfg.Pipeline.DispatchSecret)
 		}
+	}
+	// Own git engine (serverless epic, PR B1): QUILL_GIT_ENGINE_MODE=own
+	// switches repository provisioning to the bucket layout + Postgres
+	// referee. Off by default — the Forgejo path stays until Phase D's
+	// cutover, so deploys of this code are inert without the env set.
+	// config.Load already validated the bucket credentials (fail fast).
+	if cfg.GitEngine.Own() {
+		platformSvc.WithGitEngine(gitengine.New(objectstore.New(objectstore.Config{
+			Endpoint:  cfg.GitEngine.S3Endpoint,
+			Region:    cfg.GitEngine.S3Region,
+			Bucket:    cfg.GitEngine.S3Bucket,
+			AccessKey: cfg.GitEngine.S3AccessKey,
+			SecretKey: cfg.GitEngine.S3SecretKey,
+		})))
 	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()

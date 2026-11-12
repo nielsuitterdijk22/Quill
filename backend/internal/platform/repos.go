@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/objectstore"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -123,7 +124,63 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 		fjOwner, fjName pgtype.Text
 		fjCreated       bool
 	)
-	if s.forgejoEnabled() {
+	switch {
+	case s.gitEngine != nil:
+		// Own git engine (serverless epic, PR B1): the bucket is the
+		// repository. The manifest is written create-if-absent first, the
+		// repo row + referee row commit in one transaction, and a DB failure
+		// compensates by deleting the (still empty) manifest — so bucket and
+		// Postgres never disagree about a repo's existence. Imports
+		// (CloneFrom) are not supported until the migration tool (PR D).
+		if in.CloneFrom != nil {
+			return db.Repository{}, fmt.Errorf("%w: importing an external repository is not supported for own-engine repositories yet", ErrInvalidInput)
+		}
+		if err := s.gitEngine.ProvisionRepo(ctx, project.TenantID.String(), project.Slug, slug, defaultBranch); err != nil {
+			if errors.Is(err, objectstore.ErrPreconditionFailed) {
+				return db.Repository{}, fmt.Errorf("provision repo: manifest already exists for %s/%s: %w", project.Slug, slug, err)
+			}
+			return db.Repository{}, fmt.Errorf("provision repo: %w", err)
+		}
+		var createdRepo db.Repository
+		err = s.store.InTxTx(ctx, func(tx pgx.Tx) error {
+			q := db.New(tx)
+			repo, err := q.CreateRepository(ctx, db.CreateRepositoryParams{
+				ProjectID:     project.ID,
+				Slug:          slug,
+				Name:          name,
+				Description:   strings.TrimSpace(in.Description),
+				Visibility:    visibility,
+				DefaultBranch: defaultBranch,
+			})
+			if err != nil {
+				return err
+			}
+			// Referee row in the same transaction: repo existence and ref
+			// state are created atomically — provisioning twice can never
+			// fork them.
+			if _, err := tx.Exec(ctx,
+				"INSERT INTO git_repo_state (repo_id, tenant_id) VALUES ($1, $2)",
+				repo.ID, project.TenantID); err != nil {
+				return err
+			}
+			createdRepo = repo
+			return nil
+		})
+		if err != nil {
+			// Compensation: the manifest was empty, so deleting it loses
+			// nothing and keeps the bucket clean.
+			cctx, cancel := detachedContext(ctx)
+			defer cancel()
+			if delErr := s.gitEngine.DeleteManifest(cctx, project.TenantID.String(), project.Slug, slug); delErr != nil {
+				s.logger.Error("failed to roll back provisioned manifest", "project", project.Slug, "repo", slug, "error", delErr)
+			}
+			if isUniqueViolation(err) {
+				return db.Repository{}, ErrConflict
+			}
+			return db.Repository{}, err
+		}
+		return createdRepo, nil
+	case s.forgejoEnabled():
 		var fjRepo forgejo.Repo
 		var err error
 		if in.CloneFrom != nil {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/creem"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/gitengine"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/secretbox"
@@ -73,6 +74,9 @@ type Service struct {
 	// gate. Defaults to the Forgejo-backed storageUsage; tests override it to
 	// avoid a live git backend.
 	storageProbe func(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	// gitEngine is the own git storage engine (serverless epic, Phase B).
+	// Nil = the Forgejo-backed path everywhere (rollback / pre-cutover).
+	gitEngine *gitengine.Engine
 }
 
 // OrgProvisioner abstracts the external-IdP operations Quill drives when managing
@@ -123,6 +127,14 @@ func (s *Service) WithRunner(r pipeline.Runner) *Service {
 // chaining.
 func (s *Service) WithForgejo(fj *forgejo.Client) *Service {
 	s.forgejo = fj
+	return s
+}
+
+// WithGitEngine installs the own git storage engine (serverless epic, Phase B):
+// non-nil switches repository provisioning to the bucket layout + Postgres
+// referee. Nil restores the Forgejo path (rollback).
+func (s *Service) WithGitEngine(e *gitengine.Engine) *Service {
+	s.gitEngine = e
 	return s
 }
 

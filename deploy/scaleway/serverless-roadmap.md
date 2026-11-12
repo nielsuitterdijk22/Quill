@@ -183,7 +183,8 @@ zitadel stay until their phases).
 
 ## Phase B — the own git engine
 
-**PR B1 — Storage model + provisioning.** Scope: bucket layout under a new `repos`
+**PR B1 — Storage model + provisioning.** _Status: SHIPPED 2026-11-12 (flag off, inert;
+deploy wiring when the cutover era needs it)._ Bucket layout under a future `repos`
 bucket, designed for later streaming (see "Get right the first time"):
 
 ```text
@@ -205,6 +206,23 @@ Schema also gains the runtime routing hint: `tenants.runtime_hint ('serverless'|
 version from day one; this is an irreversible decision. Tests: unit for referee CAS
 (loop with simulated lost races), integration for create-repo. Rollback: Forgejo path
 still behind config toggle.
+
+_Shipped shape (2026-11-12, DECISIONS.md): manifest fields slightly refined from the
+sketch — packs carry `{object, bytes, etag, idx_object, idx_bytes, idx_etag}` (the
+sidecar idx gets the same first-class metadata the pack gets; "pack_size" folds into
+"bytes"); a golden test pins the exact wire format. Referee realized as a monotonic
+`revision` counter on the `git_repo_state` row: writers `UPDATE ... WHERE
+revision = <expected>` (single-statement CAS, 0 rows = ErrRefCASLost), with the refs
+map as jsonb. Provisioning is own-mode only behind `QUILL_GIT_ENGINE_MODE=own`
+(+ `QUILL_GIT_S3_*` env; config validates completeness at startup): manifest written
+create-if-absent (`If-None-Match: *`), repo row + referee row committed in one
+transaction (raw `InTxTx`), DB failure compensated by deleting the still-empty
+manifest. New `internal/objectstore` (SigV4 lifted from the proven PR-0 spike,
+stdlib-only — no new deps) + `internal/gitengine` (manifest/layout/engine);
+`objectstore.MemStore` doubles the bucket in unit tests, so B2/B3 tests never need
+credentials either. CloneFrom imports under own mode fail explicitly (D-era surface).
+Live-verified: the objectstore conditional-write contract ran green against the real
+Scaleway bucket (gated `QUILL_TEST_S3_*` roundtrip test)._
 
 **PR B2 — Read path (smart HTTP v0 + v2).** Scope: `git.<domain>` becomes a second custom
 domain on the api container (matches "existing permission middleware"); routes

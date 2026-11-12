@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -203,6 +204,25 @@ func (s *Store) InTx(ctx context.Context, fn func(q *db.Queries) error) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if err := fn(s.Queries.WithTx(tx)); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+// InTxTx exposes the raw transaction when hand-written SQL must run in the
+// same unit as generated queries (the git engine's provisioning inserts the
+// repo row and the referee row atomically). Commit/rollback as with InTx.
+func (s *Store) InTxTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := fn(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {

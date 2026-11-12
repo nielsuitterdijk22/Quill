@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,7 @@ type Config struct {
 	Creem     creem.Config
 	Forgejo   ForgejoConfig
 	Pipeline  PipelineConfig
+	GitEngine GitEngineConfig
 	TempoSync TempoSyncConfig
 
 	// WebhookSecret authenticates inbound Forgejo webhooks that auto-trigger
@@ -95,6 +97,51 @@ type ZitadelConfig struct {
 type GitHubConfig struct {
 	ClientID     string
 	ClientSecret string
+}
+
+// GitEngineConfig selects the git storage engine and carries its bucket
+// credentials. Mode "" or "forgejo" keeps the Forgejo-backed path (the
+// default — the own engine stays inert until Phase D's cutover); Mode "own"
+// makes repository provisioning write the bucket layout + Postgres referee
+// instead (serverless epic, PR B1). All S3 fields are required in own mode —
+// the server refuses to start with half a configuration, so a misdeploy fails
+// fast instead of silently provisioning repos without storage.
+type GitEngineConfig struct {
+	Mode string
+	// S3Endpoint/Bucket back the git engine's bucket layout
+	// (repos/{tenant}/{project}/{repo}/...).
+	S3Endpoint  string
+	S3Region    string
+	S3Bucket    string
+	S3AccessKey string
+	S3SecretKey string
+}
+
+// Own reports whether the own git engine is active.
+func (c GitEngineConfig) Own() bool { return strings.EqualFold(c.Mode, "own") }
+
+// Validate fails fast on a half-configured own engine.
+func (c GitEngineConfig) Validate() error {
+	if !c.Own() {
+		return nil
+	}
+	missing := make([]string, 0, 5)
+	for field, v := range map[string]string{
+		"QUILL_GIT_S3_ENDPOINT":   c.S3Endpoint,
+		"QUILL_GIT_S3_REGION":     c.S3Region,
+		"QUILL_GIT_S3_BUCKET":     c.S3Bucket,
+		"QUILL_GIT_S3_ACCESS_KEY": c.S3AccessKey,
+		"QUILL_GIT_S3_SECRET_KEY": c.S3SecretKey,
+	} {
+		if v == "" {
+			missing = append(missing, field)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("QUILL_GIT_ENGINE_MODE=own but bucket credentials incomplete (missing %s)", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // TempoSyncConfig controls the outbound pushes to Tempo (see the tight
@@ -212,6 +259,14 @@ func Load() (*Config, error) {
 			QueueMode:      getbool("QUILL_PIPELINE_QUEUE_MODE"),
 			BrokerURL:      getenv("QUILL_BROKER_URL", ""),
 		},
+		GitEngine: GitEngineConfig{
+			Mode:        getenv("QUILL_GIT_ENGINE_MODE", ""),
+			S3Endpoint:  getenv("QUILL_GIT_S3_ENDPOINT", ""),
+			S3Region:    getenv("QUILL_GIT_S3_REGION", ""),
+			S3Bucket:    getenv("QUILL_GIT_S3_BUCKET", ""),
+			S3AccessKey: getenv("QUILL_GIT_S3_ACCESS_KEY", ""),
+			S3SecretKey: getenv("QUILL_GIT_S3_SECRET_KEY", ""),
+		},
 		TempoSync: TempoSyncConfig{
 			URL:                 getenv("QUILL_TEMPO_SYNC_URL", ""),
 			RefsURL:             getenv("QUILL_TEMPO_SYNC_REFS_URL", ""),
@@ -257,6 +312,10 @@ func Load() (*Config, error) {
 
 	if cfg.IsProduction() && cfg.SecretEncryptionKey == "" {
 		return nil, fmt.Errorf("production requires QUILL_SECRET_ENCRYPTION_KEY to encrypt pipeline secrets")
+	}
+
+	if err := cfg.GitEngine.Validate(); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
