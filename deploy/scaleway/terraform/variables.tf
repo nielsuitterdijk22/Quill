@@ -97,9 +97,9 @@ variable "vm_docker_gid" {
 
 variable "dispatch_secret" {
   description = "Shared HMAC secret between the api and the pipeline dispatch container. Set it explicitly so api <-> dispatch cannot drift across state regenerations; empty falls back to the generated random_password."
-  type      = string
-  default   = ""
-  sensitive = true
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 # ---- Serverless SQL databases -----------------------------------------------------

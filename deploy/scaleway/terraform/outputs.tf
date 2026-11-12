@@ -34,6 +34,22 @@ output "container_domain_urls" {
   }
 }
 
+# ---- zitadel (serverless epic, C1) ----
+output "zitadel_setup_job_id" {
+  description = "ID of the zitadel-setup job definition; CI starts it after each apply (scw jobs definition start)."
+  value       = scaleway_job_definition.zitadel_setup.id
+}
+
+output "zitadel_container_endpoint" {
+  description = "Public (pre-DNS-flip) endpoint of the zitadel container for smoke tests."
+  value       = scaleway_container.zitadel.public_endpoint
+}
+
+output "zitadel_container_domain" {
+  description = "Custom-domain URL the auth.<domain> record must point at once C1 is verified."
+  value       = scaleway_container_domain.auth.url
+}
+
 # ---- registry ----
 output "registry_endpoint" {
   value = scaleway_registry_namespace.quill.endpoint

@@ -71,8 +71,8 @@ resource "scaleway_container" "api" {
     # the flow starts via the frontend rewrite) and the API host (where the
     # GitHub OAuth callback lands), so they get the parent domain.
     QUILL_COOKIE_DOMAIN = var.domain
-    QUILL_AUTH_PROVIDER        = "zitadel"
-    ZITADEL_ISSUER             = "https://${local.auth_host}"
+    QUILL_AUTH_PROVIDER = "zitadel"
+    ZITADEL_ISSUER      = "https://${local.auth_host}"
     # The api triggers pipelines by calling the dispatcher on the Forgejo VM
     # (HMAC-protected with QUILL_PIPELINE_DISPATCH_SECRET).
     QUILL_PIPELINE_DISPATCH_URL = "http://${scaleway_instance_server.forgejo.public_ips[0].address}:8090"
@@ -197,6 +197,9 @@ resource "scaleway_job_definition" "pg_backup" {
     AWS_SECRET_ACCESS_KEY = scaleway_iam_api_key.backup.secret_key
     BACKUP_RETENTION_DAYS = tostring(var.backup_retention_days)
     QUILL_DATABASE_URL    = local.db_url["quill"]
+    # C1: also dump the zitadel SDB nightly (the VM's zitadel-backup sidecar
+    # covers only the old VM-local database and dies with the VM).
+    ZITADEL_DATABASE_URL = local.db_url["zitadel"]
   }
 
   cron {

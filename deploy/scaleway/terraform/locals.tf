@@ -15,12 +15,12 @@ locals {
   auth_host = "auth.${var.domain}"
   ssh_host  = "ssh.${var.domain}"
 
-  # Serverless SQL databases: quill (platform metadata) only. Forgejo's database
-  # runs on the VM in the forgejo-db container — the serverless "forgejo" SDB
-  # never scaled to zero (Forgejo holds a persistent connection pool), which
-  # cost ~EUR 22/mo in CPU; zitadel likewise runs on the VM with its own
-  # postgres container.
-  sdb_names = ["quill"]
+  # Serverless SQL databases: quill (platform metadata) + zitadel (C1: the
+  # zitadel SERVERLESS CONTAINER drops its connection pool when scaled to
+  # zero, so its SDB scales to zero too — unlike Forgejo, whose always-on pool
+  # kept the old "forgejo" SDB at ~0.22 vCPU 24/7). Forgejo's database still
+  # runs on the VM in the forgejo-db container.
+  sdb_names = ["quill", "zitadel"]
 
   # SDB endpoint is a full postgres:// URI (postgres://host:port/db?sslmode=require).
   sdb_addr = { for n, db in scaleway_sdb_sql_database.dbs : n => split("/", db.endpoint)[2] } # host:port
@@ -43,6 +43,8 @@ locals {
   container_cname = {
     api = scaleway_container.api.domain_name
     app = scaleway_container.web.domain_name
+    # auth flips to the zitadel container at the registrar when C1 is verified
+    auth = scaleway_container.zitadel.domain_name
   }
 
   # Split var.domain into the registrable root and the subdomain label(s) that

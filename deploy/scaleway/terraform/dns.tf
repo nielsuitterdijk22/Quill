@@ -36,7 +36,9 @@ resource "scaleway_domain_record" "app" {
   project_id = scaleway_account_project.quill.id
 }
 
-# auth.<domain> is served by Zitadel on the Forgejo VM (Caddy h2c vhost).
+# auth.<domain>: served by Zitadel on the Forgejo VM (Caddy h2c vhost) until
+# PR C1's DNS flip — Cloudflare repoints the record from the VM's A record to
+# the zitadel Serverless Container's CNAME (see outputs zitadel_container_domain).
 resource "scaleway_domain_record" "auth" {
   count      = local.have_zone && var.vm_ip != "" ? 1 : 0
   dns_zone   = local.dns_zone_id

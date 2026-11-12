@@ -11,5 +11,13 @@ COPY --from=ghcr.io/zitadel/zitadel:v2.65.1 /app/zitadel /app/zitadel
 COPY steps.yaml /steps.yaml
 RUN mkdir -p /output /home/zitadel && chmod 0777 /output && chown -R zitadel:zitadel /home/zitadel
 USER zitadel
+# Run mode ONLY (serverless epic, C1): plain `zitadel start`. Migrations and
+# first-instance init never run in the container boot path — `zitadel setup`
+# runs as a Serverless Job (terraform job_definition zitadel-setup; CI starts
+# it after each apply). The original start-from-init wrapper (instance
+# creation + PAT harvest via /output) was a bootstrap-only convenience: the
+# instance data now migrates with the database and the machine PAT lives in
+# Secret Manager. The wrapper shell form stays (ENTRYPOINT is /bin/sh -c) so
+# env expansion works on the serverless runtime.
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["/app/zitadel start-from-init --masterkey \"$ZITADEL_MASTERKEY\" --tlsMode external --steps /steps.yaml & ZPID=$!; for i in $(seq 1 90); do if [ -f /output/quill-api.pat ]; then echo \"ZITADEL_MACHINE_PAT=$(cat /output/quill-api.pat)\"; break; fi; sleep 2; done; wait $ZPID"]
+CMD ["exec /app/zitadel start --masterkey \"$ZITADEL_MASTERKEY\" --tlsMode external"]

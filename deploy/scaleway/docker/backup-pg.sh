@@ -6,7 +6,7 @@
 # The forgejo database is NOT dumped here: it runs on the Forgejo VM (forgejo-db
 # container) and is covered by the forgejo-backup sidecar's `forgejo dump`.
 #
-# Env: QUILL_DATABASE_URL,
+# Env: QUILL_DATABASE_URL, ZITADEL_DATABASE_URL (optional, included when set),
 #      S3_ENDPOINT, BACKUP_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
 #      BACKUP_RETENTION_DAYS
 set -eu
@@ -29,6 +29,9 @@ dump_one() { # dump_one <name> <postgres-uri>
 }
 
 dump_one quill "$QUILL_DATABASE_URL"
+
+# Zitadel's database (serverless epic, C1) — dumped in the same nightly run.
+[ -n "${ZITADEL_DATABASE_URL:-}" ] && dump_one zitadel "$ZITADEL_DATABASE_URL"
 
 
 echo "[backup] done (retention via bucket lifecycle rule)"
