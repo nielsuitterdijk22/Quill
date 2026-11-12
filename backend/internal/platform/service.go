@@ -74,6 +74,9 @@ type Service struct {
 	// gate. Defaults to the Forgejo-backed storageUsage; tests override it to
 	// avoid a live git backend.
 	storageProbe func(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	// gitCache is the engine's hydration cache (B4 browse reads hydrate a
+	// bare repo from the bucket; nil unless WithGitCache was called).
+	gitCache *gitengine.RepoCache
 	// gitEngine is the own git storage engine (serverless epic, Phase B).
 	// Nil = the Forgejo-backed path everywhere (rollback / pre-cutover).
 	gitEngine *gitengine.Engine
@@ -135,6 +138,14 @@ func (s *Service) WithForgejo(fj *forgejo.Client) *Service {
 // referee. Nil restores the Forgejo path (rollback).
 func (s *Service) WithGitEngine(e *gitengine.Engine) *Service {
 	s.gitEngine = e
+	return s
+}
+
+// WithGitCache installs the engine's repo hydration cache. Code browsing for
+// engine-backed repos (B4) shells git in the hydrated directory; the server
+// wires this next to WithGitEngine when the own engine flag is on.
+func (s *Service) WithGitCache(c *gitengine.RepoCache) *Service {
+	s.gitCache = c
 	return s
 }
 

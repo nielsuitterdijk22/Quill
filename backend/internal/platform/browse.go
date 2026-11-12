@@ -20,17 +20,29 @@ import (
 
 // GetRepo returns a repository's metadata for an authorized actor.
 func (s *Service) GetRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, error) {
-	repo, _, _, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, false)
+	repo, _, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, false)
 	return repo, err
 }
 
-// ListBranches returns the git branches of a repository.
+// ListBranches returns the git branches of a repository (engine-backed for
+// own-engine repos, Forgejo otherwise).
 func (s *Service) ListBranches(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []forgejo.Branch, error) {
-	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
-	branches, err := s.forgejo.ListBranches(ctx, owner, name)
+	if be.engine {
+		dir, err := s.engineDir(ctx, be)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		branches, err := bareListBranches(dir)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		return repo, branches, nil
+	}
+	branches, err := s.forgejo.ListBranches(ctx, be.owner, be.name)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
@@ -40,14 +52,32 @@ func (s *Service) ListBranches(ctx context.Context, actor Actor, projectSlug, re
 // ListCommits returns the commit log of a repository at ref, optionally filtered
 // to commits touching path.
 func (s *Service) ListCommits(ctx context.Context, actor Actor, projectSlug, repoSlug, ref, path string, limit int) (db.Repository, []forgejo.Commit, error) {
-	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
 	if ref == "" {
 		ref = repo.DefaultBranch
 	}
-	commits, err := s.forgejo.ListCommits(ctx, owner, name, ref, path, limit)
+	if be.engine {
+		empty, err := s.engineRepoEmpty(ctx, be)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		if empty {
+			return db.Repository{}, nil, ErrEmptyRepo
+		}
+		dir, err := s.engineDir(ctx, be)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		commits, err := bareListCommits(dir, ref, path, limit)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		return repo, commits, nil
+	}
+	commits, err := s.forgejo.ListCommits(ctx, be.owner, be.name, ref, path, limit)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
@@ -57,15 +87,30 @@ func (s *Service) ListCommits(ctx context.Context, actor Actor, projectSlug, rep
 // GetCommit returns a single commit's metadata together with its diff parsed
 // into per-file hunks — what the commit detail page needs in one call.
 func (s *Service) GetCommit(ctx context.Context, actor Actor, projectSlug, repoSlug, sha string) (db.Repository, forgejo.Commit, []forgejo.DiffFile, error) {
-	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, forgejo.Commit{}, nil, err
 	}
-	commit, err := s.forgejo.GetCommit(ctx, owner, name, sha)
+	if be.engine {
+		dir, err := s.engineDir(ctx, be)
+		if err != nil {
+			return db.Repository{}, forgejo.Commit{}, nil, err
+		}
+		commit, err := bareGetCommit(dir, sha)
+		if err != nil {
+			return db.Repository{}, forgejo.Commit{}, nil, err
+		}
+		diff, err := bareCommitDiff(dir, sha)
+		if err != nil {
+			return db.Repository{}, forgejo.Commit{}, nil, err
+		}
+		return repo, commit, forgejo.ParseUnifiedDiff(diff), nil
+	}
+	commit, err := s.forgejo.GetCommit(ctx, be.owner, be.name, sha)
 	if err != nil {
 		return db.Repository{}, forgejo.Commit{}, nil, translateForgejoRead(err)
 	}
-	diff, err := s.forgejo.GetCommitDiff(ctx, owner, name, sha)
+	diff, err := s.forgejo.GetCommitDiff(ctx, be.owner, be.name, sha)
 	if err != nil {
 		return db.Repository{}, forgejo.Commit{}, nil, translateForgejoRead(err)
 	}
@@ -75,33 +120,78 @@ func (s *Service) GetCommit(ctx context.Context, actor Actor, projectSlug, repoS
 // GetContents returns a directory listing or single file at path/ref within a
 // repository. An empty ref resolves to the repository's default branch.
 func (s *Service) GetContents(ctx context.Context, actor Actor, projectSlug, repoSlug, path, ref string) (db.Repository, *forgejo.Contents, error) {
-	repo, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
 	if ref == "" {
 		ref = repo.DefaultBranch
 	}
-	contents, err := s.forgejo.GetContents(ctx, owner, name, path, ref)
+	if be.engine {
+		empty, err := s.engineRepoEmpty(ctx, be)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		if empty {
+			return db.Repository{}, nil, ErrEmptyRepo
+		}
+		dir, err := s.engineDir(ctx, be)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		contents, err := bareGetContents(dir, path, ref)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		if contents.IsDir {
+			s.attachLastCommits(ctx, be, ref, contents.Entries)
+		}
+		return repo, contents, nil
+	}
+	contents, err := s.forgejo.GetContents(ctx, be.owner, be.name, path, ref)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
 	if contents.IsDir {
-		s.attachLastCommits(ctx, owner, name, ref, contents.Entries)
+		s.attachLastCommits(ctx, be, ref, contents.Entries)
 	}
 	return repo, contents, nil
 }
 
 // lastCommitWorkers bounds how many per-entry commit lookups run at once so a
-// large directory does not fan out into an unbounded burst of Forgejo requests.
+// large directory does not fan out into an unbounded burst of git processes
+// (engine) or Forgejo requests (forgejo).
 const lastCommitWorkers = 8
 
 // attachLastCommits fills in the LastCommit of each directory entry by fetching
 // the most recent commit touching its path. Lookups run concurrently with a
 // bounded worker pool. It is best-effort: an entry whose lookup fails simply
 // keeps a nil LastCommit rather than failing the whole listing.
-func (s *Service) attachLastCommits(ctx context.Context, owner, name, ref string, entries []forgejo.ContentEntry) {
+func (s *Service) attachLastCommits(ctx context.Context, be gitBackend, ref string, entries []forgejo.ContentEntry) {
 	if len(entries) == 0 {
+		return
+	}
+	// Engine-backed: one git log per entry against the hydrated dir.
+	if be.engine {
+		dir, err := s.engineDir(ctx, be)
+		if err != nil {
+			return
+		}
+		sem := make(chan struct{}, lastCommitWorkers)
+		var wg sync.WaitGroup
+		for i := range entries {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ec, err := bareLastCommit(dir, ref, entries[i].Path)
+				if err == nil {
+					entries[i].LastCommit = ec
+				}
+			}(i)
+		}
+		wg.Wait()
 		return
 	}
 	sem := make(chan struct{}, lastCommitWorkers)
@@ -112,7 +202,7 @@ func (s *Service) attachLastCommits(ctx context.Context, owner, name, ref string
 		go func(i int) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			commits, err := s.forgejo.ListCommits(ctx, owner, name, ref, entries[i].Path, 1)
+			commits, err := s.forgejo.ListCommits(ctx, be.owner, be.name, ref, entries[i].Path, 1)
 			if err != nil || len(commits) == 0 {
 				return
 			}
@@ -133,14 +223,17 @@ func (s *Service) attachLastCommits(ctx context.Context, owner, name, ref string
 }
 
 // RenderMarkdown renders markdown text to sanitized HTML in the context of a
-// repository, for an authorized actor. It is used to render READMEs the way
-// Forgejo would (repo-relative links, references), returning safe HTML.
+// repository, for an authorized actor. Engine-backed repos render GFM
+// locally (goldmark); Forgejo repos keep the Forgejo renderer until Phase D.
 func (s *Service) RenderMarkdown(ctx context.Context, actor Actor, projectSlug, repoSlug, text string) (string, error) {
-	_, owner, name, err := s.resolveRepoForRead(ctx, actor, projectSlug, repoSlug, true)
+	_, be, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return "", err
 	}
-	html, err := s.forgejo.RenderMarkup(ctx, text, owner+"/"+name)
+	if be.engine {
+		return renderGFM(text), nil
+	}
+	html, err := s.forgejo.RenderMarkup(ctx, text, be.owner+"/"+be.name)
 	if err != nil {
 		return "", translateForgejoRead(err)
 	}
@@ -155,14 +248,9 @@ func (s *Service) resolveRepo(ctx context.Context, actor Actor, projectSlug, rep
 	return s.resolveRepoChecked(ctx, actor, projectSlug, repoSlug, requireGit, false)
 }
 
-// resolveRepoForRead is the read-path variant used by code browsing: a public
-// repository is visible to everyone — members, other signed-in users, and
-// anonymous callers alike (GH-style open-source browsing). Non-members hit
-// NotFound on private repositories rather than Forbidden so a 404 never leaks
-// the existence of a repo they can't see.
-func (s *Service) resolveRepoForRead(ctx context.Context, actor Actor, projectSlug, repoSlug string, requireGit bool) (db.Repository, string, string, error) {
-	return s.resolveRepoChecked(ctx, actor, projectSlug, repoSlug, requireGit, true)
-}
+// resolveRepoForRead's public-read bypass semantics moved into resolveBrowseRepo
+// (engine_browse.go, PR B4); the member-only resolveRepo/resolveRepoChecked
+// variants below serve the write-scope callsites unchanged.
 
 // resolveRepoChecked implements both variants: member authorization, relaxed
 // by the public-read bypass when allowPublicRead is set.

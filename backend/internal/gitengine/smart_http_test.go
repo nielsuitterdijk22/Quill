@@ -39,97 +39,13 @@ func gitAvailable(t *testing.T) {
 
 // seedFixtureRepo builds a real repo (a commit with a file + a tag), packs it,
 // uploads pack + idx to the object store and returns the matching manifest.
-// This is the bucket-side shape a migrated repo will have (B3/D will produce
-// it via receive-pack).
+// Thin test wrapper over the exported SeedFixture (shared with platform tests).
 func seedFixtureRepo(t *testing.T, store ObjectStore, tenantID, projectSlug, repoSlug string) *Manifest {
 	t.Helper()
 	gitAvailable(t)
-	ctx := context.Background()
-
-	src := t.TempDir()
-	writeFile := func(rel, content string) {
-		t.Helper()
-		if err := os.MkdirAll(filepath.Join(src, filepath.Dir(rel)), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(src, rel), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	writeFile("README.md", "# fixture\nhello from the fixture repo\n")
-	gitCmd(t, src, "init", "-q", "-b", "main", ".")
-	gitCmd(t, src, "add", "-A")
-	gitCmd(t, src, "commit", "-qm", "fixture commit")
-	writeFile("src/main.txt", "the answer is 42\n")
-	gitCmd(t, src, "add", "-A")
-	gitCmd(t, src, "commit", "-qm", "second commit")
-	gitCmd(t, src, "tag", "v1.0")
-
-	// Pack: a bare clone then one full repack leaves exactly one pack pair.
-	bare := t.TempDir()
-	gitCmd(t, src, "clone", "-q", "--bare", src, bare)
-	gitCmd(t, bare, "repack", "-a", "-d", "-q")
-
-	packPath := filepath.Join(bare, "objects", "pack")
-	entries, err := os.ReadDir(packPath)
+	m, err := SeedFixture(context.Background(), store, t.TempDir(), tenantID, projectSlug, repoSlug)
 	if err != nil {
-		t.Fatal(err)
-	}
-	var packFile, idxFile string
-	for _, e := range entries {
-		switch {
-		case strings.HasSuffix(e.Name(), ".pack"):
-			packFile = filepath.Join(packPath, e.Name())
-		case strings.HasSuffix(e.Name(), ".idx"):
-			idxFile = filepath.Join(packPath, e.Name())
-		}
-	}
-	if packFile == "" || idxFile == "" {
-		t.Fatalf("repack did not produce exactly a pack+idx pair in %s: %v", packPath, entries)
-	}
-	// idxbase = pack base name without extension.
-	base := strings.TrimSuffix(filepath.Base(packFile), ".pack")
-
-	mustPut := func(key, path string) (string, int64) {
-		t.Helper()
-		b, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		key = RepoPrefix(tenantID, projectSlug, repoSlug) + key
-		etag, err := store.Put(ctx, key, b, objectstore.PutOptions{IfNoneMatch: "*"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return etag, int64(len(b))
-	}
-	packEtag, packBytes := mustPut("packs/"+base+".pack", packFile)
-	idxEtag, idxBytes := mustPut("packs/"+base+".idx", idxFile)
-
-	m := NewManifest(tenantID, "main")
-	for _, line := range strings.Split(strings.TrimSpace(gitCmd(t, bare, "for-each-ref", "--format=%(refname) %(objectname) %(*objectname)")), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		ref := ManifestRef{Name: parts[0], Target: parts[1]}
-		if len(parts) > 2 && parts[2] != "" {
-			ref.Peeled = parts[2]
-		}
-		m.Refs = append(m.Refs, ref)
-	}
-	m.Packs = []ManifestPack{{
-		Object: "packs/" + base + ".pack", Bytes: packBytes, ETag: packEtag,
-		IdxObject: "packs/" + base + ".idx", IdxBytes: idxBytes, IdxETag: idxEtag,
-	}}
-	m.StorageBytes = packBytes + idxBytes
-
-	enc, err := m.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Put(ctx, ManifestKey(tenantID, projectSlug, repoSlug), []byte(enc), objectstore.PutOptions{IfNoneMatch: "*"}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("SeedFixture: %v", err)
 	}
 	return m
 }

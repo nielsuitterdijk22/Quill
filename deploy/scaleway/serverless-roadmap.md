@@ -322,6 +322,22 @@ entry. Tests: port browse integration tests to bucket-backed fixtures; optional 
 harness comparing Forgejo vs own output during dual-run (PR D1). Rollback: per-route
 feature flags; the old Forgejo client stays until Phase D.
 
+_Shipped shape (2026-11-12, DECISIONS.md): browse ops serve engine-backed repos by
+shelling upstream git in the hydrated dir — NOT via the gitea module (the module itself
+execs the same git binary; zero new deps for reads, B5 gets the decision with merge
+evidence). goldmark (gitea's own markdown core) renders engine-repo markdown, no
+WithUnsafe → raw HTML escaped, sanitized by construction; Forgejo repos keep the
+client renderer until D. Routing: the referee row IS the discriminator — repos with a
+`git_repo_state` row serve from the engine, everything else stays on Forgejo (a Phase-D
+migrated repo flips browse behavior atomically with its git truth). Public-read bypass
+and anonymous-404 semantics preserved verbatim; metadata calls never touch a git
+backend. Tests push a REAL repo through the mounted smart-HTTP stack and then exercise
+every op (branches/commits/path-filter/diff/contents+base64/tag refs/last-commits/
+NotFound/empty-repo sentinel), plus the inverted-discriminator proof. Call-site
+classification recorded: browse ops = own layer; ListWorkflows/GetWorkflowContent
+(CI ci.yml reads) route via engine contents as a B6-adjacent follow-up; pulls → B5;
+user heatmap → D (user-level, not repo browse)._
+
 **PR B5 — PR/issue model in Postgres.** Scope: tables for PRs (numbering per repo under
 the `(repo_slug, quill_pr_number)` contract), issues, review threads, comments — all rows
 stamped `tenant_id`. `internal/platform/pulls.go` reimplemented on the gitea git module

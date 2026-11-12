@@ -106,6 +106,9 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 			Engine: engine,
 			Packs:  gitengine.NewBucketPackSource(objStore),
 		}
+		// B4: code browse for engine-backed repos reads from the hydrated
+		// cache (server wiring mirrors the internal seams of the /git mount).
+		platformSvc.WithGitCache(gitCache)
 	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()
