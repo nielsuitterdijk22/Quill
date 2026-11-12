@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -131,4 +133,38 @@ func (s *Store) FindRepoForGit(ctx context.Context, projectSlug, repoSlug string
 	default:
 		return GitRepoRef{}, ErrRepoSlugAmbiguous
 	}
+}
+
+// AcquirePushLease takes a repo's write lease for holder: it wins when the
+// row is free, expired (crashed leaser), or already held by the same holder
+// (retry after a network blip). Returns false when another live holder owns
+// the lease. The TTL bounds how long a crashed push can block a repo.
+func (s *Store) AcquirePushLease(ctx context.Context, repoID uuid.UUID, holder string, ttl time.Duration) (bool, error) {
+	const q = `
+		INSERT INTO push_leases (repo_id, holder, expires)
+		VALUES ($1, $2, now() + $3::interval)
+		ON CONFLICT (repo_id) DO UPDATE
+			SET holder = $2, expires = now() + $3::interval
+			WHERE push_leases.expires < now() OR push_leases.holder = $2
+		RETURNING holder`
+	var got string
+	err := s.pool.QueryRow(ctx, q, repoID, holder, ttl.String()).Scan(&got)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return got == holder, nil
+}
+
+// ReleasePushLease frees the lease, but only when holder still owns it — a
+// lease stolen after expiry must not be released by its previous holder.
+func (s *Store) ReleasePushLease(ctx context.Context, repoID uuid.UUID, holder string) error {
+	const q = `DELETE FROM push_leases WHERE repo_id = $1 AND holder = $2`
+	_, err := s.pool.Exec(ctx, q, repoID, holder)
+	if err != nil {
+		return fmt.Errorf("release push lease: %w", err)
+	}
+	return nil
 }

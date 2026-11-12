@@ -3,7 +3,11 @@ package gitengine
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/nielsuitterdijk22/quill/internal/objectstore"
 )
@@ -97,4 +101,46 @@ func (e *Engine) DeleteManifest(ctx context.Context, tenantID, projectSlug, repo
 		return fmt.Errorf("delete manifest: %w", err)
 	}
 	return nil
+}
+
+// UploadPack persists one pack + idx pair produced by receive-pack in a
+// hydrated repo, creating-if-absent: pack names are content-derived, so an
+// existing object with the same name is the same bytes; in that case the
+// current etag is looked up instead. The returned ManifestPack is
+// repo-relative (layout-portable) like every manifest pack record.
+func (e *Engine) UploadPack(ctx context.Context, tenantID, projectSlug, repoSlug, packPath, idxPath string) (ManifestPack, error) {
+	base := strings.TrimSuffix(filepath.Base(packPath), ".pack")
+	packBytes, err := os.ReadFile(packPath)
+	if err != nil {
+		return ManifestPack{}, fmt.Errorf("read pack: %w", err)
+	}
+	packEtag, err := e.store.Put(ctx, PackKey(tenantID, projectSlug, repoSlug, base, "pack"), packBytes, objectstore.PutOptions{IfNoneMatch: "*"})
+	if errors.Is(err, objectstore.ErrPreconditionFailed) {
+		_, packEtag, err = e.store.Head(ctx, PackKey(tenantID, projectSlug, repoSlug, base, "pack"))
+	}
+	if err != nil {
+		return ManifestPack{}, fmt.Errorf("upload pack: %w", err)
+	}
+	rec := ManifestPack{
+		Object: "packs/" + base + ".pack",
+		Bytes:  int64(len(packBytes)),
+		ETag:   packEtag,
+	}
+	if idxPath != "" {
+		idxBytes, err := os.ReadFile(idxPath)
+		if err != nil {
+			return ManifestPack{}, fmt.Errorf("read idx: %w", err)
+		}
+		idxEtag, err := e.store.Put(ctx, PackKey(tenantID, projectSlug, repoSlug, base, "idx"), idxBytes, objectstore.PutOptions{IfNoneMatch: "*"})
+		if errors.Is(err, objectstore.ErrPreconditionFailed) {
+			_, idxEtag, err = e.store.Head(ctx, PackKey(tenantID, projectSlug, repoSlug, base, "idx"))
+		}
+		if err != nil {
+			return ManifestPack{}, fmt.Errorf("upload idx: %w", err)
+		}
+		rec.IdxObject = "packs/" + base + ".idx"
+		rec.IdxBytes = int64(len(idxBytes))
+		rec.IdxETag = idxEtag
+	}
+	return rec, nil
 }

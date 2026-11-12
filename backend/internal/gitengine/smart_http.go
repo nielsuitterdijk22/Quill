@@ -13,20 +13,25 @@ import (
 
 // SmartHTTP serves git's smart HTTP protocol (v0 and v2) — both handled by
 // upstream git itself in stateless-rpc mode; the engine only frames
-// pkg-lines and pipes bytes. Auth/tenancy (B6) wraps this handler: as shipped
-// it trusts no one and expects the wiring to resolve + authorize before
+// pkg-lines and pipes bytes. The optional Receive config (B3) enables the
+// push path: receive-pack advertisement + POST, with policy and truth
+// committed in-handler. Auth/tenancy (B6) wraps this handler: as shipped it
+// trusts no one and expects the wiring to resolve + authorize before
 // delegating, so it never hydrates an unresolved repo.
 type SmartHTTP struct {
 	// Hydrate resolves owner/repo to a hydrated bare-repo directory. It does
 	// authorization + resolution + cache hydration in one seam (B6 swaps the
 	// resolver for token-scoped logic; the handler is unchanged).
 	Hydrate func(ctx context.Context, owner, repo string) (dir string, err error)
+	// Receive enables the write path when non-nil (see ReceiveConfig).
+	Receive *ReceiveConfig
 }
 
-// ServeHTTP routes /{owner}/{repo}[.git]/info/refs and /git-upload-pack.
+// ServeHTTP routes /{owner}/{repo}[.git]/info/refs, /git-upload-pack and —
+// when the receive path is wired — /git-receive-pack.
 func (h *SmartHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The action is itself two segments (info/refs), so match by suffix:
-	// /{owner}/{repo}[/info/refs | /git-upload-pack].
+	// /{owner}/{repo}[/info/refs | /git-upload-pack | /git-receive-pack].
 	trimmed := strings.Trim(r.URL.Path, "/")
 	var owner, repo, action string
 	switch {
@@ -36,6 +41,9 @@ func (h *SmartHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(trimmed, "/git-upload-pack"):
 		action = "git-upload-pack"
 		trimmed = strings.TrimSuffix(trimmed, "/git-upload-pack")
+	case strings.HasSuffix(trimmed, "/git-receive-pack"):
+		action = "git-receive-pack"
+		trimmed = strings.TrimSuffix(trimmed, "/git-receive-pack")
 	default:
 		http.NotFound(w, r)
 		return
@@ -52,20 +60,28 @@ func (h *SmartHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.infoRefs(w, r, owner, repo)
 	case action == "git-upload-pack" && r.Method == http.MethodPost:
 		h.uploadPack(w, r, owner, repo)
+	case action == "git-receive-pack" && r.Method == http.MethodPost:
+		h.serveReceivePack(w, r, owner, repo)
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "not a git smart HTTP route", http.StatusMethodNotAllowed)
 	}
 }
 
-// infoRefs answers the clone handshake's first request.
+// infoRefs answers the clone/push handshake's first request.
 func (h *SmartHTTP) infoRefs(w http.ResponseWriter, r *http.Request, owner, repo string) {
-	if r.URL.Query().Get("service") != "git-upload-pack" {
-		// Refuse anything but a fetch advertisement: receive-pack (push) is
-		// the B3 write path and must not leak through here.
-		http.Error(w, "only git-upload-pack is served", http.StatusBadRequest)
-		return
+	switch service := r.URL.Query().Get("service"); service {
+	case "git-upload-pack":
+		h.serveUploadAdvertisement(w, r, owner, repo)
+	case "git-receive-pack":
+		h.serveReceiveAdvertisement(w, r, owner, repo)
+	default:
+		http.Error(w, "unsupported git service", http.StatusBadRequest)
 	}
+}
+
+// serveUploadAdvertisement is the clone-side (read path) advertisement.
+func (h *SmartHTTP) serveUploadAdvertisement(w http.ResponseWriter, r *http.Request, owner, repo string) {
 	dir, err := h.Hydrate(r.Context(), owner, repo)
 	if err != nil {
 		http.Error(w, "repository unavailable", http.StatusNotFound)

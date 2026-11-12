@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -210,4 +211,65 @@ func TestFindRepoForGit(t *testing.T) {
 	// Repo slugs within a project are unique too — FindRepoForGit stays
 	// deterministic; the ErrRepoSlugAmbiguous branch is defense-in-depth for
 	// a future per-tenant slug scheme (B6 replaces this resolver anyway).
+}
+
+// TestPushLeaseAcquireRelease verifies the cross-process single-writer lease:
+// acquire wins on a free row, blocks a second holder, expires a stale one,
+// and release only unlocks the row the holder still owns.
+func TestPushLeaseAcquireRelease(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+	repoID, _ := newRepoForGitState(t, st)
+
+	won, err := st.AcquirePushLease(ctx, repoID, "holder-1", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if !won {
+		t.Fatal("first acquire must win")
+	}
+
+	// A second holder is rejected while the first lease is live.
+	won2, err := st.AcquirePushLease(ctx, repoID, "holder-2", time.Minute)
+	if err != nil {
+		t.Fatalf("competing acquire: %v", err)
+	}
+	if won2 {
+		t.Fatal("second holder must not win a live lease")
+	}
+
+	// Re-acquiring as the same holder is idempotent (retry after a network
+	// blip must not self-deadlock).
+	won1b, err := st.AcquirePushLease(ctx, repoID, "holder-1", time.Minute)
+	if err != nil || !won1b {
+		t.Fatalf("same-holder re-acquire = %v %v, want true", won1b, err)
+	}
+
+	// Release by the wrong holder does nothing.
+	if err := st.ReleasePushLease(ctx, repoID, "holder-2"); err != nil {
+		t.Fatalf("wrong-holder release: %v", err)
+	}
+	won2b, err := st.AcquirePushLease(ctx, repoID, "holder-2", time.Minute)
+	if err != nil || won2b {
+		t.Fatalf("lease must stay held after wrong-holder release: %v %v", won2b, err)
+	}
+
+	// The right holder releases; someone else can acquire.
+	if err := st.ReleasePushLease(ctx, repoID, "holder-1"); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	won2c, err := st.AcquirePushLease(ctx, repoID, "holder-2", time.Minute)
+	if err != nil || !won2c {
+		t.Fatalf("acquire after release = %v %v", won2c, err)
+	}
+
+	// An expired lease is stealable: insert a stale one directly.
+	if _, err := st.Pool().Exec(ctx,
+		"UPDATE push_leases SET expires = now() - interval '1 second' WHERE repo_id = $1", repoID); err != nil {
+		t.Fatalf("age lease: %v", err)
+	}
+	won3, err := st.AcquirePushLease(ctx, repoID, "holder-3", time.Minute)
+	if err != nil || !won3 {
+		t.Fatalf("acquire after expiry = %v %v", won3, err)
+	}
 }

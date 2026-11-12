@@ -48,6 +48,8 @@ type Server struct {
 	// gitCache is the git engine's hydration cache; nil unless the own
 	// engine is on (then the /git smart-HTTP routes are mounted).
 	gitCache *gitengine.RepoCache
+	// gitEngine is the bucket-side engine behind gitCache (receive path).
+	gitEngine *gitengine.Engine
 }
 
 // externalAuthEnabled reports whether an external IdP (Zitadel) is configured
@@ -83,6 +85,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// cutover, so deploys of this code are inert without the env set.
 	// config.Load already validated the bucket credentials (fail fast).
 	var gitCache *gitengine.RepoCache
+	var gitEngine *gitengine.Engine
 	if cfg.GitEngine.Own() {
 		objStore := objectstore.New(objectstore.Config{
 			Endpoint:  cfg.GitEngine.S3Endpoint,
@@ -97,6 +100,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		if cacheDir == "" {
 			cacheDir = filepath.Join(os.TempDir(), "quill-git")
 		}
+		gitEngine = engine
 		gitCache = &gitengine.RepoCache{
 			Root:   cacheDir,
 			Engine: engine,
@@ -179,6 +183,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		router:       chi.NewRouter(),
 		markupCache:  newMarkupCache(),
 		gitCache:     gitCache,
+		gitEngine:    gitEngine,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -248,6 +253,16 @@ func (s *Server) setupRoutes() {
 	if s.gitCache != nil {
 		s.router.Mount("/git", &gitengine.SmartHTTP{
 			Hydrate: s.hydrateGitRepo,
+			Receive: &gitengine.ReceiveConfig{
+				Engine:  s.gitEngine,
+				Resolve: s.resolveGitReceive,
+				// B6 replaces this with Zitadel-token extraction; the
+				// manifest records the placeholder until then.
+				Actor:   func(*http.Request) string { return "anonymous" },
+				Referee: s.platform.GitReferee(),
+				Guard:   s.platform.GitPushGuard(),
+				Leases:  s.platform.GitPushLeases(),
+			},
 		})
 	}
 
@@ -512,4 +527,26 @@ func (s *Server) hydrateGitRepo(ctx context.Context, owner, repo string) (string
 		return "", err
 	}
 	return s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
+}
+
+// resolveGitReceive backs the push path's Resolve seam (serverless epic, PR
+// B3): same interim resolver as reads, plus the repo id the Postgres
+// referee/leases/policy guard key on. Authorization is B6's token exchange;
+// the mount only exists while the engine flag is on.
+func (s *Server) resolveGitReceive(ctx context.Context, owner, repo string) (gitengine.ReceiveContext, error) {
+	ref, err := s.platform.ResolveRepoForGit(ctx, owner, repo)
+	if err != nil {
+		return gitengine.ReceiveContext{}, err
+	}
+	dir, err := s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
+	if err != nil {
+		return gitengine.ReceiveContext{}, err
+	}
+	return gitengine.ReceiveContext{
+		ID:          ref.RepoID.String(),
+		Dir:         dir,
+		TenantID:    ref.TenantID.String(),
+		ProjectSlug: ref.ProjectSlug,
+		RepoSlug:    ref.RepoSlug,
+	}, nil
 }

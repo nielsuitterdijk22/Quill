@@ -271,6 +271,35 @@ handle natively. Tests: push / fast-forward / non-fast-forward rejection / concu
 conflict (one loses cleanly) / clone-equals-original / `git verify-pack` on plain
 downloads. Rollback: writes gated by config; Forgejo path remains until Phase D.
 
+_Shipped shape (2026-11-12, DECISIONS.md): NO git hooks — the smart-HTTP handler IS
+the integration point (stateless-rpc lets us parse the v0 command list before the pack
+bytes, enforce, run receive-pack buffered, and commit truth before the client sees
+success). Single-writer serialization via a `push_leases` Postgres ROW, not an advisory
+lock: advisory locks are session-bound and a push spans processes (handler →
+receive-pack → finalize), so a lease row keyed `repo_id` with holder + TTL
+self-heals crashed writers without a sweeper. Flow: parse (400) → resolve+hydrate →
+lease (423 when held) → referee freshness vs manifest (409 fetch-first) → pre-receive
+guard → receive-pack (with `receive.unpackLimit=1`: incoming packs must STAY packs —
+loose objects would never reach the bucket; `gc.auto=0`: no background gc on a
+disposable cache) → finalize (new packs → bucket create-if-absent, manifest rebuilt
+with push_history actor+tenant and storage_bytes = Σ(pack+idx), referee CAS commit
+FIRST, manifest If-Match write after with bounded retries + a lease-justified
+unconditional last attempt). Policy scope: pre-receive enforces what a push can
+violate — `BlockForcePush` (force via `git merge-base --is-ancestor`, and deletes) —
+while RequiredApprovals/RequirePullRequest/RequireStatusChecks target the merge gate
+(B5). Guard rejections are synthesized v0 report-status (sideband-aware when the
+client negotiated side-band): git renders its native "! [remote rejected] main (reason)"
+UX, the same shape a hook decline produces. Push identity is anonymous until B6
+(`ReceiveConfig.Actor` seam); push size capped at 256 MiB (413). Tests: real `git
+push` over the handler — round trip (clone-equals-original across two pushes, manifest
+asserts refs/packs/history/metering, referee revisions), force-guard and delete-guard
+rejections leaving bucket + referee untouched, lease-held 423 (then success after
+release), referee-divergence 409, advertisement served (and refused on read-only
+instances), pkt-line parser edges; gated store lease tests (acquire/release/expiry
+steal); gated platform guard tests (BlockForcePush: FF passes, create passes, force
+and delete on `main` rejected, unprotected refs pass, mixed push poisoned; no-policy
+repo unrestricted)._
+
 **PR B4 — Read APIs via gitea git module.** Scope: extract
 `gitea.com/gitea/modules/git` (MIT) as the read engine behind
 `internal/platform/browse.go`'s existing shapes (branches/commits/diff/contents/heatmap).
