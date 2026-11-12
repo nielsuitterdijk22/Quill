@@ -2,7 +2,13 @@
 # Backup image: Forgejo CLI (for `forgejo dump`) + Postgres client (pg_dump) +
 # AWS CLI (S3 upload to Scaleway Object Storage). Used by the pg-backup
 # CronJob and the forgejo backup sidecar.
-FROM codeberg.org/forgejo/forgejo:15
+#
+# The base is OUR registry mirror of codeberg.org/forgejo/forgejo:15
+# (quill/forgejo-mirror:15, pushed 2026-11-12 from the VM's cached image):
+# Codeberg's registry 403s GitHub runner IPs on HEAD requests, which broke
+# the "Build backup image" step on every deploy. Require the forgejo major
+# to track the compose stack's forgejo:15.
+FROM rg.fr-par.scw.cloud/quill/forgejo-mirror:15
 
 USER root
 RUN if command -v apt-get >/dev/null 2>&1; then \
