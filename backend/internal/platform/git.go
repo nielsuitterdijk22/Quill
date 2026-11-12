@@ -40,6 +40,11 @@ type GitTokenInfo struct {
 // password. The returned token secret is the only credential the user keeps;
 // Quill records just the token's metadata so it can be listed and revoked later.
 func (s *Service) CreateGitToken(ctx context.Context, actor Actor, name string) (GitCredential, error) {
+	// Own-engine mode mints Quill-native tokens (B6): no git backend account
+	// is needed, and cloning works while the IdP is cold.
+	if s.gitEngine != nil {
+		return s.MintGitToken(ctx, actor, name)
+	}
 	if !s.forgejoEnabled() {
 		return GitCredential{}, fmt.Errorf("%w: git access requires the Forgejo backend", ErrUnavailable)
 	}
@@ -113,20 +118,28 @@ func (s *Service) ListGitTokens(ctx context.Context, actor Actor) ([]GitTokenInf
 	return out, nil
 }
 
-// RevokeGitToken revokes one of the actor's git tokens: it deletes the token in
-// Forgejo (re-installing a short-lived password to authenticate as the user, as
-// minting does) and removes Quill's record. A token already gone from Forgejo is
-// treated as success so the record can still be cleared.
+// RevokeGitToken revokes one of the actor's git tokens. Quill-native tokens
+// (serverless epic, B6) are local credentials — deleting the row kills them.
+// Legacy Forgejo-backed tokens are deleted in Forgejo (re-installing a
+// short-lived password to authenticate as the user, as minting does) and then
+// here; a token already gone from Forgejo is treated as success so the record
+// can still be cleared.
 func (s *Service) RevokeGitToken(ctx context.Context, actor Actor, id uuid.UUID) error {
-	if !s.forgejoEnabled() {
-		return fmt.Errorf("%w: git access requires the Forgejo backend", ErrUnavailable)
-	}
 	record, err := s.store.GetGitToken(ctx, db.GetGitTokenParams{ID: id, UserID: actor.UserID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("load git token: %w", err)
+	}
+	if record.TokenHash != "" {
+		if err := s.store.DeleteGitToken(ctx, db.DeleteGitTokenParams{ID: id, UserID: actor.UserID}); err != nil {
+			return fmt.Errorf("delete git token: %w", err)
+		}
+		return nil
+	}
+	if !s.forgejoEnabled() {
+		return fmt.Errorf("%w: git access requires the Forgejo backend", ErrUnavailable)
 	}
 
 	user, err := s.store.GetUserByID(ctx, actor.UserID)

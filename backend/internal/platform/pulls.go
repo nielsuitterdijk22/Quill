@@ -500,7 +500,7 @@ func (s *Service) ListLineComments(ctx context.Context, actor Actor, projectSlug
 			created := c.CreatedAt
 			out = append(out, LineComment{
 				ID: c.ID, Path: c.Path, Line: c.Line, Body: c.Body,
-				Author: &forgejo.User{Login: c.AuthorName, FullName: c.AuthorName, Type: "User"},
+				Author:    &forgejo.User{Login: c.AuthorName, FullName: c.AuthorName, Type: "User"},
 				CreatedAt: created,
 			})
 		}
@@ -556,7 +556,7 @@ func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlu
 		created := row.CreatedAt
 		return LineComment{
 			ID: row.ID, Path: row.Path, Line: row.Line, Body: row.Body,
-			Author: &forgejo.User{Login: row.AuthorName, FullName: row.AuthorName, Type: "User"},
+			Author:    &forgejo.User{Login: row.AuthorName, FullName: row.AuthorName, Type: "User"},
 			CreatedAt: created,
 		}, nil
 	}

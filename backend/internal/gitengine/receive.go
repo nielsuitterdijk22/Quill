@@ -98,6 +98,9 @@ type ReceiveContext struct {
 	TenantID    string
 	ProjectSlug string
 	RepoSlug    string
+	// ActorID is the authenticated pusher's user id (B6); empty for the
+	// anonymous placeholder period.
+	ActorID string
 }
 
 // ReceiveConfig wires the write path. A nil ReceiveConfig leaves the
@@ -118,6 +121,10 @@ type ReceiveConfig struct {
 	// Leases cross-instance-serialize writers (optional but required in any
 	// multi-instance deployment).
 	Leases PushLeases
+	// OnPushSuccess fires after finalize committed the truth (referee +
+	// manifest) for successful pushes — audit/metering live here, never in
+	// the engine itself.
+	OnPushSuccess func(rcx ReceiveContext, actor string)
 	// MaxPushBytes caps the request body; 0 = DefaultMaxPushBytes.
 	MaxPushBytes int64
 }
@@ -135,7 +142,7 @@ func (h *SmartHTTP) serveReceiveAdvertisement(w http.ResponseWriter, r *http.Req
 	}
 	rcx, err := h.Receive.Resolve(r.Context(), owner, repo)
 	if err != nil {
-		http.Error(w, "repository unavailable", http.StatusNotFound)
+		writeGitError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-advertisement")
@@ -185,7 +192,7 @@ func (h *SmartHTTP) serveReceivePack(w http.ResponseWriter, r *http.Request, own
 
 	rcx, err := cfg.Resolve(r.Context(), owner, repo)
 	if err != nil {
-		http.Error(w, "repository unavailable", http.StatusNotFound)
+		writeGitError(w, err)
 		return
 	}
 	m, etag, err := cfg.Engine.LoadManifest(r.Context(), rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug)
@@ -275,6 +282,9 @@ func (h *SmartHTTP) serveReceivePack(w http.ResponseWriter, r *http.Request, own
 		}
 		http.Error(w, err.Error(), status)
 		return
+	}
+	if cfg.OnPushSuccess != nil {
+		cfg.OnPushSuccess(rcx, actor)
 	}
 
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")

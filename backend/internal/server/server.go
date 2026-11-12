@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/google/uuid"
 
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/config"
@@ -51,6 +52,10 @@ type Server struct {
 	// gitEngine is the bucket-side engine behind gitCache (receive path).
 	gitEngine *gitengine.Engine
 }
+
+// gitActorKey carries the authenticated git surface actor through the request
+// context (set by the /git auth middleware).
+type gitActorKey struct{}
 
 // externalAuthEnabled reports whether an external IdP (Zitadel) is configured
 // and ready. When false, Quill falls back to local username/password auth
@@ -137,6 +142,13 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	var verifier auth.TokenVerifier
 	if cfg.Zitadel.Issuer != "" {
 		verifier = auth.NewZitadelVerifier(cfg.Zitadel, st, logger).WithForgejo(fj)
+	}
+
+	// Git endpoint secondary credential (serverless epic, B6): Zitadel PATs
+	// introspect through the verifier itself when a management token is
+	// configured; the verifier self-guards otherwise.
+	if zv, ok := verifier.(*auth.ZitadelVerifier); ok {
+		platformSvc.WithGitPATIntrospector(zv)
 	}
 
 	// Project-mirror dispatcher: pushes project create/delete events to Tempo.
@@ -249,24 +261,86 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/healthz", s.handleHealth)
 	s.router.Get("/readyz", s.handleReady)
 
-	// Git smart-HTTP read path (serverless epic, PR B2): mounted only when
-	// the own git engine is on; B6 replaces the interim slug resolver with
-	// token-scoped auth, so no cutover until then (routes also stay off in
-	// production until the flag flips).
+	// Git smart-HTTP (serverless epic): mounted only when the own git engine
+	// is on. B6 authenticates the surface: Basic credentials validate locally
+	// (Quill git tokens) or via provider PAT introspection; anonymous callers
+	// reach only public repos, and pushes require a write-level project role.
 	if s.gitCache != nil {
-		s.router.Mount("/git", &gitengine.SmartHTTP{
-			Hydrate: s.hydrateGitRepo,
-			Receive: &gitengine.ReceiveConfig{
-				Engine:  s.gitEngine,
-				Resolve: s.resolveGitReceive,
-				// B6 replaces this with Zitadel-token extraction; the
-				// manifest records the placeholder until then.
-				Actor:   func(*http.Request) string { return "anonymous" },
-				Referee: s.platform.GitReferee(),
-				Guard:   s.platform.GitPushGuard(),
-				Leases:  s.platform.GitPushLeases(),
+		gitAuth := func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ga, err := s.platform.AuthenticateGitRequest(r.Context(), r)
+				if err != nil {
+					w.Header().Set("WWW-Authenticate", `Basic realm="quill-git"`)
+					http.Error(w, "authentication required", http.StatusUnauthorized)
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gitActorKey{}, ga)))
+			})
+		}
+		actorFrom := func(ctx context.Context) platform.GitActor {
+			ga, _ := ctx.Value(gitActorKey{}).(platform.GitActor)
+			return ga
+		}
+		// gitAccessErr converts the platform's denial semantics into the
+		// engine's HTTP sentinels. An anonymous denial becomes a Basic
+		// challenge so terminal/git clients prompt and retry — a 404 there
+		// would strand a no-credentials clone of a private repo.
+		gitAccessErr := func(ga platform.GitActor, err error) error {
+			switch {
+			case err == nil:
+				return nil
+			case errors.Is(err, platform.ErrGitUnauthorized):
+				return gitengine.ErrGitUnauthorized
+			case !ga.Authenticated:
+				return gitengine.ErrGitUnauthorized
+			case errors.Is(err, platform.ErrForbidden):
+				return gitengine.ErrGitForbidden
+			case errors.Is(err, platform.ErrNotFound):
+				return gitengine.ErrGitNotFound
+			default:
+				return err
+			}
+		}
+		s.router.Mount("/git", gitAuth(http.Handler(&gitengine.SmartHTTP{
+			Hydrate: func(ctx context.Context, owner, repo string) (string, error) {
+				ga := actorFrom(ctx)
+				ref, err := s.platform.ResolveRepoForGitAccess(ctx, ga, owner, repo, false)
+				if err != nil {
+					return "", gitAccessErr(ga, err)
+				}
+				return s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
 			},
-		})
+			Receive: &gitengine.ReceiveConfig{
+				Engine: s.gitEngine,
+				Resolve: func(ctx context.Context, owner, repo string) (gitengine.ReceiveContext, error) {
+					ga := actorFrom(ctx)
+					ref, err := s.platform.ResolveRepoForGitAccess(ctx, ga, owner, repo, true)
+					if err != nil {
+						return gitengine.ReceiveContext{}, gitAccessErr(ga, err)
+					}
+					dir, err := s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
+					if err != nil {
+						return gitengine.ReceiveContext{}, err
+					}
+					return gitengine.ReceiveContext{
+						ID: ref.RepoID.String(), Dir: dir,
+						TenantID:    ref.TenantID.String(),
+						ProjectSlug: ref.ProjectSlug, RepoSlug: ref.RepoSlug,
+						ActorID: ga.UserID.String(),
+					}, nil
+				},
+				Actor: func(r *http.Request) string {
+					if ga := actorFrom(r.Context()); ga.Authenticated {
+						return ga.Username
+					}
+					return "anonymous"
+				},
+				Referee:       s.platform.GitReferee(),
+				Guard:         s.platform.GitPushGuard(),
+				Leases:        s.platform.GitPushLeases(),
+				OnPushSuccess: s.gitPushAuditor,
+			},
+		})))
 	}
 
 	// Versioned API surface. Resource routes are added in later PRs.
@@ -518,38 +592,21 @@ func (s *Server) setupRoutes() {
 	})
 }
 
-// hydrateGitRepo backs the /git smart-HTTP mount (serverless epic, PR B2):
-// resolve slugs to one repo, then hydrate its bare repo from the bucket.
-// Repos whose content still lives on Forgejo have no manifest and fail
-// here — the read path naturally follows the per-repo Phase-D migration.
-// Auth interlude: token-scoped resolution lands in B6; until then this
-// mount only exists when the engine flag is on.
-func (s *Server) hydrateGitRepo(ctx context.Context, owner, repo string) (string, error) {
-	ref, err := s.platform.ResolveRepoForGit(ctx, owner, repo)
-	if err != nil {
-		return "", err
+// gitPushAuditor backs the engine's OnPushSuccess seam: tenant-scoped audit
+// entry + daily push meter, off the push request's critical path budget
+// (best-effort inside the handler, after truth committed).
+func (s *Server) gitPushAuditor(rcx gitengine.ReceiveContext, actor string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tenantID := uuid.Nil
+	if id, err := uuid.Parse(rcx.TenantID); err == nil {
+		tenantID = id
 	}
-	return s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
-}
-
-// resolveGitReceive backs the push path's Resolve seam (serverless epic, PR
-// B3): same interim resolver as reads, plus the repo id the Postgres
-// referee/leases/policy guard key on. Authorization is B6's token exchange;
-// the mount only exists while the engine flag is on.
-func (s *Server) resolveGitReceive(ctx context.Context, owner, repo string) (gitengine.ReceiveContext, error) {
-	ref, err := s.platform.ResolveRepoForGit(ctx, owner, repo)
-	if err != nil {
-		return gitengine.ReceiveContext{}, err
+	var actorID uuid.NullUUID
+	if rcx.ActorID != "" {
+		if id, err := uuid.Parse(rcx.ActorID); err == nil {
+			actorID = uuid.NullUUID{UUID: id, Valid: true}
+		}
 	}
-	dir, err := s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
-	if err != nil {
-		return gitengine.ReceiveContext{}, err
-	}
-	return gitengine.ReceiveContext{
-		ID:          ref.RepoID.String(),
-		Dir:         dir,
-		TenantID:    ref.TenantID.String(),
-		ProjectSlug: ref.ProjectSlug,
-		RepoSlug:    ref.RepoSlug,
-	}, nil
+	s.platform.LogGitPush(ctx, tenantID, actorID, actor, rcx.ProjectSlug, rcx.RepoSlug, "")
 }

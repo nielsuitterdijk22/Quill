@@ -349,7 +349,36 @@ diff is backend-local. Tests: PR create/merge/conflict integration suite gated o
 DB + fixture repo; merge-gate policy tests (2-reviews rule) re-run against the new engine.
 Rollback: Forgejo-backed PR handlers behind the flag until Phase D.
 
-**PR B6 — Git auth/tenancy** (design below).
+**PR B6 — Git auth/tenancy.** _Status: SHIPPED 2026-11-12 (flag off; the /git mount is
+engines-only, so production keeps the unauthenticated interim resolver until the flag
+flips)._ Scope per the design below. Shipped shape: `platform.AuthenticateGitRequest`
+validates Basic credentials — primary: Quill-native `qgt_` tokens, 32 random bytes,
+stored as SHA-256 + indexed lookup (no secretbox, no per-push decrypt; revocation =
+row delete); secondary: Zitadel PATs via `ZitadelVerifier.Introspect` (`/oauth/v2/intro
+spect` with the management token) mapped like a verified login — an unknown subject is
+NOT provisioned from a git auth, the user must have signed in once; absent credentials
+are anonymous (public-repo reads only). Authorization: `ResolveRepoForGitAccess` —
+anonymous reads public repos (private/unknown → Basic challenge, no existence leak),
+members read anything they browse, pushes need an authenticated write-level project
+role ("read" members get 403). HTTP semantics: gitengine gains sentinels
+(`ErrGitUnauthorized/ErrGitForbidden/ErrGitNotFound`) mapped to 401+`WWW-Authenticate`
+/403/404 — the crucial rule being that an ANONYMOUS denial becomes a 401 challenge so
+terminal git prompts and retries (a 404 there would strand a credential-less clone);
+authenticated denials keep 403/404. Push identity: the authenticated username lands
+in the manifest `push_history` (tenant + sha stamped) and in a tenant-scoped
+`git.push` audit row plus a daily `git_push_meters` counter per tenant (both
+best-effort, off the push's critical path). Tests: HTTP access-matrix over the real
+mount (public/anonymous-challenge/member/non-member/read-role-push/owner-push/invalid
+token), end-to-end credentialed push asserting manifest identity + meter + audit
+ticks + anonymous clone of the public result + revoked-token push failure; the
+production wiring is mirrored in the fixture (auth middleware → scoped resolve →
+gitengine sentinels). Native tokens mint/revoke ride the existing
+`/me/git-token(s)` routes — CreateGitToken routes to MintGitToken in engine mode;
+RevokeGitToken deletes the row for native tokens and keeps the Forgejo remote-revoke
+flow for legacy ones. Store: migration 000028 (`git_tokens.token_hash` + partial
+index, `git_push_meters`); generated sqlc files hand-patched (wholesale `sqlc
+generate` is incompatible with the repo's pinned generated output — recorded in
+DECISIONS)._
 
 **PR B7 — Async maintenance Jobs.** Scope: pack GC, repack, orphan cleanup of the `tmp/`
 tree as idempotent Serverless Jobs (`scaleway_job_definition`), started by cron and

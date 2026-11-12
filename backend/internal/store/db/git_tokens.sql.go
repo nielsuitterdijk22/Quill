@@ -52,7 +52,7 @@ func (q *Queries) DeleteGitToken(ctx context.Context, arg DeleteGitTokenParams) 
 }
 
 const getGitToken = `-- name: GetGitToken :one
-SELECT id, user_id, name, forgejo_token_name, created_at FROM git_tokens
+SELECT id, user_id, name, forgejo_token_name, created_at, token_hash FROM git_tokens
 WHERE id = $1 AND user_id = $2
 `
 
@@ -70,6 +70,7 @@ func (q *Queries) GetGitToken(ctx context.Context, arg GetGitTokenParams) (GitTo
 		&i.Name,
 		&i.ForgejoTokenName,
 		&i.CreatedAt,
+		&i.TokenHash,
 	)
 	return i, err
 }

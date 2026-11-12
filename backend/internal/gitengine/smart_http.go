@@ -2,6 +2,7 @@ package gitengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,35 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+// Access-denial semantics for the smart HTTP surface (serverless epic, B6).
+// The Hydrate/Resolve seams return these sentinels and writeGitError maps
+// them to statuses git clients act on: 401 + WWW-Authenticate tells the client
+// to (re)try with credentials, 403 is a hard denial, 404 hides existence.
+var (
+	// ErrGitUnauthorized means the caller must present credentials.
+	ErrGitUnauthorized = errors.New("git authentication required")
+	// ErrGitForbidden means the caller is authenticated but may not access
+	// the repository this way.
+	ErrGitForbidden = errors.New("git access denied")
+	// ErrGitNotFound hides both absent repos and any existence leak.
+	ErrGitNotFound = errors.New("git repository not found")
+)
+
+// writeGitError maps a Hydrate/Resolve failure onto the HTTP status git
+// expects. Unexpected errors keep the historical 404 "repository
+// unavailable" shape — a broken bucket read must not leak internals.
+func writeGitError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrGitUnauthorized):
+		w.Header().Set("WWW-Authenticate", `Basic realm="quill-git"`)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+	case errors.Is(err, ErrGitForbidden):
+		http.Error(w, "access denied", http.StatusForbidden)
+	default:
+		http.Error(w, "repository unavailable", http.StatusNotFound)
+	}
+}
 
 // SmartHTTP serves git's smart HTTP protocol (v0 and v2) — both handled by
 // upstream git itself in stateless-rpc mode; the engine only frames
@@ -84,7 +114,7 @@ func (h *SmartHTTP) infoRefs(w http.ResponseWriter, r *http.Request, owner, repo
 func (h *SmartHTTP) serveUploadAdvertisement(w http.ResponseWriter, r *http.Request, owner, repo string) {
 	dir, err := h.Hydrate(r.Context(), owner, repo)
 	if err != nil {
-		http.Error(w, "repository unavailable", http.StatusNotFound)
+		writeGitError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
@@ -106,7 +136,7 @@ func (h *SmartHTTP) uploadPack(w http.ResponseWriter, r *http.Request, owner, re
 	}
 	dir, err := h.Hydrate(r.Context(), owner, repo)
 	if err != nil {
-		http.Error(w, "repository unavailable", http.StatusNotFound)
+		writeGitError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")

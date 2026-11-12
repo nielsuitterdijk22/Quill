@@ -51,6 +51,9 @@ type GitToken struct {
 	Name             string    `json:"name"`
 	ForgejoTokenName string    `json:"forgejoTokenName"`
 	CreatedAt        time.Time `json:"createdAt"`
+	// TokenHash is set only for Quill-native git tokens (serverless epic,
+	// B6); legacy Forgejo-backed rows keep the empty default.
+	TokenHash string `json:"tokenHash"`
 }
 
 type Pipeline struct {

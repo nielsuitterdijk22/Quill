@@ -77,6 +77,8 @@ type Service struct {
 	// gitCache is the engine's hydration cache (B4 browse reads hydrate a
 	// bare repo from the bucket; nil unless WithGitCache was called).
 	gitCache *gitengine.RepoCache
+	// gitPAT introspects provider PATs for the git endpoint (B6; optional).
+	gitPAT GitPATIntrospector
 	// gitEngine is the own git storage engine (serverless epic, Phase B).
 	// Nil = the Forgejo-backed path everywhere (rollback / pre-cutover).
 	gitEngine *gitengine.Engine

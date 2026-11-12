@@ -97,6 +97,7 @@ func (s *Store) CASGitRepoRefs(ctx context.Context, repoID uuid.UUID, fromRevisi
 type GitRepoRef struct {
 	RepoID      uuid.UUID
 	TenantID    uuid.UUID
+	ProjectID   uuid.UUID
 	ProjectSlug string
 	RepoSlug    string
 }
@@ -108,7 +109,7 @@ type GitRepoRef struct {
 // B6's token-scoped resolution will disambiguate by the authenticated user.
 func (s *Store) FindRepoForGit(ctx context.Context, projectSlug, repoSlug string) (GitRepoRef, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT r.id, p.tenant_id, p.slug, r.slug
+		SELECT r.id, p.tenant_id, p.id, p.slug, r.slug
 		FROM repositories r
 		JOIN projects p ON p.id = r.project_id
 		WHERE lower(p.slug) = lower($1) AND lower(r.slug) = lower($2)`,
@@ -120,7 +121,7 @@ func (s *Store) FindRepoForGit(ctx context.Context, projectSlug, repoSlug string
 	var refs []GitRepoRef
 	for rows.Next() {
 		var ref GitRepoRef
-		if err := rows.Scan(&ref.RepoID, &ref.TenantID, &ref.ProjectSlug, &ref.RepoSlug); err != nil {
+		if err := rows.Scan(&ref.RepoID, &ref.TenantID, &ref.ProjectID, &ref.ProjectSlug, &ref.RepoSlug); err != nil {
 			return GitRepoRef{}, err
 		}
 		refs = append(refs, ref)
