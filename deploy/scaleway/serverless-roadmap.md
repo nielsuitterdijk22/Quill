@@ -300,6 +300,19 @@ steal); gated platform guard tests (BlockForcePush: FF passes, create passes, fo
 and delete on `main` rejected, unprotected refs pass, mixed push poisoned; no-policy
 repo unrestricted)._
 
+_CI trigger consequence of B3 (pin for Phase D planning; noted 2026-11-12): today's
+pipeline triggers ride Forgejo push webhooks into the broker's HMAC-verified `/wake`.
+Once the own engine serves git, that chain has no emitter left — the push finalizes
+IN our handler, with truth committing at the referee CAS in Postgres. Long-term shape:
+a transactional push-event row (repo, refs old/new, actor, tenant_id) written in the
+SAME transaction as the referee CAS, drained by the dispatcher — at-least-once,
+atomic with truth, no HMAC hop, no webhook-loss window (broker keeps its HMAC surface
+for backward compat during D). Two rules transfer to the trigger path: triggers key
+refs off the referee row, never the manifest (finalize writes Postgres first, manifest
+second — same rationale as B7 reconciliation), and trigger emission stays out of the
+push request path (the handler writes the event; the dispatcher drains; a wedged
+pipeline can never wedge a push)._
+
 **PR B4 — Read APIs via gitea git module.** Scope: extract
 `gitea.com/gitea/modules/git` (MIT) as the read engine behind
 `internal/platform/browse.go`'s existing shapes (branches/commits/diff/contents/heatmap).
