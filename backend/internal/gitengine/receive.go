@@ -282,11 +282,26 @@ func (h *SmartHTTP) serveReceivePack(w http.ResponseWriter, r *http.Request, own
 	_, _ = w.Write(out.Bytes())
 }
 
-// finalizePush re-raises the hydrated repo into the bucket: new packs are
-// uploaded, the manifest is rebuilt, the referee commits, and the manifest
-// write follows via If-Match. Postgres first, manifest second — the referee
-// is the truth, the manifest the materialized view.
+// finalizePush re-raises the hydrated repo into the bucket after a push.
 func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx ReceiveContext, m *Manifest, etag string, st RefereeState, cmds []PushCommand, actor string) error {
+	pushed := cmds[0].New
+	for _, c := range cmds {
+		if c.New != "" && c.New != zeroID {
+			pushed = c.New
+			break
+		}
+	}
+	return SyncRepoToBucket(ctx, cfg.Engine, cfg.Referee, rcx, m, etag, st, pushed, actor)
+}
+
+// SyncRepoToBucket commits a hydrated repo's CURRENT on-disk state as the new
+// truth: refs become the manifest, packs not yet in the bucket are uploaded,
+// the referee CAS advances FIRST (Postgres is the truth), and the manifest
+// write follows through If-Match with bounded retries. Shared by the push
+// handler (B3) and merges/rebase-created commits (B5): the caller is
+// responsible for holding the write lease and for the state being fresh.
+// pushedSha lands in push_history's tail entry.
+func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx ReceiveContext, m *Manifest, etag string, st RefereeState, pushedSha, actor string) error {
 	newRefs, err := refSnapshot(rcx.Dir)
 	if err != nil {
 		return err
@@ -296,8 +311,7 @@ func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx Re
 		newMap[r.Name] = r.Target
 	}
 	if refsEqual(newMap, st.Refs) {
-		// receive-pack rejected everything in-band (the client already got
-		// the per-ref ng report); nothing to commit.
+		// nothing changed on disk (e.g. receive-pack rejected in-band)
 		return nil
 	}
 
@@ -320,20 +334,13 @@ func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx Re
 		if known[base] {
 			continue
 		}
-		p, err := cfg.Engine.UploadPack(ctx, rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug, filepath.Join(packDir, base+".pack"), filepath.Join(packDir, base+".idx"))
+		p, err := eng.UploadPack(ctx, rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug, filepath.Join(packDir, base+".pack"), filepath.Join(packDir, base+".idx"))
 		if err != nil {
 			return err
 		}
 		packs = append(packs, p)
 	}
 
-	pushed := cmds[0].New
-	for _, c := range cmds {
-		if c.New != "" && c.New != zeroID {
-			pushed = c.New
-			break
-		}
-	}
 	var storage int64
 	for _, p := range packs {
 		storage += p.Bytes + p.IdxBytes
@@ -342,9 +349,9 @@ func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx Re
 	m2.Refs = newRefs
 	m2.Packs = packs
 	m2.StorageBytes = storage
-	m2.RecordPush(actor, rcx.TenantID, time.Now().UTC(), pushed)
+	m2.RecordPush(actor, rcx.TenantID, time.Now().UTC(), pushedSha)
 
-	if _, err := cfg.Referee.Commit(ctx, rcx.ID, st, newMap, storage); err != nil {
+	if _, err := referee.Commit(ctx, rcx.ID, st, newMap, storage); err != nil {
 		return err
 	}
 
@@ -356,14 +363,14 @@ func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx Re
 	// referee holds the truth and B7 reconciliation re-materializes views.
 	var werr error
 	for i := 0; i < 3; i++ {
-		if _, werr = cfg.Engine.WriteManifest(ctx, rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug, &m2, etag); werr == nil {
+		if _, werr = eng.WriteManifest(ctx, rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug, &m2, etag); werr == nil {
 			return nil
 		}
 		if !errors.Is(werr, objectstore.ErrPreconditionFailed) {
 			break
 		}
 		if i == 0 {
-			if _, fresh, rerr := cfg.Engine.LoadManifest(ctx, rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug); rerr == nil {
+			if _, fresh, rerr := eng.LoadManifest(ctx, rcx.TenantID, rcx.ProjectSlug, rcx.RepoSlug); rerr == nil {
 				etag = fresh
 			}
 		} else if i > 0 {

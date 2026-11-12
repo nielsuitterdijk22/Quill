@@ -47,11 +47,15 @@ var validReviewEvents = map[string]bool{
 // ListPulls returns a repository's pull requests filtered by state ("open",
 // "closed", or "all").
 func (s *Service) ListPulls(ctx context.Context, actor Actor, projectSlug, repoSlug, state string) (db.Repository, []forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
-	pulls, err := s.forgejo.ListPulls(ctx, owner, name, state, 0)
+	if be.engine {
+		pulls, err := s.engineListPulls(ctx, repo, be, state)
+		return repo, pulls, err
+	}
+	pulls, err := s.forgejo.ListPulls(ctx, be.owner, be.name, state, 0)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
@@ -69,13 +73,30 @@ const maxPullCountConcurrency = 8
 // count can't be read is treated as zero and logged, mirroring the dashboard's
 // tolerance for partial data.
 func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, error) {
-	if !s.forgejoEnabled() {
+	if !s.forgejoEnabled() && s.gitEngine == nil {
 		return 0, nil
 	}
 
 	projects, err := s.visibleProjects(ctx, actor, "")
 	if err != nil {
 		return 0, err
+	}
+
+	// Engine-backed repos contribute straight from Postgres.
+	engineTotal := 0
+	if s.gitEngine != nil {
+		ids := make([]uuid.UUID, 0, len(projects))
+		for _, p := range projects {
+			ids = append(ids, p.ID)
+		}
+		n, err := s.store.CountEngineOpenPulls(ctx, ids)
+		if err != nil {
+			return 0, err
+		}
+		engineTotal = n
+	}
+	if !s.forgejoEnabled() {
+		return engineTotal, nil
 	}
 
 	type target struct{ owner, name string }
@@ -114,7 +135,7 @@ func (s *Service) OpenPullRequestCount(ctx context.Context, actor Actor) (int, e
 	if err := g.Wait(); err != nil {
 		return 0, err
 	}
-	return int(total), nil
+	return int(total) + engineTotal, nil
 }
 
 // RepoPull pairs a pull request with the repository and project it belongs
@@ -175,7 +196,7 @@ func (s *Service) visibleProjects(ctx context.Context, actor Actor, projectSlug 
 // is skipped and logged, mirroring the dashboard's tolerance for partial data.
 // The optional input narrows the result by state and/or project.
 func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPullsInput) ([]RepoPull, error) {
-	if !s.forgejoEnabled() {
+	if !s.forgejoEnabled() && s.gitEngine == nil {
 		return nil, nil
 	}
 	state := in.State
@@ -186,6 +207,42 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 	projects, err := s.visibleProjects(ctx, actor, in.ProjectSlug)
 	if err != nil {
 		return nil, err
+	}
+
+	// Engine-backed repos contribute straight from Postgres (mergeable is
+	// computed live per visible repo; the overview's PR cards need it).
+	var all []RepoPull
+	if s.gitEngine != nil {
+		ids := make([]uuid.UUID, 0, len(projects))
+		for _, p := range projects {
+			ids = append(ids, p.ID)
+		}
+		rows, err := s.store.ListEnginePullsByProjects(ctx, ids, state)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range rows {
+			repo, err := s.store.GetRepositoryByID(ctx, l.Pull.RepoID)
+			if err != nil {
+				continue // best-effort, like the forgejo arm
+			}
+			project, err := s.store.GetProjectByID(ctx, repo.ProjectID)
+			if err != nil {
+				continue
+			}
+			be := gitBackend{engine: true, repoID: repo.ID, tenantID: project.TenantID,
+				projectSlug: l.ProjectSlug, repoSlug: l.RepoSlug}
+			if dir, err := s.engineDir(ctx, be); err == nil {
+				if dto, err := s.enginePullDTO(ctx, repo, be, dir, l.Pull, true); err == nil {
+					all = append(all, RepoPull{ProjectSlug: l.ProjectSlug, RepoSlug: l.RepoSlug,
+						RepoName: l.RepoName, Pull: dto})
+				}
+			}
+		}
+	}
+	if !s.forgejoEnabled() {
+		sort.Slice(all, func(i, j int) bool { return all[i].Pull.UpdatedAt.After(all[j].Pull.UpdatedAt) })
+		return all, nil
 	}
 
 	type target struct {
@@ -237,7 +294,6 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 		return nil, err
 	}
 
-	var all []RepoPull
 	for _, r := range results {
 		all = append(all, r...)
 	}
@@ -248,11 +304,15 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 
 // GetPull returns a single pull request by number.
 func (s *Service) GetPull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
-	pr, err := s.forgejo.GetPull(ctx, owner, name, number)
+	if be.engine {
+		_, dto, err := s.engineGetPull(ctx, repo, be, number)
+		return repo, dto, err
+	}
+	pr, err := s.forgejo.GetPull(ctx, be.owner, be.name, number)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, translateForgejoRead(err)
 	}
@@ -261,11 +321,19 @@ func (s *Service) GetPull(ctx context.Context, actor Actor, projectSlug, repoSlu
 
 // GetPullDiff returns a pull request's changes as parsed diff files.
 func (s *Service) GetPullDiff(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.DiffFile, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
-	diff, err := s.forgejo.GetPullDiff(ctx, owner, name, number)
+	if be.engine {
+		pr, _, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		files, err := s.enginePullDiff(ctx, be, pr)
+		return repo, files, err
+	}
+	diff, err := s.forgejo.GetPullDiff(ctx, be.owner, be.name, number)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
@@ -274,11 +342,30 @@ func (s *Service) GetPullDiff(ctx context.Context, actor Actor, projectSlug, rep
 
 // ListPullComments returns the conversation comments on a pull request.
 func (s *Service) ListPullComments(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) ([]forgejo.IssueComment, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return nil, err
 	}
-	comments, err := s.forgejo.ListIssueComments(ctx, owner, name, number)
+	if be.engine {
+		pr, _, err := s.engineGetPull(ctx, db.Repository{}, be, number)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := s.store.ListPullComments(ctx, pr.ID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]forgejo.IssueComment, 0, len(rows))
+		for _, c := range rows {
+			out = append(out, forgejo.IssueComment{
+				ID: c.ID, Body: c.Body,
+				User:      &forgejo.User{Login: c.AuthorName, FullName: c.AuthorName, Type: "User"},
+				CreatedAt: c.CreatedAt, UpdatedAt: c.CreatedAt,
+			})
+		}
+		return out, nil
+	}
+	comments, err := s.forgejo.ListIssueComments(ctx, be.owner, be.name, number)
 	if err != nil {
 		return nil, translateForgejoRead(err)
 	}
@@ -287,10 +374,6 @@ func (s *Service) ListPullComments(ctx context.Context, actor Actor, projectSlug
 
 // CreatePull opens a pull request from head into base, attributed to the actor.
 func (s *Service) CreatePull(ctx context.Context, actor Actor, projectSlug, repoSlug string, in CreatePullInput) (db.Repository, forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
-	if err != nil {
-		return db.Repository{}, forgejo.PullRequest{}, err
-	}
 	title := strings.TrimSpace(in.Title)
 	head := strings.TrimSpace(in.Head)
 	base := strings.TrimSpace(in.Base)
@@ -304,8 +387,18 @@ func (s *Service) CreatePull(ctx context.Context, actor Actor, projectSlug, repo
 		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: the source and target branch must differ", ErrInvalidInput)
 	}
 
-	asUser := s.actingForgejoUser(ctx, owner, name, actor)
-	pr, err := s.forgejo.CreatePull(ctx, owner, name, asUser, forgejo.CreatePullOptions{
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	if be.engine {
+		dto, err := s.engineCreatePull(ctx, repo, be, actor, CreatePullInput{
+			Title: title, Body: strings.TrimSpace(in.Body), Head: head, Base: base,
+		})
+		return repo, dto, err
+	}
+	asUser := s.actingForgejoUser(ctx, be.owner, be.name, actor)
+	pr, err := s.forgejo.CreatePull(ctx, be.owner, be.name, asUser, forgejo.CreatePullOptions{
 		Title: title,
 		Body:  strings.TrimSpace(in.Body),
 		Head:  head,
@@ -319,7 +412,7 @@ func (s *Service) CreatePull(ctx context.Context, actor Actor, projectSlug, repo
 
 // CreatePullComment adds a comment to a pull request, attributed to the actor.
 func (s *Service) CreatePullComment(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, body string) (forgejo.IssueComment, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return forgejo.IssueComment{}, err
 	}
@@ -327,8 +420,28 @@ func (s *Service) CreatePullComment(ctx context.Context, actor Actor, projectSlu
 	if body == "" {
 		return forgejo.IssueComment{}, fmt.Errorf("%w: a comment cannot be empty", ErrInvalidInput)
 	}
-	asUser := s.actingForgejoUser(ctx, owner, name, actor)
-	comment, err := s.forgejo.CreateIssueComment(ctx, owner, name, number, asUser, body)
+	if be.engine {
+		login, _, err := s.actorProfile(ctx, actor)
+		if err != nil {
+			return forgejo.IssueComment{}, err
+		}
+		pr, _, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return forgejo.IssueComment{}, err
+		}
+		row, err := s.store.InsertPullComment(ctx, pr.ID, pr.TenantID, actor.UserID, login, body)
+		if err != nil {
+			return forgejo.IssueComment{}, err
+		}
+		_ = s.store.TouchPull(ctx, pr.ID)
+		return forgejo.IssueComment{
+			ID: row.ID, Body: row.Body,
+			User:      &forgejo.User{Login: row.AuthorName, FullName: row.AuthorName, Type: "User"},
+			CreatedAt: row.CreatedAt, UpdatedAt: row.CreatedAt,
+		}, nil
+	}
+	asUser := s.actingForgejoUser(ctx, be.owner, be.name, actor)
+	comment, err := s.forgejo.CreateIssueComment(ctx, be.owner, be.name, number, asUser, body)
 	if err != nil {
 		return forgejo.IssueComment{}, translateForgejoWrite(err)
 	}
@@ -337,11 +450,19 @@ func (s *Service) CreatePullComment(ctx context.Context, actor Actor, projectSlu
 
 // ListPullCommits returns the commits contained in a pull request.
 func (s *Service) ListPullCommits(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.Commit, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
-	commits, err := s.forgejo.ListPullCommits(ctx, owner, name, number)
+	if be.engine {
+		pr, _, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		commits, err := s.enginePullCommits(ctx, be, pr)
+		return repo, commits, err
+	}
+	commits, err := s.forgejo.ListPullCommits(ctx, be.owner, be.name, number)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
@@ -361,17 +482,37 @@ type LineComment struct {
 // ListLineComments returns every line-anchored review comment on a pull request,
 // flattened across all of its reviews and ordered by creation time.
 func (s *Service) ListLineComments(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []LineComment, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
-	reviews, err := s.forgejo.ListReviews(ctx, owner, name, number)
+	if be.engine {
+		pr, _, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		rows, err := s.store.ListPullLineComments(ctx, pr.ID)
+		if err != nil {
+			return db.Repository{}, nil, err
+		}
+		var out []LineComment
+		for _, c := range rows {
+			created := c.CreatedAt
+			out = append(out, LineComment{
+				ID: c.ID, Path: c.Path, Line: c.Line, Body: c.Body,
+				Author: &forgejo.User{Login: c.AuthorName, FullName: c.AuthorName, Type: "User"},
+				CreatedAt: created,
+			})
+		}
+		return repo, out, nil
+	}
+	reviews, err := s.forgejo.ListReviews(ctx, be.owner, be.name, number)
 	if err != nil {
 		return db.Repository{}, nil, translateForgejoRead(err)
 	}
 	var out []LineComment
 	for _, rv := range reviews {
-		comments, err := s.forgejo.ListReviewComments(ctx, owner, name, number, rv.ID)
+		comments, err := s.forgejo.ListReviewComments(ctx, be.owner, be.name, number, rv.ID)
 		if err != nil {
 			return db.Repository{}, nil, translateForgejoRead(err)
 		}
@@ -394,9 +535,30 @@ func (s *Service) ListLineComments(ctx context.Context, actor Actor, projectSlug
 // diff, attributed to the actor. line is the line number in the new version of
 // the file (matching the diff's new-side gutter).
 func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, path string, line int, body string) (LineComment, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return LineComment{}, err
+	}
+	if be.engine {
+		login, _, err := s.actorProfile(ctx, actor)
+		if err != nil {
+			return LineComment{}, err
+		}
+		pr, _, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return LineComment{}, err
+		}
+		row, err := s.store.InsertPullLineComment(ctx, pr.ID, pr.TenantID, actor.UserID, login, path, line, body)
+		if err != nil {
+			return LineComment{}, err
+		}
+		_ = s.store.TouchPull(ctx, pr.ID)
+		created := row.CreatedAt
+		return LineComment{
+			ID: row.ID, Path: row.Path, Line: row.Line, Body: row.Body,
+			Author: &forgejo.User{Login: row.AuthorName, FullName: row.AuthorName, Type: "User"},
+			CreatedAt: created,
+		}, nil
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
@@ -405,8 +567,8 @@ func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlu
 	if strings.TrimSpace(path) == "" || line <= 0 {
 		return LineComment{}, fmt.Errorf("%w: a file path and line are required", ErrInvalidInput)
 	}
-	asUser := s.actingForgejoUser(ctx, owner, name, actor)
-	review, err := s.forgejo.CreateReview(ctx, owner, name, number, asUser, forgejo.CreateReviewOptions{
+	asUser := s.actingForgejoUser(ctx, be.owner, be.name, actor)
+	review, err := s.forgejo.CreateReview(ctx, be.owner, be.name, number, asUser, forgejo.CreateReviewOptions{
 		Event:    forgejo.ReviewComment,
 		Comments: []forgejo.ReviewCommentInput{{Path: path, Body: body, NewPosition: line}},
 	})
@@ -415,7 +577,7 @@ func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlu
 	}
 	// Surface the freshly created comment so the caller can render it without a
 	// second round-trip; the review carries exactly the one comment we sent.
-	comments, err := s.forgejo.ListReviewComments(ctx, owner, name, number, review.ID)
+	comments, err := s.forgejo.ListReviewComments(ctx, be.owner, be.name, number, review.ID)
 	if err == nil && len(comments) > 0 {
 		cm := comments[len(comments)-1]
 		return LineComment{ID: cm.ID, Path: cm.Path, Line: cm.Position, Body: cm.Body, Author: cm.User, CreatedAt: cm.CreatedAt}, nil
@@ -428,9 +590,13 @@ func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlu
 // policy governing the PR's base branch (required approvals, no outstanding
 // change requests) — the authoritative gate for the PR flow.
 func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, method string) (db.Repository, forgejo.PullRequest, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	if be.engine {
+		merged, err := s.engineMergePull(ctx, repo, be, actor, number, method)
+		return repo, merged, err
 	}
 	if method == "" {
 		method = "merge"
@@ -438,18 +604,18 @@ func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoS
 	if !validMergeMethods[method] {
 		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: merge method must be merge, squash or rebase", ErrInvalidInput)
 	}
-	pr, err := s.forgejo.GetPull(ctx, owner, name, number)
+	pr, err := s.forgejo.GetPull(ctx, be.owner, be.name, number)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, translateForgejoRead(err)
 	}
-	if err := s.enforceMergeGate(ctx, repo, owner, name, pr); err != nil {
+	if err := s.enforceMergeGate(ctx, repo, be.owner, be.name, pr); err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
-	asUser := s.actingForgejoUser(ctx, owner, name, actor)
-	if err := s.forgejo.MergePull(ctx, owner, name, number, asUser, forgejo.MergePullOptions{Do: method}); err != nil {
+	asUser := s.actingForgejoUser(ctx, be.owner, be.name, actor)
+	if err := s.forgejo.MergePull(ctx, be.owner, be.name, number, asUser, forgejo.MergePullOptions{Do: method}); err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, translateForgejoWrite(err)
 	}
-	merged, err := s.forgejo.GetPull(ctx, owner, name, number)
+	merged, err := s.forgejo.GetPull(ctx, be.owner, be.name, number)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, translateForgejoRead(err)
 	}
@@ -484,15 +650,31 @@ type ReviewState struct {
 // evaluated against its base branch — what the frontend needs to render review
 // status and the merge box in a single call.
 func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) ([]forgejo.Review, ReviewState, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return nil, ReviewState{}, err
 	}
-	pr, err := s.forgejo.GetPull(ctx, owner, name, number)
+	if be.engine {
+		prRow, dto, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return nil, ReviewState{}, err
+		}
+		rows, err := s.store.ListPullReviews(ctx, prRow.ID)
+		if err != nil {
+			return nil, ReviewState{}, err
+		}
+		reviews := reviewsToDTO(rows)
+		state, err := s.branchGate(ctx, repo, dto, reviews)
+		if err != nil {
+			return nil, ReviewState{}, err
+		}
+		return reviews, state, nil
+	}
+	pr, err := s.forgejo.GetPull(ctx, be.owner, be.name, number)
 	if err != nil {
 		return nil, ReviewState{}, translateForgejoRead(err)
 	}
-	reviews, err := s.forgejo.ListReviews(ctx, owner, name, number)
+	reviews, err := s.forgejo.ListReviews(ctx, be.owner, be.name, number)
 	if err != nil {
 		return nil, ReviewState{}, translateForgejoRead(err)
 	}
@@ -661,7 +843,7 @@ func summarizeReviews(reviews []forgejo.Review, author *forgejo.User, dismissSta
 
 // pull request, attributed to the actor.
 func (s *Service) CreatePullReview(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, event, body string) (forgejo.Review, error) {
-	_, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return forgejo.Review{}, err
 	}
@@ -673,8 +855,24 @@ func (s *Service) CreatePullReview(ctx context.Context, actor Actor, projectSlug
 	if event == forgejo.ReviewComment && body == "" {
 		return forgejo.Review{}, fmt.Errorf("%w: a comment review requires a body", ErrInvalidInput)
 	}
-	asUser := s.actingForgejoUser(ctx, owner, name, actor)
-	review, err := s.forgejo.CreateReview(ctx, owner, name, number, asUser, forgejo.CreateReviewOptions{Event: event, Body: body})
+	if be.engine {
+		login, _, err := s.actorProfile(ctx, actor)
+		if err != nil {
+			return forgejo.Review{}, err
+		}
+		pr, _, err := s.engineGetPull(ctx, repo, be, number)
+		if err != nil {
+			return forgejo.Review{}, err
+		}
+		row, err := s.store.InsertPullReview(ctx, pr.ID, pr.TenantID, actor.UserID, login, event, body)
+		if err != nil {
+			return forgejo.Review{}, err
+		}
+		_ = s.store.TouchPull(ctx, pr.ID)
+		return reviewDTO(row), nil
+	}
+	asUser := s.actingForgejoUser(ctx, be.owner, be.name, actor)
+	review, err := s.forgejo.CreateReview(ctx, be.owner, be.name, number, asUser, forgejo.CreateReviewOptions{Event: event, Body: body})
 	if err != nil {
 		return forgejo.Review{}, translateForgejoWrite(err)
 	}
