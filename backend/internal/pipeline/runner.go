@@ -64,8 +64,18 @@ type JobSpec struct {
 	// RepoFullName is "owner/name", used to populate the synthetic event payload
 	// so `github.repository`-style expressions resolve. Optional.
 	RepoFullName string
-	// Token is an optional credential exposed to the workflow as GITHUB_TOKEN.
-	// Empty is fine — act skips actions/checkout and runs against Workdir.
+	// ServerURL is the base URL of the git instance hosting the repository
+	// (e.g. https://git.example.com). act presents it as GITHUB_SERVER_URL /
+	// GITHUB_API_URL so remote actions and reusable workflows resolve against
+	// the platform's git server instead of github.com. Empty keeps act's
+	// GitHub defaults (cross-repo templates then only work for templates
+	// actually hosted on github.com).
+	ServerURL string
+	// Token is a credential for the git instance act uses for its own fetches
+	// (remote actions, reusable workflows, github.context.Token). Empty is
+	// fine — cross-repo template fetches then only work for public repos.
+	// It is not injected into the job container env unless a workflow secret
+	// named GITHUB_TOKEN exists.
 	Token string
 	// Secrets are the resolved secret name→value pairs exposed to the workflow as
 	// ${{ secrets.NAME }}. The platform layer merges them (project → repo →
@@ -128,6 +138,9 @@ type Runner interface {
 type CloneAuth struct {
 	URL        string
 	AuthHeader string
+	// Token and ServerURL feed JobSpec.Token / JobSpec.ServerURL (see there).
+	Token     string
+	ServerURL string
 }
 
 // rollupStatus collapses per-job statuses into a single run status: failure if

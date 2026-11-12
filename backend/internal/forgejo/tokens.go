@@ -56,13 +56,19 @@ func (c *Client) DeleteAccessToken(ctx context.Context, username, password, toke
 	return c.doBasicAuth(ctx, http.MethodDelete, path, username, password, nil, nil)
 }
 
-// CloneAuth describes how the CI dispatcher should clone a Forgejo repository.
+// CloneAuth describes how the CI should reach a Forgejo repository: the clone
+// URL, an HTTP auth header for git checkouts, plus the raw token and instance
+// base URL for act's own fetches (act resolves remote actions and reusable
+// workflows against GITHUB_SERVER_URL and authenticates with
+// github.context.Token, so cross-repo templates need both).
 type CloneAuth struct {
 	URL        string
 	AuthHeader string
+	Token      string
+	ServerURL  string
 }
 
-// CloneAuth returns an HTTP clone URL plus an auth header for owner/name. Forgejo
+// CloneAuth returns an HTTP clone URL plus credentials for owner/name. Forgejo
 // accepts API tokens for git-over-HTTP via Authorization, while embedding the
 // token in basic-auth credentials can be rejected for private repositories.
 func (c *Client) CloneAuth(owner, name string) (CloneAuth, error) {
@@ -74,5 +80,10 @@ func (c *Client) CloneAuth(owner, name string) (CloneAuth, error) {
 		return CloneAuth{}, err
 	}
 	u.Path = "/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + ".git"
-	return CloneAuth{URL: u.String(), AuthHeader: "Authorization: token " + c.token}, nil
+	return CloneAuth{
+		URL:        u.String(),
+		AuthHeader: "Authorization: token " + c.token,
+		Token:      c.token,
+		ServerURL:  c.base,
+	}, nil
 }

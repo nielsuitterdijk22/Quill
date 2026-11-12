@@ -170,3 +170,31 @@ jobs:
 		t.Fatalf("run status = %q, want failure", res.Status)
 	}
 }
+
+// TestGithubURLOverrides pins the mapping from spec.ServerURL (the git
+// instance's base URL) to the github-context env act reads: GITHUB_SERVER_URL
+// drives remote-action/reusable-workflow fetches, GITHUB_API_URL drives
+// API-style actions. Empty ServerURL keeps act's GitHub defaults.
+func TestGithubURLOverrides(t *testing.T) {
+	if got := githubURLOverrides(""); len(got) != 0 {
+		t.Fatalf("empty ServerURL should yield no overrides, got %v", got)
+	}
+	if got := githubURLOverrides("   "); len(got) != 0 {
+		t.Fatalf("blank ServerURL should yield no overrides, got %v", got)
+	}
+	got := githubURLOverrides("https://git.black-tulip.nl")
+	if got["GITHUB_SERVER_URL"] != "https://git.black-tulip.nl" {
+		t.Fatalf("GITHUB_SERVER_URL = %q", got["GITHUB_SERVER_URL"])
+	}
+	if got["GITHUB_API_URL"] != "https://git.black-tulip.nl/api/v1" {
+		t.Fatalf("GITHUB_API_URL = %q, want the Forgejo API path", got["GITHUB_API_URL"])
+	}
+	got = githubURLOverrides("http://127.0.0.1:3000/")
+	if got["GITHUB_SERVER_URL"] != "http://127.0.0.1:3000" {
+		t.Fatalf("trailing slash not trimmed: %q", got["GITHUB_SERVER_URL"])
+	}
+	// Non-https (e.g. file:// for local CI verification) passes through.
+	if got := githubURLOverrides("file:///tmp/inst"); got["GITHUB_SERVER_URL"] != "file:///tmp/inst" {
+		t.Fatalf("file:// ServerURL = %q", got["GITHUB_SERVER_URL"])
+	}
+}

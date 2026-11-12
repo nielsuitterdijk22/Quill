@@ -347,6 +347,8 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		CommitSHA:       commitSHA,
 		CloneURL:        cloneAuth.URL,
 		CloneAuthHeader: cloneAuth.AuthHeader,
+		ServerURL:       cloneAuth.ServerURL,
+		Token:           cloneAuth.Token,
 		RepoFullName:    owner + "/" + name,
 		Secrets:         secrets,
 	})
@@ -443,7 +445,12 @@ func (s *Service) cloneAuthForRun(owner, name string) pipeline.CloneAuth {
 		s.logger.Warn("pipeline clone URL unavailable", "repo", owner+"/"+name, "error", err)
 		return pipeline.CloneAuth{}
 	}
-	return pipeline.CloneAuth{URL: cloneAuth.URL, AuthHeader: cloneAuth.AuthHeader}
+	return pipeline.CloneAuth{
+		URL:        cloneAuth.URL,
+		AuthHeader: cloneAuth.AuthHeader,
+		Token:      cloneAuth.Token,
+		ServerURL:  cloneAuth.ServerURL,
+	}
 }
 
 // persistResult writes the job/step tree produced by the runner.

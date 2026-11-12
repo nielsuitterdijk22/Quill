@@ -118,7 +118,7 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		AutoRemove:            true,
 		LogOutput:             true,
 		Token:                 spec.Token,
-		Env:                   map[string]string{},
+		Env:                   githubURLOverrides(spec.ServerURL),
 		Secrets:               mapOrEmpty(spec.Secrets),
 		Vars:                  map[string]string{},
 		GitHubInstance:        "github.com",
@@ -315,6 +315,23 @@ func actEventName(event string) string {
 		return "workflow_dispatch"
 	}
 	return event
+}
+
+// githubURLOverrides maps the git instance's base URL to the github-context env
+// act reads when resolving remote references: GITHUB_SERVER_URL drives git
+// fetches of remote actions and reusable workflows (act overwrites the
+// otherwise-hardcoded github.com with the github context ServerURL) and
+// GITHUB_API_URL drives API-style actions; Forgejo serves its API at /api/v1.
+// An empty URL yields act's GitHub defaults (nil map — no overrides).
+func githubURLOverrides(serverURL string) map[string]string {
+	base := strings.TrimSuffix(strings.TrimSpace(serverURL), "/")
+	if base == "" {
+		return nil
+	}
+	return map[string]string{
+		"GITHUB_SERVER_URL": base,
+		"GITHUB_API_URL":    base + "/api/v1",
+	}
 }
 
 // writeEventFile writes a minimal event payload act mounts as event.json so

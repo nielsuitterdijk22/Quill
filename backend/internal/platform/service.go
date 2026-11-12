@@ -118,6 +118,14 @@ func (s *Service) WithRunner(r pipeline.Runner) *Service {
 	return s
 }
 
+// WithForgejo overrides the Forgejo client after construction (used by tests;
+// production wires the client in NewService) and returns the service for
+// chaining.
+func (s *Service) WithForgejo(fj *forgejo.Client) *Service {
+	s.forgejo = fj
+	return s
+}
+
 // WithCipher overrides the pipeline-secret cipher (used by production wiring to
 // install the configured encryption key) and returns the service for chaining.
 func (s *Service) WithCipher(c *secretbox.Cipher) *Service {

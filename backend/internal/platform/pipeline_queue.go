@@ -136,6 +136,8 @@ func (s *Service) EnqueuePipelineRun(ctx context.Context, repo db.Repository, in
 		CommitSHA:       commitSHA,
 		CloneURL:        cloneAuth.URL,
 		CloneAuthHeader: cloneAuth.AuthHeader,
+		ServerURL:       cloneAuth.ServerURL,
+		Token:           cloneAuth.Token,
 		RepoFullName:    fullName,
 		Secrets:         secrets,
 	}

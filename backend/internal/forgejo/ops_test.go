@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
@@ -185,5 +186,29 @@ func TestSetUserPassword_SendsPasswordOnly(t *testing.T) {
 	}
 	if _, ok := m["source_id"]; ok {
 		t.Fatalf("source_id must be omitted: %s", gotBody)
+	}
+}
+
+// TestCloneAuthCarriesTokenAndInstance verifies CloneAuth hands the CI both
+// the raw token (act's github-context fetches authenticate with it for
+// cross-repo actions/reusable workflows) and the instance base URL (act's
+// GITHUB_SERVER_URL). No HTTP involved — pure URL/credential assembly.
+func TestCloneAuthCarriesTokenAndInstance(t *testing.T) {
+	c := forgejo.New(config.ForgejoConfig{BaseURL: "https://git.example.com/", AdminToken: "tok-123"})
+	ca, err := c.CloneAuth("acme", "widgets widgets")
+	if err != nil {
+		t.Fatalf("CloneAuth: %v", err)
+	}
+	if !strings.HasPrefix(ca.URL, "https://git.example.com/acme/") || !strings.HasSuffix(ca.URL, ".git") {
+		t.Fatalf("URL = %q, want https://git.example.com/acme/<escaped-name>.git", ca.URL)
+	}
+	if ca.AuthHeader != "Authorization: token tok-123" {
+		t.Fatalf("AuthHeader = %q", ca.AuthHeader)
+	}
+	if ca.Token != "tok-123" {
+		t.Fatalf("Token = %q, want the raw admin token for act's fetches", ca.Token)
+	}
+	if ca.ServerURL != "https://git.example.com" {
+		t.Fatalf("ServerURL = %q, want the instance base (trailing slash trimmed)", ca.ServerURL)
 	}
 }

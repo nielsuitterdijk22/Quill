@@ -2,11 +2,14 @@ package platform_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/nielsuitterdijk22/quill/internal/config"
+	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
@@ -318,4 +321,45 @@ func mustRunJobID(t *testing.T, st *store.Store, runID uuid.UUID) uuid.UUID {
 		t.Fatalf("expected 1 persisted job, got %d", len(jobs))
 	}
 	return jobs[0].ID
+}
+
+// TestQueueSpecCarriesInstanceAuth verifies the queued JobSpec carries the git
+// instance's ServerURL and clone token so the worker can fetch cross-repo
+// action/reusable-workflow templates against the platform's git server
+// instead of github.com (act resolves remote actions via GITHUB_SERVER_URL).
+func TestQueueSpecCarriesInstanceAuth(t *testing.T) {
+	if os.Getenv("QUILL_TEST_DATABASE_URL") == "" {
+		t.Skip("QUILL_TEST_DATABASE_URL not set; skipping platform integration test")
+	}
+	svc, st := newService(t)
+	// Forgejo-enabled surface: CloneAuth is pure URL/credential assembly (no
+	// HTTP), so a fake base URL + token exercise the real path.
+	svc = svc.WithForgejo(forgejo.New(config.ForgejoConfig{BaseURL: "https://git.example.com", AdminToken: "tok-456"})).WithQueueMode()
+	ctx := context.Background()
+	repo := makeProjectWithRepo(t, st, "qinst")
+	if _, err := st.Pool().Exec(ctx,
+		"UPDATE repositories SET forgejo_owner='acme', forgejo_name=$1 WHERE id=$2",
+		repo.Slug, repo.ID); err != nil {
+		t.Fatalf("stamp forgejo columns: %v", err)
+	}
+
+	if _, err := svc.EnqueuePipelineRun(ctx, repo, platform.TriggerInput{
+		WorkflowPath: ".github/workflows/test.yml", Ref: "main", Event: "push",
+	}, queueWorkflowYAML, "deadbeef", uuid.NullUUID{}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	job, err := svc.ClaimQueuedJob(ctx, "worker-inst")
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if job == nil {
+		t.Fatal("expected a claimable job, got none")
+	}
+	if job.Spec.ServerURL != "https://git.example.com" {
+		t.Fatalf("spec.ServerURL = %q, want the instance base URL", job.Spec.ServerURL)
+	}
+	if job.Spec.Token != "tok-456" {
+		t.Fatalf("spec.Token = %q, want the clone token for act's fetches", job.Spec.Token)
+	}
 }
