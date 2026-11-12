@@ -2,12 +2,14 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/nielsuitterdijk22/quill/internal/store"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
@@ -162,4 +164,50 @@ func TestTenantRuntimeHint(t *testing.T) {
 		t.Fatalf("runtime_hint after set = %q, want 'warm'", hint)
 	}
 	_, _ = st.Pool().Exec(ctx, "UPDATE tenants SET runtime_hint='serverless' WHERE slug='default'")
+}
+
+// TestFindRepoForGit verifies the interim B2 resolver: slugs → repo identity
+// including the tenant for the git engine's bucket layout. Duplication across
+// tenants must be an explicit error (B6 replaces this with token-scoped
+// resolution).
+func TestFindRepoForGit(t *testing.T) {
+	st := testStore(t)
+	ctx := context.Background()
+	repoID, tenantID := newRepoForGitState(t, st)
+
+	// Resolve the repo we just created via its slugs.
+	var projectSlug, repoSlug string
+	if err := st.Pool().QueryRow(ctx,
+		"SELECT p.slug, r.slug FROM repositories r JOIN projects p ON p.id=r.project_id WHERE r.id=$1",
+		repoID).Scan(&projectSlug, &repoSlug); err != nil {
+		t.Fatalf("lookup slugs: %v", err)
+	}
+
+	ref, err := st.FindRepoForGit(ctx, projectSlug, repoSlug)
+	if err != nil {
+		t.Fatalf("FindRepoForGit: %v", err)
+	}
+	if ref.RepoID != repoID || ref.TenantID != tenantID || ref.ProjectSlug != projectSlug || ref.RepoSlug != repoSlug {
+		t.Fatalf("ref = %+v", ref)
+	}
+
+	// Unknown slugs: not found.
+	if _, err := st.FindRepoForGit(ctx, "ghost", "nope"); err != pgx.ErrNoRows {
+		t.Fatalf("unknown slugs = %v, want pgx.ErrNoRows", err)
+	}
+
+	// Ambiguity premise: project slugs are globally unique today, so the
+	// resolver's ambiguity guard cannot trigger against this schema —
+	// prove the premise by failing to create a duplicate project slug.
+	_, tenant2 := newRepoForGitState(t, st)
+	_, err = st.CreateProject(ctx, db.CreateProjectParams{
+		TenantID: tenant2, Slug: projectSlug, Name: "colliding",
+	})
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		t.Fatalf("duplicate project slug = %v, want unique violation (the ambiguity guard's premise)", err)
+	}
+	// Repo slugs within a project are unique too — FindRepoForGit stays
+	// deterministic; the ErrRepoSlugAmbiguous branch is defense-in-depth for
+	// a future per-tenant slug scheme (B6 replaces this resolver anyway).
 }

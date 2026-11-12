@@ -16,6 +16,10 @@ import (
 // it surfaces precisely because two writers believed the same revision.
 var ErrRefCASLost = errors.New("ref-cas lost race")
 
+// ErrRepoSlugAmbiguous means a project-slug+repo-slug pair matches repositories
+// in more than one tenant: the unscoped B2 resolver refuses to pick one.
+var ErrRepoSlugAmbiguous = errors.New("repo slugs ambiguous across tenants")
+
 // GitRepoState is the referee row for one repository.
 type GitRepoState struct {
 	RepoID       uuid.UUID
@@ -85,4 +89,46 @@ func (s *Store) CASGitRepoRefs(ctx context.Context, repoID uuid.UUID, fromRevisi
 		return 0, err
 	}
 	return newRev, nil
+}
+
+// GitRepoRef identifies one repository for the git smart-HTTP read path.
+type GitRepoRef struct {
+	RepoID      uuid.UUID
+	TenantID    uuid.UUID
+	ProjectSlug string
+	RepoSlug    string
+}
+
+// FindRepoForGit resolves project+repo slugs to the repo's identity for the
+// git engine (tenant for the bucket key prefix, slugs for the layout). This is
+// the interim B2 resolver: slugs are not globally unique, and a collision
+// across tenants is an explicit error rather than a silent wrong-repo serve —
+// B6's token-scoped resolution will disambiguate by the authenticated user.
+func (s *Store) FindRepoForGit(ctx context.Context, projectSlug, repoSlug string) (GitRepoRef, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.id, p.tenant_id, p.slug, r.slug
+		FROM repositories r
+		JOIN projects p ON p.id = r.project_id
+		WHERE lower(p.slug) = lower($1) AND lower(r.slug) = lower($2)`,
+		projectSlug, repoSlug)
+	if err != nil {
+		return GitRepoRef{}, err
+	}
+	defer rows.Close()
+	var refs []GitRepoRef
+	for rows.Next() {
+		var ref GitRepoRef
+		if err := rows.Scan(&ref.RepoID, &ref.TenantID, &ref.ProjectSlug, &ref.RepoSlug); err != nil {
+			return GitRepoRef{}, err
+		}
+		refs = append(refs, ref)
+	}
+	switch len(refs) {
+	case 1:
+		return refs[0], nil
+	case 0:
+		return GitRepoRef{}, pgx.ErrNoRows
+	default:
+		return GitRepoRef{}, ErrRepoSlugAmbiguous
+	}
 }

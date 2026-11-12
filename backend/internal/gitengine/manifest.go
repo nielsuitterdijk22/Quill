@@ -154,6 +154,16 @@ func (m *Manifest) Validate() error {
 	return nil
 }
 
+// Ref returns the manifest entry for one ref name, or nil.
+func (m *Manifest) Ref(name string) *ManifestRef {
+	for i := range m.Refs {
+		if m.Refs[i].Name == name {
+			return &m.Refs[i]
+		}
+	}
+	return nil
+}
+
 // RecordPush appends a push entry, drops the tail oldest-first beyond the cap.
 func (m *Manifest) RecordPush(pushedBy, tenantID string, pushedAt time.Time, sha string) {
 	m.PushHistory = append(m.PushHistory, ManifestPush{

@@ -224,11 +224,15 @@ credentials either. CloneFrom imports under own mode fail explicitly (D-era surf
 Live-verified: the objectstore conditional-write contract ran green against the real
 Scaleway bucket (gated `QUILL_TEST_S3_*` roundtrip test)._
 
-**PR B2 — Read path (smart HTTP v0 + v2).** Scope: `git.<domain>` becomes a second custom
-domain on the api container (matches "existing permission middleware"); routes
-`/{owner}/{repo}.git/info/refs|git-upload-pack`. First-access hydration: GET manifest ->
-download packs to the configured work dir -> serve via upstream `git upload-pack`
-(shelled out; upstream git does the work). Spike-adjusted (2026-11-11): in the api container
+**PR B2 — Read path (smart HTTP v0 + v2).** _Status: SHIPPED 2026-11-12 (flag off;
+clone proven locally over v0 and v2; git.<domain> DNS move lands at Phase D)._ Scope:
+the smart-HTTP read surface `git.<domain>` becomes a second custom domain on the api
+container (matches "existing permission middleware"); routes
+`/{owner}/{repo}.git/info/refs|git-upload-pack` — shipped at top-level prefix
+`/git/{owner}/{repo}/...` (suffix URL param, optional `.git`), repointed/mapped at the
+DNS cutover. First-access hydration: GET manifest -> download packs to the configured
+work dir -> serve via upstream `git upload-pack` (shelled out; upstream git does the
+work). Spike-adjusted (2026-11-11): in the api container
 the writable layer is RAM against `memory_limit` (containers get no disk volume like the
 jobs' `/mnt`), so hydration size must fit the container memory budget — fine at dogfooding
 sizes (free-tier cap 1 GiB; pin `container_memory_mb` accordingly) and the forcing function
@@ -240,6 +244,19 @@ memory ceiling for big repos (above). Tests: gated on `QUILL_TEST_DATABASE_URL` 
 `QUILL_TEST_S3_ENDPOINT`: real `git clone` against an httptest server backed by a seeded
 fixture repo; hydration idempotence; manifest-format golden test. Rollback: new host only —
 `git.<domain>` DNS repoints; Forgejo untouched during B.
+
+_Shipped shape (2026-11-12): `gitengine.PackSource` (full-download impl; repo-relative
+manifest pack objects resolve against the repo's bucket prefix), `RepoCache.Hydrate`
+(skeleton `git init --bare`, refs re-materialized from the manifest into packed-refs
+EVERY hydration — a stale cache can never serve moved refs — packs size-matched and
+reused), and `SmartHTTP` (pkt-line framing + `git upload-pack --stateless-rpc`, v2 via
+`GIT_PROTOCOL` passthrough; push is refused until B3). Tests run REAL `git clone` over
+the handler (v0 forced and v2 default): fixture repo built + repacked + uploaded to
+MemStore, cloned back, files/tag/HEAD-sha asserted against the manifest; hydration
+idempotence proven via a counting store (no pack refetch, byte-identical packed-refs).
+Server wiring: `/git` mounted only when the engine flag is on; resolution via an
+interim unscoped slug resolver (`FindRepoForGit`) — repos still on Forgejo have no
+manifest and 404 naturally; B6 swaps in token-scoped auth (no cutover before that)._
 
 **PR B3 — Write path.** Scope: `git-receive-pack` route; policy checks in pre-receive
 (branch protection from Quill's policy tables, free-tier gates); single-writer

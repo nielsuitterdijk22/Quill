@@ -6,6 +6,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +45,9 @@ type Server struct {
 	workItemRefs *workitemrefs.Dispatcher
 	router       chi.Router
 	markupCache  *markupCache
+	// gitCache is the git engine's hydration cache; nil unless the own
+	// engine is on (then the /git smart-HTTP routes are mounted).
+	gitCache *gitengine.RepoCache
 }
 
 // externalAuthEnabled reports whether an external IdP (Zitadel) is configured
@@ -77,14 +82,26 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// referee. Off by default — the Forgejo path stays until Phase D's
 	// cutover, so deploys of this code are inert without the env set.
 	// config.Load already validated the bucket credentials (fail fast).
+	var gitCache *gitengine.RepoCache
 	if cfg.GitEngine.Own() {
-		platformSvc.WithGitEngine(gitengine.New(objectstore.New(objectstore.Config{
+		objStore := objectstore.New(objectstore.Config{
 			Endpoint:  cfg.GitEngine.S3Endpoint,
 			Region:    cfg.GitEngine.S3Region,
 			Bucket:    cfg.GitEngine.S3Bucket,
 			AccessKey: cfg.GitEngine.S3AccessKey,
 			SecretKey: cfg.GitEngine.S3SecretKey,
-		})))
+		})
+		engine := gitengine.New(objStore)
+		platformSvc.WithGitEngine(engine)
+		cacheDir := cfg.GitEngine.CacheDir
+		if cacheDir == "" {
+			cacheDir = filepath.Join(os.TempDir(), "quill-git")
+		}
+		gitCache = &gitengine.RepoCache{
+			Root:   cacheDir,
+			Engine: engine,
+			Packs:  gitengine.NewBucketPackSource(objStore),
+		}
 	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()
@@ -161,6 +178,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		workItemRefs: workItemRefs,
 		router:       chi.NewRouter(),
 		markupCache:  newMarkupCache(),
+		gitCache:     gitCache,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -222,6 +240,16 @@ func (s *Server) setupRoutes() {
 	// Operational endpoints (unauthenticated).
 	s.router.Get("/healthz", s.handleHealth)
 	s.router.Get("/readyz", s.handleReady)
+
+	// Git smart-HTTP read path (serverless epic, PR B2): mounted only when
+	// the own git engine is on; B6 replaces the interim slug resolver with
+	// token-scoped auth, so no cutover until then (routes also stay off in
+	// production until the flag flips).
+	if s.gitCache != nil {
+		s.router.Mount("/git", &gitengine.SmartHTTP{
+			Hydrate: s.hydrateGitRepo,
+		})
+	}
 
 	// Versioned API surface. Resource routes are added in later PRs.
 	s.router.Route("/api/v1", func(r chi.Router) {
@@ -470,4 +498,18 @@ func (s *Server) setupRoutes() {
 			})
 		})
 	})
+}
+
+// hydrateGitRepo backs the /git smart-HTTP mount (serverless epic, PR B2):
+// resolve slugs to one repo, then hydrate its bare repo from the bucket.
+// Repos whose content still lives on Forgejo have no manifest and fail
+// here — the read path naturally follows the per-repo Phase-D migration.
+// Auth interlude: token-scoped resolution lands in B6; until then this
+// mount only exists when the engine flag is on.
+func (s *Server) hydrateGitRepo(ctx context.Context, owner, repo string) (string, error) {
+	ref, err := s.platform.ResolveRepoForGit(ctx, owner, repo)
+	if err != nil {
+		return "", err
+	}
+	return s.gitCache.Hydrate(ctx, ref.TenantID.String(), ref.ProjectSlug, ref.RepoSlug)
 }

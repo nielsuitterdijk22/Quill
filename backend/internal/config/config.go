@@ -115,6 +115,11 @@ type GitEngineConfig struct {
 	S3Bucket    string
 	S3AccessKey string
 	S3SecretKey string
+	// CacheDir roots the disposable hydration cache (bare repos hydrated from
+	// the bucket). Default: the system temp dir — in the api container that
+	// is RAM against memory_limit, which sizes hand in hand with the pack
+	// budget; warm pools pin this to a real disk later.
+	CacheDir string
 }
 
 // Own reports whether the own git engine is active.
