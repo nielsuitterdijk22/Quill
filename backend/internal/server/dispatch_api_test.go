@@ -108,6 +108,13 @@ func TestDispatchHTTPRoundTrip(t *testing.T) {
 		ProjectID: project.ID, Slug: "dispatchapi", Name: "dispatchapi",
 		Visibility: "private", DefaultBranch: "main",
 	})
+	// Leave nothing behind: leftover projects RESTRICT tenant deletion and
+	// then abort other packages' whole-table test resets mid-statement.
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM repositories WHERE id = $1", repo.ID)
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM projects WHERE id = $1", project.ID)
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
+	})
 	if err != nil {
 		t.Fatalf("repo: %v", err)
 	}

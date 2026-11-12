@@ -38,6 +38,14 @@ func newRepoForGitState(t *testing.T, st *store.Store) (uuid.UUID, uuid.UUID) {
 	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
+	// Leave nothing behind: tenant deletes RESTRICT on projects, and any
+	// leftover rows abort OTHER packages' whole-table test resets (a single
+	// FK violation rolls the entire DELETE statement back).
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM repositories WHERE id = $1", repo.ID)
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM projects WHERE id = $1", project.ID)
+		_, _ = st.Pool().Exec(ctx, "DELETE FROM tenants WHERE id = $1", tenant.ID)
+	})
 	return repo.ID, tenant.ID
 }
 

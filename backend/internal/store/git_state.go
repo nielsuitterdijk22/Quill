@@ -102,6 +102,30 @@ type GitRepoRef struct {
 	RepoSlug    string
 }
 
+// ListEngineRepos enumerates every repository with a referee row — the set
+// the own git engine owns, whose manifests maintenance (B7) walks.
+func (s *Store) ListEngineRepos(ctx context.Context) ([]GitRepoRef, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.id, p.tenant_id, p.id, p.slug, r.slug
+		FROM git_repo_state g
+		JOIN repositories r ON r.id = g.repo_id
+		JOIN projects p ON p.id = r.project_id
+		ORDER BY r.slug`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GitRepoRef
+	for rows.Next() {
+		var ref GitRepoRef
+		if err := rows.Scan(&ref.RepoID, &ref.TenantID, &ref.ProjectID, &ref.ProjectSlug, &ref.RepoSlug); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
+}
+
 // FindRepoForGit resolves project+repo slugs to the repo's identity for the
 // git engine (tenant for the bucket key prefix, slugs for the layout). This is
 // the interim B2 resolver: slugs are not globally unique, and a collision

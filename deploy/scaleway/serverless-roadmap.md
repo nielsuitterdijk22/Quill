@@ -380,15 +380,27 @@ index, `git_push_meters`); generated sqlc files hand-patched (wholesale `sqlc
 generate` is incompatible with the repo's pinned generated output — recorded in
 DECISIONS)._
 
-**PR B7 — Async maintenance Jobs.** Scope: pack GC, repack, orphan cleanup of the `tmp/`
-tree as idempotent Serverless Jobs (`scaleway_job_definition`), started by cron and
-on-demand by the broker after large pushes — never inline in request paths (a request
-path that can wedge or ballooning memory is the VM-wedge failure mode again).
-Idempotence rule: every job re-derives its work from the manifest + pack listing and is
-safe to run twice concurrently with pushes (Postgres referee prevents manifest
-regression). Tests: unit idempotence tests (run twice on a fixture repo, byte-identical
-manifest result besides `updated_at`); live: run against a migrated repo mid-push-load.
-Rollback: harmless if it never fires — orphaned tmp objects cost pennies.
+**PR B7 — Async maintenance Jobs.** _Status: SHIPPED 2026-11-12 (code + admin runner;
+`scaleway_job_definition` wiring deferred to the C-phase terraform batch — the runner is
+`quill admin git-maintenance`, pure Go, cron- or broker-triggerable, no infra needed to
+start using it locally)._ As designed, with the shipped shape: `gitengine.Maintenance`
+per repo — (1) reconcile: rebuild the manifest from the referee when refs diverge,
+adopting bucket-listed packs the manifest lost (the B3 lost-etag-race repair; adoption
+ONLY on refs-divergence — a matching view never hoards debris, which would pin garbage
+into the manifest forever); (2) repack past `--repack-threshold`: consolidate into one
+pack via `git repack -a -d` in a scratch hydration, re-stamp referee storage (revision
+advances on the lease — refs unchanged, CAS holds, freshness is refs-equality); (3)
+verify: cold-scratch hydration + `git fsck --connectivity-only` — GC is INTERLOCKED on
+it (a failing verify skips deletion entirely); (4) GC: delete listed pack pairs the
+manifest does not reference. Lease: the same `push_leases` row a push takes (in-flight
+push → clean skip). Listing: `ListObjectsV2` added to the S3 client (stdlib XML; SigV4
+signer extended with canonical query strings) + MemStore parity; the engine request
+paths never list. Tests: idempotence (run twice = zero work, byte-identical bucket),
+lost-manifest-write repair (re-link + clone/rev-parse/fsck on the repaired view), orphan
+GC (referenced pack survives, debris deleted), repack (incremental-packs fixture → one
+pack, referee storage equal to manifest, cold-cache fsck, second run no-op), lease
+respect, and verify-interlock (refs without objects → error, nothing deleted).
+Rollback: harmless if it never fires — orphans cost pennies (as designed).
 
 ## Phase C — Frontend decision + Zitadel serverless
 

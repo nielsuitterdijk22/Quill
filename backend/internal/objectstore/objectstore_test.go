@@ -117,3 +117,34 @@ func TestS3LiveRoundtrip(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 }
+
+func TestCanonicalQuery(t *testing.T) {
+	got := canonicalQuery(map[string]string{"list-type": "2", "prefix": "repos/t é/", "x": "a~b"})
+	want := "list-type=2&prefix=repos%2Ft%20%C3%A9%2F&x=a~b"
+	if got != want {
+		t.Fatalf("canonicalQuery = %q, want %q", got, want)
+	}
+	if canonicalQuery(nil) != "" {
+		t.Fatal("empty query must render empty")
+	}
+}
+
+func TestMemStoreList(t *testing.T) {
+	m := NewMemStore()
+	ctx := context.Background()
+	for _, k := range []string{"a/1", "a/2", "b/3"} {
+		if _, err := m.Put(ctx, k, []byte("x"), PutOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keys, err := m.List(ctx, "a/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || keys[0] != "a/1" || keys[1] != "a/2" {
+		t.Fatalf("List(a/) = %v", keys)
+	}
+	if keys, _ := m.List(ctx, "zzz"); len(keys) != 0 {
+		t.Fatalf("List(zzz) = %v", keys)
+	}
+}

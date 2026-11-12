@@ -48,11 +48,13 @@ Usage:
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --content <text> [--branch <ref>]
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --file <path-or--> [--branch <ref>]
   quill admin purge-e2e --confirm
+  quill admin git-maintenance [--repack-threshold N] [--repo project/repo]
 
 Commands:
   admin create-repo  create a repository in the tenant's Forgejo org and record it in Postgres
   admin seed-file    create or update a file in a repository via the Forgejo API, committing as an admin seed
   admin purge-e2e    delete live-e2e debris: tenants/projects/repos whose slug starts with e2e- (never users)
+  admin git-maintenance  reconcile engine-repo manifests against the referee, repack past the threshold, GC orphan packs
 
 seed-file content comes from --content (inline text) or --file (a file path, or '-' to read stdin).
 
@@ -61,13 +63,14 @@ Configuration is read from the environment (same variables as the API):
   FORGEJO_BASE_URL     Forgejo base URL (default: http://localhost:3000)
   FORGEJO_ADMIN_TOKEN  Forgejo admin access token
   FORGEJO_PUBLIC_URL   externally-accessible Forgejo URL used in the printed URL (defaults to FORGEJO_BASE_URL)
+  QUILL_GIT_*       own-engine bucket config (same variables as the API when QUILL_GIT_ENGINE_MODE=own)
 `)
 	return nil
 }
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance)")
 	}
 	switch args[0] {
 	case "create-repo":
@@ -76,8 +79,10 @@ func runAdmin(args []string) error {
 		return runSeedFile(args[1:])
 	case "purge-e2e":
 		return runPurgeE2e(args[1:])
+	case "git-maintenance":
+		return runGitMaintenance(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance)", args[0])
 	}
 }
 

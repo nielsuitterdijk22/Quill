@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -109,6 +110,20 @@ func (m *MemStore) Keys() []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// List returns every object key under prefix, sorted — the maintenance path
+// (B7) enumerates repo packs with it; mirrors the S3 client's List.
+func (m *MemStore) List(ctx context.Context, prefix string) ([]string, error) {
+	_ = ctx
+	keys := m.Keys()
+	out := keys[:0:0]
+	for _, k := range keys {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, k)
+		}
+	}
+	return out, nil
 }
 
 // String is a small debug helper.

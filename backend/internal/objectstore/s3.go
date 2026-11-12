@@ -14,11 +14,13 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -83,10 +85,14 @@ func New(cfg Config) *Client {
 
 const maxObjectBytes = 64 << 20 // 64 MiB: manifests are small; packs stream via Range
 
-// do signs and runs one request. body may be nil.
-func (c *Client) do(ctx context.Context, method, key string, body []byte, opts PutOptions, extra map[string]string) (*http.Response, error) {
-	url := fmt.Sprintf("%s/%s/%s", c.cfg.Endpoint, c.cfg.Bucket, key)
-	req, err := http.NewRequestWithContext(ctx, method, url, func() io.Reader {
+// do signs and runs one request. body may be nil; query carries S3
+// subresource/query parameters (List uses it; the object CRUD paths pass nil).
+func (c *Client) do(ctx context.Context, method, key string, body []byte, opts PutOptions, extra map[string]string, query map[string]string) (*http.Response, error) {
+	u := fmt.Sprintf("%s/%s/%s", c.cfg.Endpoint, c.cfg.Bucket, key)
+	if enc := canonicalQuery(query); enc != "" {
+		u += "?" + enc
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, func() io.Reader {
 		if body == nil {
 			return nil
 		}
@@ -115,7 +121,7 @@ func (c *Client) do(ctx context.Context, method, key string, body []byte, opts P
 		req.Header.Set(k, v)
 	}
 
-	if err := c.sign(req, method, key, payloadHash); err != nil {
+	if err := c.sign(req, method, key, payloadHash, query); err != nil {
 		return nil, err
 	}
 	resp, err := c.client.Do(req)
@@ -144,7 +150,7 @@ func (c *Client) do(ctx context.Context, method, key string, body []byte, opts P
 // PutOptions{IfNoneMatch: "*"} it refuses to overwrite; with IfMatch it
 // refuses unless the current etag matches.
 func (c *Client) Put(ctx context.Context, key string, body []byte, opts PutOptions) (etag string, err error) {
-	resp, err := c.do(ctx, http.MethodPut, key, body, opts, nil)
+	resp, err := c.do(ctx, http.MethodPut, key, body, opts, nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -165,7 +171,7 @@ func (c *Client) getRange(ctx context.Context, key string, lo, hi int64) (body [
 	if hi > lo && lo >= 0 {
 		extra["Range"] = fmt.Sprintf("bytes=%d-%d", lo, hi)
 	}
-	resp, err := c.do(ctx, http.MethodGet, key, nil, PutOptions{}, extra)
+	resp, err := c.do(ctx, http.MethodGet, key, nil, PutOptions{}, extra, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -188,7 +194,7 @@ func (c *Client) GetRange(ctx context.Context, key string, lo, hi int64) (body [
 
 // Head returns the object's size and etag without fetching it.
 func (c *Client) Head(ctx context.Context, key string) (size int64, etag string, err error) {
-	resp, err := c.do(ctx, http.MethodHead, key, nil, PutOptions{}, nil)
+	resp, err := c.do(ctx, http.MethodHead, key, nil, PutOptions{}, nil, nil)
 	if err != nil {
 		return 0, "", err
 	}
@@ -198,7 +204,7 @@ func (c *Client) Head(ctx context.Context, key string) (size int64, etag string,
 
 // Delete removes the object; deleting a missing object is ErrNotFound.
 func (c *Client) Delete(ctx context.Context, key string) error {
-	resp, err := c.do(ctx, http.MethodDelete, key, nil, PutOptions{}, nil)
+	resp, err := c.do(ctx, http.MethodDelete, key, nil, PutOptions{}, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -211,8 +217,79 @@ func drainClose(resp *http.Response) {
 	resp.Body.Close()
 }
 
+// canonicalQuery renders query params in SigV4 canonical form: keys sorted,
+// values AWS-URI-encoded (RFC3986, '+' NOT accepted as space).
+func canonicalQuery(q map[string]string) string {
+	if len(q) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(q))
+	for k := range q {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, awsURIEncode(k)+"="+awsURIEncode(q[k]))
+	}
+	return strings.Join(parts, "&")
+}
+
+// awsURIEncode percent-encodes everything except unreserved bytes, the way
+// SigV4 demands (spaces as %20, '/' encoded).
+func awsURIEncode(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch >= 'A' && ch <= 'Z', ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9',
+			ch == '-', ch == '_', ch == '.', ch == '~':
+			b.WriteByte(ch)
+		default:
+			fmt.Fprintf(&b, "%%%02X", ch)
+		}
+	}
+	return b.String()
+}
+
+// List returns every object key under prefix, paginating internally.
+// Keys are bucket-relative.
+func (c *Client) List(ctx context.Context, prefix string) ([]string, error) {
+	var keys []string
+	token := ""
+	for {
+		q := map[string]string{"list-type": "2", "prefix": prefix, "max-keys": "1000"}
+		if token != "" {
+			q["continuation-token"] = token
+		}
+		resp, err := c.do(ctx, http.MethodGet, "", nil, PutOptions{}, nil, q)
+		if err != nil {
+			return nil, err
+		}
+		var out struct {
+			IsTruncated           bool   `xml:"IsTruncated"`
+			NextContinuationToken string `xml:"NextContinuationToken"`
+			Contents              []struct {
+				Key string `xml:"Key"`
+			} `xml:"Contents"`
+		}
+		err = xml.NewDecoder(resp.Body).Decode(&out)
+		drainClose(resp)
+		if err != nil {
+			return nil, fmt.Errorf("objectstore: list %s: %w", prefix, err)
+		}
+		for _, o := range out.Contents {
+			keys = append(keys, o.Key)
+		}
+		if !out.IsTruncated || out.NextContinuationToken == "" {
+			return keys, nil
+		}
+		token = out.NextContinuationToken
+	}
+}
+
 // sign adds the SigV4 Authorization header (AWS4-HMAC-SHA256) for one request.
-func (c *Client) sign(req *http.Request, method, key, payloadHash string) error {
+func (c *Client) sign(req *http.Request, method, key, payloadHash string, query map[string]string) error {
 	amzDate := req.Header.Get("x-amz-date")
 	dateStamp := amzDate[:8]
 	region := c.cfg.Region
@@ -253,7 +330,7 @@ func (c *Client) sign(req *http.Request, method, key, payloadHash string) error 
 	canonicalRequest := strings.Join([]string{
 		method,
 		"/" + c.cfg.Bucket + "/" + key,
-		"", // no query params in this client
+		canonicalQuery(query),
 		ch.String(),
 		signedHeaders,
 		payloadHash,
