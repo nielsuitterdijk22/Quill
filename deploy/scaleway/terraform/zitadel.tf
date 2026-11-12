@@ -35,7 +35,10 @@ resource "scaleway_container" "zitadel" {
   cpu_limit = var.container_cpu
   # Zitadel cold-start (JVM-sized Go binary + first DB roundtrips) fits in
   # 1024 MB; the concurrent-request budget rides on max_scale + the edge.
-  memory_limit = var.container_memory_mb
+  # Zitadel's cold start (eventstore/projections bootstrap) bursted past 1 GiB
+  # inside the gVisor sandbox and the container OOM-crashed each cold start —
+  # steady state is ~120 MiB, so 2 GiB headroom keeps the boot alive.
+  memory_limit = 2048
   min_scale    = 0 # scale to zero — free when idle
   max_scale    = 1 # single instance until multi-instance behavior is verified
 
@@ -67,10 +70,13 @@ resource "scaleway_container" "zitadel" {
     ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD = local.db_password
   }
 
+  # Cold start (image pull + zitadel boot + migration verification) takes up
+  # to ~2 minutes on a fresh node; the probe budget must cover it or Scala-
+  # way kills the instance mid-boot and flips the revision to error.
   liveness_probe {
-    interval          = "10s"
-    failure_threshold = 3
-    timeout           = "5s"
+    interval          = "30s"
+    failure_threshold = 5
+    timeout           = "10s"
     http {
       path = "/debug/healthz"
     }
@@ -95,40 +101,33 @@ resource "scaleway_job_definition" "zitadel_setup" {
   project_id = scaleway_account_project.quill.id
   region     = var.region
 
-  # The image ENTRYPOINT is [/bin/sh -c], so `command` is a shell snippet —
-  # same pattern the VM wrapper used, minus the PAT-harvest loop.
-  image_uri = "${local.registry}/quill-zitadel:${var.image_tag}"
-  command   = "exec /app/zitadel setup --masterkey \"$ZITADEL_MASTERKEY\" --tlsMode external"
+  # Jobs replace the image command entirely (no ENTRYPOINT, no shell), so
+  # the invocation is argv-form; the masterkey arrives via ZITADEL_MASTERKEY
+  # from secret_reference (Zitadel reads the env natively).
+  image_uri       = "${local.registry}/quill-zitadel:${var.image_tag}"
+  startup_command = ["/app/zitadel", "setup", "--tlsMode", "external", "--masterkeyFromEnv"]
 
   cpu_limit              = 500
   memory_limit           = 1024
   local_storage_capacity = 1024
 
+  # NOTE ON SECRETS IN PLAINTEXT ENV: the Scaleway provider's
+  # secret_reference block validated but silently vanished at the API — job
+  # runs received no injected env (verified live, 2026-11-12). The pg_backup
+  # job already carries its IAM keys the same way, and every value here lives
+  # in terraform.tfstate regardless; exposure stays operator-only. Revisit
+  # when secret-references work (track in DECISIONS.md).
   env = {
+    ZITADEL_MASTERKEY                        = random_password.zitadel_masterkey.result
     ZITADEL_DATABASE_POSTGRES_HOST           = local.sdb_host["zitadel"]
     ZITADEL_DATABASE_POSTGRES_PORT           = local.sdb_port["zitadel"]
     ZITADEL_DATABASE_POSTGRES_DATABASE       = "zitadel"
     ZITADEL_DATABASE_POSTGRES_USER_USERNAME  = local.db_user
+    ZITADEL_DATABASE_POSTGRES_USER_PASSWORD  = local.db_password
     ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE  = "require"
     ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME = local.db_user
+    ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD = local.db_password
     ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE = "require"
-  }
-
-  # secret_reference injects Secret Manager values as env vars in the job
-  # run — nothing sensitive lands in the job definition payload.
-  secret_reference {
-    secret_id   = scaleway_secret.s["zitadel/masterkey"].id
-    environment = "ZITADEL_MASTERKEY"
-  }
-
-  secret_reference {
-    secret_id   = scaleway_secret.s["db/password"].id
-    environment = "ZITADEL_DATABASE_POSTGRES_USER_PASSWORD"
-  }
-
-  secret_reference {
-    secret_id   = scaleway_secret.s["db/password"].id
-    environment = "ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD"
   }
 
   retry_policy {
