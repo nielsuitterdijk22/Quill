@@ -70,10 +70,33 @@ func (b *BucketPackSource) fetchObject(ctx context.Context, key string, wantByte
 // writeAtomic writes dest via a temp file + rename so a crashed hydration
 // never leaves a half-written pack behind (the idempotence check only trusts
 // complete files of the right size).
+//
+// Each writer stages in its OWN temp file: concurrent hydrations of one repo
+// (post-receive CI trigger vs the next request) used to share dest+".part",
+// so one writer renamed the other's staging file away → "no such file" 500s.
+// rename(2) is atomic, so the last writer wins with a complete file.
 func writeAtomic(dest string, data []byte) error {
-	tmp := dest + ".part"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".part-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, dest)
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Chmod(tmp, 0o644); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

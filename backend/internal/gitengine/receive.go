@@ -318,7 +318,23 @@ func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx Re
 // handler (B3) and merges/rebase-created commits (B5): the caller is
 // responsible for holding the write lease and for the state being fresh.
 // pushedSha lands in push_history's tail entry.
-func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx ReceiveContext, m *Manifest, etag string, st RefereeState, pushedSha, actor string) error {
+//
+// Cache hygiene: receive-pack (and merges) write LOOSE refs, which shadow the
+// packed-refs view Hydrate materializes from the manifest. A loose ref that
+// outlives its push goes stale the moment another instance moves that ref —
+// and would be snapshotted as "truth" on this instance's next push. So once
+// the referee committed, loose refs are folded into packed-refs; if nothing
+// committed (lost race, error), they are dropped so the next hydration
+// re-materializes the referee's view.
+func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx ReceiveContext, m *Manifest, etag string, st RefereeState, pushedSha, actor string) (err error) {
+	committed := false
+	defer func() {
+		if committed {
+			packLooseRefs(rcx.Dir)
+		} else {
+			dropLooseRefs(rcx.Dir)
+		}
+	}()
 	newRefs, err := RefSnapshot(rcx.Dir)
 	if err != nil {
 		return err
@@ -328,7 +344,9 @@ func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx Rec
 		newMap[r.Name] = r.Target
 	}
 	if refsEqual(newMap, st.Refs) {
-		// nothing changed on disk (e.g. receive-pack rejected in-band)
+		// nothing changed on disk (e.g. receive-pack rejected in-band): the
+		// on-disk refs ARE the committed truth, keep them.
+		committed = true
 		return nil
 	}
 
@@ -371,6 +389,7 @@ func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx Rec
 	if _, err := referee.Commit(ctx, rcx.ID, st, newMap, storage); err != nil {
 		return err
 	}
+	committed = true
 
 	// The referee committed; the manifest write is a repairable view update.
 	// Retry against a fresh etag (a concurrent hydration does not write
@@ -568,4 +587,27 @@ func isHexSha(s string) bool {
 		}
 	}
 	return true
+}
+
+// packLooseRefs folds loose refs into packed-refs (best effort: a failure only
+// costs the next hydration a rewrite).
+func packLooseRefs(dir string) {
+	cmd := exec.Command("git", "pack-refs", "--all", "--prune")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		slog.Warn("pack-refs after push failed", "dir", dir, "err", err, "out", strings.TrimSpace(string(out)))
+	}
+}
+
+// dropLooseRefs deletes every loose ref (an uncommitted push's leftovers);
+// packed-refs — the referee's materialized view — becomes authoritative again.
+func dropLooseRefs(dir string) {
+	refs := filepath.Join(dir, "refs")
+	if err := os.RemoveAll(refs); err != nil {
+		slog.Warn("drop loose refs failed", "dir", dir, "err", err)
+		return
+	}
+	for _, sub := range []string{"heads", "tags"} {
+		_ = os.MkdirAll(filepath.Join(refs, sub), 0o755)
+	}
 }
