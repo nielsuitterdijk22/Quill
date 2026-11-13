@@ -184,6 +184,10 @@ jobs:
           SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
           SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
           SCW_DEFAULT_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
+          # Fresh HOME makes scw's update check fire every run and print a
+          # version banner to STDOUT, which broke the JSON parse below
+          # ("Expecting value: line 1 column 1").
+          SCW_DISABLE_CHECK_VERSION: "true"
         run: |
           set -euo pipefail
           mkdir -p ~/.config/scw
@@ -195,7 +199,7 @@ jobs:
           JOB_DEF_ID="$(terraform output -raw zitadel_setup_job_id)"
           JOB_DEF_ID="${JOB_DEF_ID##*/}"
           START_OUT="$(/tmp/scw -o json jobs definition start "$JOB_DEF_ID")" || { echo "job start failed: $START_OUT" >&2; exit 1; }
-          RUN_ID="$(echo "$START_OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["job_runs"][0]["id"])')"
+          RUN_ID="$(echo "$START_OUT" | python3 -c 'import sys,json; s=sys.stdin.read(); s=s[s.index("{"):]; print(json.loads(s)["job_runs"][0]["id"])')"
           echo "zitadel setup job run: $RUN_ID (logs: scw jobs run get $RUN_ID)"
           /tmp/scw jobs run wait "$RUN_ID" -o json > /tmp/job.json || true
           # The job-run object carries `state` (lowercase: succeeded/failed);
