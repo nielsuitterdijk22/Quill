@@ -63,29 +63,16 @@ func TerminateInstance(ctx context.Context, instanceID, zone string) error {
 		return fmt.Errorf("zone: %w", err)
 	}
 
-	// Best-effort power off (the box may already be stopping), then poll to
-	// stopped so the delete is accepted.
-	_, _ = api.ServerAction(&instance.ServerActionRequest{
+	// One server-side action: power off, delete the server AND its volumes.
+	// A client-side poweroff → poll → delete sequence cannot work from inside
+	// the instance being powered off (this process dies with the box before
+	// it can issue the delete, stranding a billed volume).
+	_, err = api.ServerAction(&instance.ServerActionRequest{
 		Zone:     z,
 		ServerID: instanceID,
-		Action:   instance.ServerActionPoweroff,
-	})
-	deadline := time.Now().Add(3 * time.Minute)
-	for time.Now().Before(deadline) {
-		srv, err := api.GetServer(&instance.GetServerRequest{Zone: z, ServerID: instanceID})
-		if err != nil {
-			break // fall through to delete; the broker TTL-killer is the backstop
-		}
-		if srv.Server != nil && srv.Server.State == instance.ServerStateStopped {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(5 * time.Second):
-		}
-	}
-	return api.DeleteServer(&instance.DeleteServerRequest{Zone: z, ServerID: instanceID})
+		Action:   instance.ServerActionTerminate,
+	}, scw.WithContext(ctx))
+	return err
 }
 
 // ScalewayTerminator builds the Terminator used by cmd/ciworker: resolves the

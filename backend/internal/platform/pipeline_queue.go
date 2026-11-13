@@ -169,7 +169,9 @@ func (s *Service) wakeBroker() {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		// Generous: a cold broker boots, then lists/creates/powers on an
+		// instance before answering (it no longer aborts on hang-up either).
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		wakeOnce(ctx, url, secret, s.logger)
 	}()

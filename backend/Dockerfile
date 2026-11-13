@@ -9,7 +9,10 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-api ./cmd/api && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-dispatch ./cmd/dispatch
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-dispatch ./cmd/dispatch && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-broker ./cmd/broker && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-ciworker ./cmd/ciworker && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill ./cmd/quill
 
 # ---- run ----
 FROM alpine:3.22
@@ -20,6 +23,9 @@ RUN apk add --no-cache ca-certificates git
 RUN adduser -D -u 10001 quill
 COPY --from=build /out/quill-api /quill-api
 COPY --from=build /out/quill-dispatch /quill-dispatch
+COPY --from=build /out/quill-broker /quill-broker
+COPY --from=build /out/quill-ciworker /quill-ciworker
+COPY --from=build /out/quill /quill
 EXPOSE 8080
 USER quill:quill
 CMD ["/quill-api"]

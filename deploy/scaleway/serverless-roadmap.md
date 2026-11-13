@@ -147,8 +147,9 @@ Risks: queue semantics (visibility timeout) in Postgres without a queue library 
 dumb (claimed_at + heartbeat). Tests: integration gated on `QUILL_TEST_DATABASE_URL`; live
 pipeline round-trip. Rollback: revert; VM dispatch path kept behind a config flag until A3.
 
-**PR A2 — Broker container.** _Status: SHIPPED 2026-11-11 (code + local round trip;
-deploy wiring pending — see follow-ups)._ Scope: new Serverless Container `dispatch-broker`
+**PR A2 — Broker container.** _Status: SHIPPED 2026-11-11 (code + local round trip);
+deploy wiring SHIPPED 2026-11-13 (`ci_broker.tf`, gated by `var.ci_queue_mode`; no cron sweeper —
+see DECISIONS)._ Scope: new Serverless Container `dispatch-broker`
 (min_scale 0), HMAC-verified `/wake` surface (same `X-Quill-Dispatch-Signature`
 scheme/secret as the dispatch API), single-flight ensure of ONE tagged ephemeral worker
 instance via `scaleway-sdk-go` v1.38.0 (list-before-create; TTL-kill for instances stuck
@@ -161,8 +162,8 @@ Risks: broker scale-out races (covered by the SKIP LOCKED claim); per-job startu
 (~1–2 min instance boot on cold wake, acceptable). Rollback: flip `QUILL_PIPELINE_QUEUE_MODE`
 off — the api returns to inline VM dispatch.
 
-**PR A3 — CI worker.** _Status: SHIPPED 2026-11-11 (code + local round trip; deploy wiring
-pending)._ Scope — amended by the act-no-host-mode finding (DECISIONS.md): **an ephemeral
+**PR A3 — CI worker.** _Status: SHIPPED 2026-11-11 (code + local round trip); deploy wiring
+SHIPPED 2026-11-13 (worker = the backend image's `/quill-ciworker`, pulled by cloud-init)._ Scope — amended by the act-no-host-mode finding (DECISIONS.md): **an ephemeral
 Scaleway instance, not a Serverless Job.** The ciworker is a plain Go binary
 (`cmd/ciworker`) draining the queue (claim via API → heartbeat → run act on the instance's
 host Docker → report; CI minutes metered against the job's `tenant_id`), taking its workdir
@@ -381,7 +382,7 @@ generate` is incompatible with the repo's pinned generated output — recorded i
 DECISIONS)._
 
 **PR B7 — Async maintenance Jobs.** _Status: SHIPPED 2026-11-12 (code + admin runner;
-`scaleway_job_definition` wiring deferred to the C-phase terraform batch — the runner is
+`scaleway_job_definition` wiring SHIPPED 2026-11-13 (`git-maintenance`, daily cron) — the runner is
 `quill admin git-maintenance`, pure Go, cron- or broker-triggerable, no infra needed to
 start using it locally)._ As designed, with the shipped shape: `gitengine.Maintenance`
 per repo — (1) reconcile: rebuild the manifest from the referee when refs diverge,

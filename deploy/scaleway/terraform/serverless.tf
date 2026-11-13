@@ -76,6 +76,11 @@ resource "scaleway_container" "api" {
     # The api triggers pipelines by calling the dispatcher on the Forgejo VM
     # (HMAC-protected with QUILL_PIPELINE_DISPATCH_SECRET).
     QUILL_PIPELINE_DISPATCH_URL = "http://${scaleway_instance_server.forgejo.public_ips[0].address}:8090"
+    # Phase A: queue mode routes runs through the broker + ephemeral CI
+    # instances instead (ci_broker.tf). The VM dispatch URL stays as the
+    # flip-back fallback.
+    QUILL_PIPELINE_QUEUE_MODE = var.ci_queue_mode ? "true" : "false"
+    QUILL_BROKER_URL          = "https://${scaleway_container.broker.domain_name}"
   }
   secret_environment_variables = {
     QUILL_DATABASE_URL             = local.db_url["quill"]

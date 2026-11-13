@@ -101,14 +101,22 @@ func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, 
 			}
 			if time.Since(created) > o.cfg.TTL {
 				o.logger.Warn("TTL-killing stuck CI instance", "id", srv.ID, "age", time.Since(created).Round(time.Minute))
-				_, _ = o.api.ServerAction(&instance.ServerActionRequest{
-					Zone: o.zone, ServerID: srv.ID, Action: instance.ServerActionPoweroff,
-				})
+				// terminate = power off + delete server + delete its volumes,
+				// server-side; a bare poweroff would leave a billed volume.
+				if _, err := o.api.ServerAction(&instance.ServerActionRequest{
+					Zone: o.zone, ServerID: srv.ID, Action: instance.ServerActionTerminate,
+				}, scw.WithContext(ctx)); err != nil {
+					o.logger.Warn("terminate stuck CI instance", "id", srv.ID, "error", err)
+				}
 				continue
 			}
 			if alive == nil {
 				alive = srv
 			}
+		case instance.ServerStateStopped, instance.ServerStateStoppedInPlace:
+			// A worker that halted without deleting itself (self-termination
+			// failed): reap it with its volumes so nothing keeps billing.
+			o.reapStopped(ctx, srv)
 		}
 	}
 	if alive != nil {
@@ -171,4 +179,30 @@ func (o *ScalewayOrchestrator) marketplaceImage(ctx context.Context) (string, er
 		}
 	}
 	return "", fmt.Errorf("no marketplace image matching %q found", o.cfg.Image)
+}
+
+// reapStopped deletes a stopped CI instance and then its volumes (DeleteServer
+// alone leaves volumes behind; the terminate action requires a running server).
+func (o *ScalewayOrchestrator) reapStopped(ctx context.Context, srv *instance.Server) {
+	if srv.State == instance.ServerStateStoppedInPlace {
+		// stopped-in-place still holds the hypervisor slot: power off fully
+		// first; the next wake finishes the reap once it reports stopped.
+		_, _ = o.api.ServerAction(&instance.ServerActionRequest{
+			Zone: o.zone, ServerID: srv.ID, Action: instance.ServerActionPoweroff,
+		}, scw.WithContext(ctx))
+		return
+	}
+	if err := o.api.DeleteServer(&instance.DeleteServerRequest{Zone: o.zone, ServerID: srv.ID}, scw.WithContext(ctx)); err != nil {
+		o.logger.Warn("reap stopped CI instance", "id", srv.ID, "error", err)
+		return
+	}
+	for _, v := range srv.Volumes {
+		if v == nil {
+			continue
+		}
+		if err := o.api.DeleteVolume(&instance.DeleteVolumeRequest{Zone: o.zone, VolumeID: v.ID}, scw.WithContext(ctx)); err != nil {
+			o.logger.Warn("reap CI volume", "volume", v.ID, "error", err)
+		}
+	}
+	o.logger.Info("reaped stopped CI instance", "id", srv.ID)
 }

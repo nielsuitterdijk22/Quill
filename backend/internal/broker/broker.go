@@ -92,7 +92,12 @@ func (s *Server) handleWake(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, created, err := s.cfg.Orchestrator.EnsureWorker(r.Context())
+	// Detached from the request: the api's wake is fire-and-forget with a
+	// short timeout, and a hang-up must never abort create → user-data →
+	// power-on halfway (that strands a powered-off instance).
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
+	defer cancel()
+	id, created, err := s.cfg.Orchestrator.EnsureWorker(ctx)
 	if err != nil {
 		s.cfg.Logger.Error("ensure worker failed", "error", err)
 		http.Error(w, "ensure worker failed", http.StatusInternalServerError)

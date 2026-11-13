@@ -22,6 +22,14 @@ type CloudInitOpts struct {
 	// docker login).
 	RegistryUser     string
 	RegistryPassword string
+	// SCWAccessKey/SCWSecretKey/SCWProjectID let the worker self-terminate
+	// its own instance (the terminate action needs an authenticated call).
+	SCWAccessKey string
+	SCWSecretKey string
+	SCWProjectID string
+	// UbuntuImage overrides act's ubuntu-latest image
+	// (QUILL_PIPELINE_UBUNTU_IMAGE); empty keeps the runner default.
+	UbuntuImage string
 }
 
 // CloudInit builds the cloud-init script: Docker + the ciworker container,
@@ -46,14 +54,29 @@ func CloudInit(o CloudInitOpts) string {
 		{"QUILL_CIW_WORKER_ID", "ciworker-on-host"},
 		{"QUILL_CIW_SELF_TERMINATE", "true"},
 		{"QUILL_PIPELINE_ACTION_CACHE", "/mnt/quill-act-cache"},
+		{"QUILL_PIPELINE_UBUNTU_IMAGE", o.UbuntuImage},
+		{"SCW_ACCESS_KEY", o.SCWAccessKey},
+		{"SCW_SECRET_KEY", o.SCWSecretKey},
+		{"SCW_DEFAULT_PROJECT_ID", o.SCWProjectID},
 	} {
+		if kv[1] == "" {
+			continue
+		}
 		fmt.Fprintf(&b, "      %s=%s\n", kv[0], kv[1])
 	}
 	b.WriteString("runcmd:\n")
+	// User workflow containers run arbitrary code: they must not be able to
+	// read the instance user-data (which carries the secrets above) off the
+	// metadata service. DOCKER-USER filters only container (forwarded)
+	// traffic; the worker itself runs on the host network and keeps metadata
+	// access for its own instance id.
+	b.WriteString("  - systemctl start docker\n")
+	b.WriteString("  - iptables -I DOCKER-USER -d 169.254.169.254 -j DROP\n")
+	b.WriteString("  - ip6tables -I DOCKER-USER -d fd00:42::42 -j DROP || true\n")
 	if o.RegistryUser != "" {
 		fmt.Fprintf(&b, "  - docker login rg.fr-par.scw.cloud -u %s -p %s\n", o.RegistryUser, o.RegistryPassword)
 	}
-	fmt.Fprintf(&b, "  - docker run --rm --name ciworker --env-file /etc/quill-ci.env -v /mnt:/mnt -v /var/run/docker.sock:/var/run/docker.sock %s\n", o.WorkerImage)
+	fmt.Fprintf(&b, "  - docker run --rm --name ciworker -u 0 --network host --env-file /etc/quill-ci.env -v /mnt:/mnt -v /var/run/docker.sock:/var/run/docker.sock %s /quill-ciworker\n", o.WorkerImage)
 	b.WriteString("  - shutdown -h now\n")
 	return b.String()
 }

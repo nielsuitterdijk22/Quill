@@ -288,3 +288,15 @@ variable "creem_pro_product_id" {
   type        = string
   default     = "unset"
 }
+
+variable "ci_queue_mode" {
+  description = "Phase A switch: true routes pipeline runs through the Postgres queue + broker + ephemeral CI instances; false keeps the inline VM dispatch."
+  type        = bool
+  default     = false
+}
+
+variable "ci_instance_type" {
+  description = "Commercial type of the ephemeral CI worker instance."
+  type        = string
+  default     = "DEV1-S"
+}

@@ -15,6 +15,7 @@
 //	QUILL_CIB_WORKER_IMAGE          registry image of the ciworker container
 //	QUILL_CIB_REGISTRY_USER/_PASSWORD  registry pull credentials for cloud-init's docker login
 //	SCW_ACCESS_KEY / SCW_SECRET_KEY    IAM key scoped to the CI instance orchestration
+//	QUILL_PIPELINE_UBUNTU_IMAGE        act's ubuntu-latest image on the worker (optional)
 package main
 
 import (
@@ -60,6 +61,13 @@ func main() {
 		InstanceTag:      tag,
 		RegistryUser:     os.Getenv("QUILL_CIB_REGISTRY_USER"),
 		RegistryPassword: os.Getenv("QUILL_CIB_REGISTRY_PASSWORD"),
+		// The worker self-terminates with the broker's own instance key
+		// (Scaleway IAM cannot scope a key to tagged servers, so a separate
+		// worker key would carry the same rights).
+		SCWAccessKey: os.Getenv("SCW_ACCESS_KEY"),
+		SCWSecretKey: os.Getenv("SCW_SECRET_KEY"),
+		SCWProjectID: projectID,
+		UbuntuImage:  os.Getenv("QUILL_PIPELINE_UBUNTU_IMAGE"),
 	})
 
 	orch, err := broker.NewScalewayOrchestrator(broker.ScalewayConfig{
