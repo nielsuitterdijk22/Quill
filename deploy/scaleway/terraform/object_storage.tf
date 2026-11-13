@@ -30,3 +30,21 @@ resource "scaleway_object_bucket_acl" "backups" {
   project_id = scaleway_account_project.quill.id
   acl        = "private"
 }
+
+# ---- Git engine bucket (serverless epic, PR D1) -----------------------------------
+# The own-git-engine's truth: packs + manifests, tenant-scoped keys. No
+# lifecycle rule — packfiles are permanent data, not backups. Objects only
+# ever change through the engine's write path (referee CAS first), so plain
+# versioning (not the backups bucket's delete-protection semantics) is enough.
+
+resource "scaleway_object_bucket" "repos" {
+  name       = var.repos_bucket_name
+  project_id = scaleway_account_project.quill.id
+  region     = var.region
+
+  versioning {
+    enabled = true
+  }
+
+  tags = local.tags_map
+}

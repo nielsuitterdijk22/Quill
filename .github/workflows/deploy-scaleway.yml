@@ -187,17 +187,21 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.config/scw
           echo '{"default_zone":"fr-par-1"}' > ~/.config/scw/config.yaml
-          curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.65.2/scaleway-cli_2.65.2_linux_amd64 -o /tmp/scw && chmod +x /tmp/scw
+          curl -sL --retry 3 https://github.com/scaleway/scaleway-cli/releases/download/v2.65.2/scaleway-cli_2.65.2_linux_amd64 -o /tmp/scw && chmod +x /tmp/scw
+          /tmp/scw version >/dev/null # fail fast on a corrupt download
           # terraform outputs region-qualified ids (fr-par/<uuid>); the scw
           # CLI wants the bare UUID.
           JOB_DEF_ID="$(terraform output -raw zitadel_setup_job_id)"
           JOB_DEF_ID="${JOB_DEF_ID##*/}"
-          RUN_ID="$(/tmp/scw -o json jobs definition start "$JOB_DEF_ID" | python3 -c 'import sys,json; print(json.load(sys.stdin)["job_runs"][0]["id"])')"
+          START_OUT="$(/tmp/scw -o json jobs definition start "$JOB_DEF_ID")" || { echo "job start failed: $START_OUT" >&2; exit 1; }
+          RUN_ID="$(echo "$START_OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["job_runs"][0]["id"])')"
           echo "zitadel setup job run: $RUN_ID (logs: scw jobs run get $RUN_ID)"
           /tmp/scw jobs run wait "$RUN_ID" -o json > /tmp/job.json || true
-          STATUS="$(python3 -c 'import json; print(json.load(open("/tmp/job.json")).get("status",""))' 2>/dev/null || echo unknown)"
+          # The job-run object carries `state` (lowercase: succeeded/failed);
+          # scw CLI v2.65 never emits `status`.
+          STATUS="$(python3 -c 'import json; print(json.load(open("/tmp/job.json")).get("state",""))' || echo unknown)"
           echo "job status: $STATUS"
-          [ "$STATUS" = "SUCCEEDED" ] || { echo "zitadel setup job did not succeed"; exit 1; }
+          [ "$STATUS" = "succeeded" ] || { echo "zitadel setup job did not succeed"; exit 1; }
 
   vm-deploy:
     name: Deploy Forgejo VM stack (SSH)

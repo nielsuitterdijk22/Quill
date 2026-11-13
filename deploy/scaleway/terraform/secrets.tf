@@ -26,6 +26,8 @@ resource "scaleway_secret" "s" {
     "db/quill-url",
     "backup/s3-access-key",
     "backup/s3-secret-key",
+    "git-engine/s3-access-key",
+    "git-engine/s3-secret-key",
     "vm/ssh-private-key",
   ])
 
@@ -56,6 +58,8 @@ resource "scaleway_secret_version" "v" {
     "db/quill-url"                 = local.db_url["quill"]
     "backup/s3-access-key"         = scaleway_iam_api_key.backup.access_key
     "backup/s3-secret-key"         = scaleway_iam_api_key.backup.secret_key
+    "git-engine/s3-access-key"     = scaleway_iam_api_key.git_engine.access_key
+    "git-engine/s3-secret-key"     = scaleway_iam_api_key.git_engine.secret_key
     "vm/ssh-private-key"           = tls_private_key.vm.private_key_openssh,
   }, each.key, "")
 }

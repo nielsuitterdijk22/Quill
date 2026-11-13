@@ -18,6 +18,10 @@ const (
 	ReviewApproved       = "APPROVED"
 	ReviewRequestChanges = "REQUEST_CHANGES"
 	ReviewComment        = "COMMENT"
+	// ReviewPending is an unsent draft: visible only to its author, so the D1
+	// history import skips it (migrating it would publish what was never
+	// submitted).
+	ReviewPending = "PENDING"
 )
 
 // Review is a pull-request review.
@@ -55,10 +59,13 @@ type ReviewCommentInput struct {
 // ReviewCodeComment is a single line-anchored comment within a review. Position
 // is the line number in the new version of the file the comment is attached to.
 type ReviewCodeComment struct {
-	ID        int64     `json:"id"`
-	Path      string    `json:"path"`
-	Body      string    `json:"body"`
-	Position  int       `json:"position"`
+	ID       int64  `json:"id"`
+	Path     string `json:"path"`
+	Body     string `json:"body"`
+	Position int    `json:"position"`
+	// Line is the diff line the comment anchors to (newer Forgejo API); older
+	// deployments only fill Position. The D1 import uses Line when present.
+	Line      int       `json:"line"`
 	User      *User     `json:"user"`
 	CreatedAt time.Time `json:"created_at"`
 	HTMLURL   string    `json:"html_url"`

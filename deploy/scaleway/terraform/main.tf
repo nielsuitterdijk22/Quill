@@ -60,7 +60,6 @@ resource "scaleway_iam_application" "backup" {
   name        = "quill-backup-writer"
   description = "Backup job identity: read/write the backup bucket only."
 }
-
 resource "scaleway_iam_policy" "backup" {
   name           = "quill-backup-writer-policy"
   description    = "Object Storage access scoped to the Quill project."
@@ -81,6 +80,39 @@ resource "scaleway_iam_api_key" "backup" {
     # The API returns a server-side expires_at that drifts, which otherwise
     # forces a replace on every apply — and destroying the already-expired old
     # key fails with 412 "cannot act on deleted resource".
+    ignore_changes = [expires_at]
+  }
+}
+
+# ---- IAM: git-engine bucket identity (serverless epic, PR D1) ----------------------
+# The identity the migration tool uses to write packs/manifests into the repos
+# bucket — and later (cutover era) the one the api container serves git from.
+# Same ObjectStorageFullAccess-on-project scope as the backup writer: bucket
+# policies don't narrow per-bucket on Scaleway, so the isolation is identity-
+# based (the backup job never sees this key and vice versa).
+
+resource "scaleway_iam_application" "git_engine" {
+  name        = "quill-git-engine"
+  description = "Own-git-engine bucket identity: repos bucket packs + manifests."
+}
+
+resource "scaleway_iam_policy" "git_engine" {
+  name           = "quill-git-engine-policy"
+  description    = "Object Storage access scoped to the Quill project."
+  application_id = scaleway_iam_application.git_engine.id
+
+  rule {
+    project_ids          = [scaleway_account_project.quill.id]
+    permission_set_names = ["ObjectStorageFullAccess"]
+  }
+}
+
+resource "scaleway_iam_api_key" "git_engine" {
+  application_id     = scaleway_iam_application.git_engine.id
+  description        = "S3 credentials for the own git engine (repos bucket)"
+  default_project_id = scaleway_account_project.quill.id
+
+  lifecycle {
     ignore_changes = [expires_at]
   }
 }

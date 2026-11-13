@@ -312,7 +312,7 @@ func (h *SmartHTTP) finalizePush(ctx context.Context, cfg *ReceiveConfig, rcx Re
 // responsible for holding the write lease and for the state being fresh.
 // pushedSha lands in push_history's tail entry.
 func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx ReceiveContext, m *Manifest, etag string, st RefereeState, pushedSha, actor string) error {
-	newRefs, err := refSnapshot(rcx.Dir)
+	newRefs, err := RefSnapshot(rcx.Dir)
 	if err != nil {
 		return err
 	}
@@ -441,9 +441,10 @@ func runReceivePack(r *http.Request, dir string, body []byte, out *bytes.Buffer)
 	return nil
 }
 
-// refSnapshot runs for-each-ref in a repo dir, capturing targets and peeled
-// targets for annotated tags.
-func refSnapshot(dir string) ([]ManifestRef, error) {
+// RefSnapshot runs for-each-ref in a repo dir (bare or hydrated), capturing
+// targets and peeled tag commits — the manifest refs view of any repo dir.
+// Exported for the D1 migration tool, which snapshots a mirror clone.
+func RefSnapshot(dir string) ([]ManifestRef, error) {
 	cmd := exec.Command("git", "for-each-ref", "--format=%(refname) %(objectname) %(*objectname)")
 	cmd.Dir = dir
 	out, err := cmd.Output()

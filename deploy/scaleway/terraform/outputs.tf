@@ -60,6 +60,15 @@ output "backup_bucket" {
   value = scaleway_object_bucket.backups.name
 }
 
+output "repos_bucket" {
+  description = "The own git engine's repos bucket (packs + manifests), with its S3 credentials' secret-manager paths."
+  value = {
+    name                 = scaleway_object_bucket.repos.name
+    s3_access_key_secret = "/quill/git-engine/s3-access-key"
+    s3_secret_key_secret = "/quill/git-engine/s3-secret-key"
+  }
+}
+
 output "backup_s3_endpoint" {
   value = "https://s3.${var.region}.scw.cloud"
 }

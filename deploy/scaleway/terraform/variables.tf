@@ -48,6 +48,11 @@ variable "backup_bucket_name" {
   type        = string
 }
 
+variable "repos_bucket_name" {
+  description = "S3-compatible bucket for the own git engine (packs + manifests). Must be unique within the region."
+  type        = string
+}
+
 variable "backup_retention_days" {
   description = "Days to keep backups in the bucket (pruned by the backup job) and SDB's own 7-day managed backups are included free."
   type        = number

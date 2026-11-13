@@ -49,12 +49,14 @@ Usage:
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --file <path-or--> [--branch <ref>]
   quill admin purge-e2e --confirm
   quill admin git-maintenance [--repack-threshold N] [--repo project/repo]
+  quill admin migrate-forgejo-to-bucket [--dry-run] [--repo project/repo] [--force] [--skip-prs]
 
 Commands:
   admin create-repo  create a repository in the tenant's Forgejo org and record it in Postgres
   admin seed-file    create or update a file in a repository via the Forgejo API, committing as an admin seed
   admin purge-e2e    delete live-e2e debris: tenants/projects/repos whose slug starts with e2e- (never users)
   admin git-maintenance  reconcile engine-repo manifests against the referee, repack past the threshold, GC orphan packs
+  admin migrate-forgejo-to-bucket  D1 migration: mirror each Forgejo repo into the engine bucket (refs + packs + PR history), verify, freeze the repo read-only
 
 seed-file content comes from --content (inline text) or --file (a file path, or '-' to read stdin).
 
@@ -70,7 +72,7 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket)")
 	}
 	switch args[0] {
 	case "create-repo":
@@ -81,8 +83,10 @@ func runAdmin(args []string) error {
 		return runPurgeE2e(args[1:])
 	case "git-maintenance":
 		return runGitMaintenance(args[1:])
+	case "migrate-forgejo-to-bucket":
+		return runForgejoMigrate(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket)", args[0])
 	}
 }
 

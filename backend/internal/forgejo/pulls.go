@@ -117,8 +117,7 @@ type DiffFile struct {
 
 // ---- operations ------------------------------------------------------------
 
-// ListPulls returns pull requests for a repository. state is "open", "closed",
-// or "all".
+// ListPulls returns pull requests for a repository. state is "open", "closed",// or "all".
 func (c *Client) ListPulls(ctx context.Context, owner, repo, state string, limit int) ([]PullRequest, error) {
 	if state == "" {
 		state = "open"
@@ -134,6 +133,33 @@ func (c *Client) ListPulls(ctx context.Context, owner, repo, state string, limit
 	p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls?" + q.Encode()
 	err := c.do(ctx, http.MethodGet, p, nil, &out)
 	return out, err
+}
+
+// ListPullsAll returns EVERY pull request across all pages (state may be
+// open, closed, or all). The D1 migration needs complete history, which the
+// single-page ListPulls cannot serve. Callers migrate frozen repos (no
+// concurrent PR creation), so recentupdate ordering is stable across pages.
+func (c *Client) ListPullsAll(ctx context.Context, owner, repo, state string) ([]PullRequest, error) {
+	if state == "" {
+		state = "all"
+	}
+	var out []PullRequest
+	for page := 1; ; page++ {
+		q := url.Values{}
+		q.Set("state", state)
+		q.Set("limit", "50")
+		q.Set("page", strconv.Itoa(page))
+		q.Set("sort", "recentupdate")
+		p := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls?" + q.Encode()
+		var batch []PullRequest
+		if err := c.do(ctx, http.MethodGet, p, nil, &batch); err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if len(batch) < 50 {
+			return out, nil
+		}
+	}
 }
 
 // GetPull returns a single pull request by its number.
