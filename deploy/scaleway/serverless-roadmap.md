@@ -432,10 +432,15 @@ _Status: SHIPPED 2026-11-13. Production dry-run green (12 repos); one throwaway 
 migrated + verified live; the bulk run of real repos is deliberately the FIRST step of the D2
 window (migrating freezes the Forgejo repo while git.<domain> still serves Forgejo)._
 
-_Pre-D2 state (2026-11-13): Phase A LIVE — `ci_queue_mode=true`, pipelines run on ephemeral
-instances (live suite green, queue round trip ~1m40s cold / ~30s warm); VM dispatch kept as
-the flip-back fallback; the one-week fallback clock for A starts 2026-11-13. C1 infra is up, but
-the owner still has to flip the Cloudflare `auth` A record to the zitadel container._
+_D2 CUTOVER DONE (2026-11-13, owner: "no users, just switch it over")._ All repos are
+engine-owned (bulk D1 run), the api serves git at `https://api.<domain>/git/<project>/<repo>.git`
+(and `git.<domain>` via host routing once its DNS points at the api), pipelines read workflows
+from the engine with scoped `qgr_` run tokens and are triggered by the engine post-receive
+(no Forgejo webhook), engine repos have native issues, and every default-branch push produces an
+SBOM. Auth (C1) is on the serverless Zitadel. Remaining before VM TEARDOWN: (1) owner flips the
+Cloudflare `git` record to the api container, then `git_host_on_api=true`; (2) engine-native
+GitHub import + fork + storage metering, then turn Forgejo off in the api (it still creates a
+Forgejo org per new project and a user per signup while enabled); (3) teardown terraform.
 
 **PR D2 — Cutover + teardown.** Scope: switch pipeline triggers to Quill's post-receive
 hook (drop the Forgejo system webhook), run the live e2e suite + one dogfooding week, then
