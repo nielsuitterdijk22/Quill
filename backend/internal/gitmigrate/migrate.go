@@ -409,9 +409,15 @@ func (mg *Migrator) verify(ctx context.Context, link store.ForgejoRepoLink, tena
 	if err != nil {
 		return err
 	}
+	// Compare like with like: liveRefs keeps branches + tags, so only those
+	// manifest refs count. Mirror clones also carry Forgejo's
+	// refs/pull/N/head refs into the manifest (harmless, served read-only),
+	// which made every repo that ever had a PR "diverge".
 	manifestMap := map[string]string{}
 	for _, r := range m.Refs {
-		manifestMap[r.Name] = r.Target
+		if strings.HasPrefix(r.Name, "refs/heads/") || strings.HasPrefix(r.Name, "refs/tags/") {
+			manifestMap[r.Name] = r.Target
+		}
 	}
 	verified := len(live) == len(manifestMap)
 	for name, target := range live {

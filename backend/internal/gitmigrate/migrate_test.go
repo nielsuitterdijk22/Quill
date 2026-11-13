@@ -524,3 +524,37 @@ func TestMigrateRepoCreatesMissingRefereeRow(t *testing.T) {
 		t.Fatalf("referee row not committed: %+v", row)
 	}
 }
+
+// Repos that ever had a Forgejo PR carry refs/pull/N/head refs: a mirror clone
+// fetches them into the manifest while the live comparison looks at branches
+// and tags only. Verification must compare like with like (found live on the
+// owner's main repo, 2026-11-13: 21 branch/tag refs + 38 pull refs → "diverge").
+func TestMigrateRepoWithPullRefsVerifies(t *testing.T) {
+	st := testDB(t)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	src := buildSourceRepo(t, root, "pulled")
+	head := gitRun(t, src, "rev-parse", "HEAD")
+	gitRun(t, src, "update-ref", "refs/pull/1/head", head)
+	link := seedRepo(t, st, "pproj", "pr", "pproj", "pr")
+
+	mem := objectstore.NewMemStore()
+	engine := gitengine.New(mem)
+	mg := &gitmigrate.Migrator{
+		Engine: engine,
+		Cache: &gitengine.RepoCache{
+			Root: filepath.Join(root, "cache"), Engine: engine, Packs: gitengine.NewBucketPackSource(mem),
+		},
+		Leases: dbLeases{st}, Store: st, Referee: dbReferee{st},
+		CloneURL: func(owner, name string) string { return "file://" + src },
+		WorkDir:  filepath.Join(root, "scratch"),
+	}
+	res, err := mg.MigrateRepo(ctx, link, gitmigrate.Options{SkipPRs: true, NoFreeze: true})
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if !res.LiveRefsVerified {
+		t.Fatal("live refs not verified")
+	}
+}
