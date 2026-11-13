@@ -428,6 +428,14 @@ and restart.
 ## Phase D — migration + VM teardown
 
 **PR D1 — Migration tool** (design below), run repo-by-repo with dry-run first.
+_Status: SHIPPED 2026-11-13. Production dry-run green (12 repos); one throwaway repo
+migrated + verified live; the bulk run of real repos is deliberately the FIRST step of the D2
+window (migrating freezes the Forgejo repo while git.<domain> still serves Forgejo)._
+
+_Pre-D2 state (2026-11-13): Phase A LIVE — `ci_queue_mode=true`, pipelines run on ephemeral
+instances (live suite green, queue round trip ~1m40s cold / ~30s warm); VM dispatch kept as
+the flip-back fallback; the one-week fallback clock for A starts 2026-11-13. C1 infra is up, but
+the owner still has to flip the Cloudflare `auth` A record to the zitadel container._
 
 **PR D2 — Cutover + teardown.** Scope: switch pipeline triggers to Quill's post-receive
 hook (drop the Forgejo system webhook), run the live e2e suite + one dogfooding week, then
