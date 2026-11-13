@@ -35,9 +35,10 @@ resource "scaleway_container" "zitadel" {
   cpu_limit = var.container_cpu
   # Zitadel cold-start (JVM-sized Go binary + first DB roundtrips) fits in
   # 1024 MB; the concurrent-request budget rides on max_scale + the edge.
-  # Zitadel's cold start (eventstore/projections bootstrap) bursted past 1 GiB
-  # inside the gVisor sandbox and the container OOM-crashed each cold start —
-  # steady state is ~120 MiB, so 2 GiB headroom keeps the boot alive.
+  # The 2026-11-13 crash was NOT OOM — Zitadel's sonyflake machineID() panicked
+  # because the gVisor sandbox has no private IPv4 (fix: POD_IP below); 2 GiB
+  # stays as cheap headroom for the cold-start burst (min_scale=0 → no cost
+  # while idle; steady state is ~120 MiB).
   memory_limit = 2048
   min_scale    = 0 # scale to zero — free when idle
   max_scale    = 1 # single instance until multi-instance behavior is verified
@@ -52,6 +53,14 @@ resource "scaleway_container" "zitadel" {
     ZITADEL_EXTERNALPORT   = "443" # TLS terminates at the Scaleway edge
     ZITADEL_EXTERNALSECURE = "true"
     ZITADEL_TLS_MODE       = "external"
+
+    # The gVisor sandbox has NO interface with a private IPv4, so Zitadel's
+    # sonyflake machineID() panics at boot ("none of the enabled methods for
+    # identifying the machine succeeded" — private-ip fails, webhook can't
+    # reach Google metadata) and the revision flips to error (exit code 2).
+    # Zitadel's designed escape hatch: privateIPv4() falls back to $POD_IP.
+    # Safe as a constant: max_scale=1 means only one instance ever exists.
+    POD_IP = "10.0.0.1"
 
     ZITADEL_DATABASE_POSTGRES_HOST = local.sdb_host["zitadel"]
     ZITADEL_DATABASE_POSTGRES_PORT = local.sdb_port["zitadel"]
