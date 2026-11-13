@@ -100,7 +100,10 @@ func (s *Server) handleWake(w http.ResponseWriter, r *http.Request) {
 	id, created, err := s.cfg.Orchestrator.EnsureWorker(ctx)
 	if err != nil {
 		s.cfg.Logger.Error("ensure worker failed", "error", err)
-		http.Error(w, "ensure worker failed", http.StatusInternalServerError)
+		// The caller is HMAC-authenticated (the api or an operator): the
+		// cause is the only diagnostic channel — container logs are not
+		// reachable for Serverless Containers on this project.
+		http.Error(w, "ensure worker failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if created {

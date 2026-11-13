@@ -17,7 +17,7 @@ resource "scaleway_iam_application" "ci_broker" {
 
 resource "scaleway_iam_policy" "ci_broker" {
   name           = "quill-ci-broker-policy"
-  description    = "Instances + registry pull, scoped to the Quill project."
+  description    = "Instances + their block volumes + registry pull, scoped to the Quill project."
   application_id = scaleway_iam_application.ci_broker.id
 
   rule {
@@ -25,7 +25,9 @@ resource "scaleway_iam_policy" "ci_broker" {
     # Scaleway IAM cannot narrow to tagged servers; the key never leaves the
     # broker env + the CI instance's root-only env file, and workflow
     # containers are firewalled off the metadata service (cloud-init).
-    permission_set_names = ["InstancesFullAccess", "ContainerRegistryReadOnly"]
+    # BlockStorageFullAccess: DEV1-S root volumes are SBS block volumes
+    # ("insufficient permissions: write volume" without it, 2026-11-13).
+    permission_set_names = ["InstancesFullAccess", "BlockStorageFullAccess", "ContainerRegistryReadOnly"]
   }
 }
 

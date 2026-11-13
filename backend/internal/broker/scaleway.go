@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	block "github.com/scaleway/scaleway-sdk-go/api/block/v1"
 	instance "github.com/scaleway/scaleway-sdk-go/api/instance/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
@@ -39,6 +40,7 @@ type ScalewayOrchestrator struct {
 	logger *slog.Logger
 	client *scw.Client
 	api    *instance.API
+	block  *block.API
 	zone   scw.Zone
 }
 
@@ -72,7 +74,7 @@ func NewScalewayOrchestrator(cfg ScalewayConfig, logger *slog.Logger) (*Scaleway
 	}
 	return &ScalewayOrchestrator{
 		cfg: cfg, logger: logger, client: client,
-		api: instance.NewAPI(client), zone: zone,
+		api: instance.NewAPI(client), block: block.NewAPI(client), zone: zone,
 	}, nil
 }
 
@@ -200,7 +202,14 @@ func (o *ScalewayOrchestrator) reapStopped(ctx context.Context, srv *instance.Se
 		if v == nil {
 			continue
 		}
-		if err := o.api.DeleteVolume(&instance.DeleteVolumeRequest{Zone: o.zone, VolumeID: v.ID}, scw.WithContext(ctx)); err != nil {
+		var err error
+		if v.VolumeType == instance.VolumeServerVolumeTypeSbsVolume {
+			// SBS root volumes (the DEV1-S default) live in the Block API.
+			err = o.block.DeleteVolume(&block.DeleteVolumeRequest{Zone: o.zone, VolumeID: v.ID}, scw.WithContext(ctx))
+		} else {
+			err = o.api.DeleteVolume(&instance.DeleteVolumeRequest{Zone: o.zone, VolumeID: v.ID}, scw.WithContext(ctx))
+		}
+		if err != nil {
 			o.logger.Warn("reap CI volume", "volume", v.ID, "error", err)
 		}
 	}
