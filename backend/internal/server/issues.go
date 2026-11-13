@@ -12,9 +12,9 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
 
-// This file handles the Forgejo issue tracker surface exposed through Quill.
-// Issues are owned by Forgejo; Quill proxies create/list/close/comment through
-// the admin client (the admin token has access to all repos).
+// This file handles the issue tracker surface. The platform layer owns the
+// backend choice: engine-backed repos keep issues in Postgres (D2 cutover),
+// Forgejo repos still proxy to Forgejo until migrated.
 
 // issueResponse is the public JSON shape for a Forgejo issue.
 type issueResponse struct {
@@ -69,27 +69,29 @@ func newIssueCommentResponse(c forgejo.IssueComment) issueCommentResponse {
 	}
 }
 
-// resolveIssueRepo resolves the project/repo and returns the Forgejo owner+name.
-// Returns the repo and Forgejo coordinates, or writes an error response.
-func (s *Server) resolveIssueRepo(w http.ResponseWriter, r *http.Request) (platform.Actor, string, string, bool) {
+// issueTarget extracts the actor + project/repo slugs, or writes 401.
+func issueTarget(w http.ResponseWriter, r *http.Request) (platform.Actor, string, string, bool) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return platform.Actor{}, "", "", false
 	}
-	slug := chi.URLParam(r, "slug")
-	repoSlug := chi.URLParam(r, "repo")
-	owner, name, err := s.platform.ResolveRepoCoords(r.Context(), actor, slug, repoSlug)
-	if err != nil {
-		s.writePlatformError(w, err, "could not resolve repository")
-		return platform.Actor{}, "", "", false
+	return actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), true
+}
+
+// issueNumber parses the {number} path param, or writes 400.
+func issueNumber(w http.ResponseWriter, r *http.Request) (int, bool) {
+	number, err := strconv.Atoi(chi.URLParam(r, "number"))
+	if err != nil || number <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "invalid_input", "issue number must be a positive integer")
+		return 0, false
 	}
-	return actor, owner, name, true
+	return number, true
 }
 
 // handleListIssues returns a repository's issues filtered by state.
 func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
-	_, owner, name, ok := s.resolveIssueRepo(w, r)
+	actor, slug, repo, ok := issueTarget(w, r)
 	if !ok {
 		return
 	}
@@ -103,10 +105,9 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 			page = n
 		}
 	}
-	issues, err := s.forgejo.ListIssues(r.Context(), owner, name, state, page)
+	issues, err := s.platform.ListIssues(r.Context(), actor, slug, repo, state, page)
 	if err != nil {
-		s.logger.Error("list issues failed", "error", err)
-		httpx.Error(w, http.StatusBadGateway, "forgejo_error", "could not load issues")
+		s.writePlatformError(w, err, "could not load issues")
 		return
 	}
 	out := make([]issueResponse, len(issues))
@@ -118,27 +119,18 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 
 // handleGetIssue returns a single issue with its comments.
 func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
-	_, owner, name, ok := s.resolveIssueRepo(w, r)
+	actor, slug, repo, ok := issueTarget(w, r)
 	if !ok {
 		return
 	}
-	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
-	if err != nil || number <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "invalid_input", "issue number must be a positive integer")
+	number, ok := issueNumber(w, r)
+	if !ok {
 		return
 	}
-	issue, err := s.forgejo.GetIssue(r.Context(), owner, name, number)
+	issue, comments, err := s.platform.GetIssue(r.Context(), actor, slug, repo, number)
 	if err != nil {
-		if forgejo.NotFound(err) {
-			httpx.Error(w, http.StatusNotFound, "not_found", "issue not found")
-			return
-		}
-		httpx.Error(w, http.StatusBadGateway, "forgejo_error", "could not load issue")
+		s.writePlatformError(w, err, "could not load issue")
 		return
-	}
-	comments, err := s.forgejo.ListIssueComments(r.Context(), owner, name, int(number))
-	if err != nil {
-		comments = nil
 	}
 	out := make([]issueCommentResponse, len(comments))
 	for i, c := range comments {
@@ -157,7 +149,7 @@ type createIssueRequest struct {
 
 // handleCreateIssue opens a new issue in the repository.
 func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
-	_, owner, name, ok := s.resolveIssueRepo(w, r)
+	actor, slug, repo, ok := issueTarget(w, r)
 	if !ok {
 		return
 	}
@@ -165,17 +157,9 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Title == "" {
-		httpx.Error(w, http.StatusBadRequest, "invalid_input", "title is required")
-		return
-	}
-	issue, err := s.forgejo.CreateIssue(r.Context(), owner, name, forgejo.CreateIssueOptions{
-		Title: req.Title,
-		Body:  req.Body,
-	})
+	issue, err := s.platform.CreateIssue(r.Context(), actor, slug, repo, req.Title, req.Body)
 	if err != nil {
-		s.logger.Error("create issue failed", "error", err)
-		httpx.Error(w, http.StatusBadGateway, "forgejo_error", "could not create issue")
+		s.writePlatformError(w, err, "could not create issue")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"issue": newIssueResponse(issue)})
@@ -188,35 +172,28 @@ type editIssueRequest struct {
 
 // handleEditIssue closes, reopens, or renames an issue.
 func (s *Server) handleEditIssue(w http.ResponseWriter, r *http.Request) {
-	_, owner, name, ok := s.resolveIssueRepo(w, r)
+	actor, slug, repo, ok := issueTarget(w, r)
 	if !ok {
 		return
 	}
-	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
-	if err != nil || number <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "invalid_input", "issue number must be a positive integer")
+	number, ok := issueNumber(w, r)
+	if !ok {
 		return
 	}
 	var req editIssueRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	opts := forgejo.EditIssueOptions{}
+	var state, title *string
 	if req.State != "" {
-		s := req.State
-		opts.State = &s
+		state = &req.State
 	}
 	if req.Title != "" {
-		t := req.Title
-		opts.Title = &t
+		title = &req.Title
 	}
-	issue, err := s.forgejo.EditIssue(r.Context(), owner, name, number, opts)
+	issue, err := s.platform.EditIssue(r.Context(), actor, slug, repo, number, state, title)
 	if err != nil {
-		if forgejo.NotFound(err) {
-			httpx.Error(w, http.StatusNotFound, "not_found", "issue not found")
-			return
-		}
-		httpx.Error(w, http.StatusBadGateway, "forgejo_error", "could not update issue")
+		s.writePlatformError(w, err, "could not update issue")
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"issue": newIssueResponse(issue)})
@@ -228,27 +205,21 @@ type createIssueCommentRequest struct {
 
 // handleCreateIssueComment adds a comment to an issue.
 func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request) {
-	_, owner, name, ok := s.resolveIssueRepo(w, r)
+	actor, slug, repo, ok := issueTarget(w, r)
 	if !ok {
 		return
 	}
-	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
-	if err != nil || number <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "invalid_input", "issue number must be a positive integer")
+	number, ok := issueNumber(w, r)
+	if !ok {
 		return
 	}
 	var req createIssueCommentRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Body == "" {
-		httpx.Error(w, http.StatusBadRequest, "invalid_input", "comment body is required")
-		return
-	}
-	comment, err := s.forgejo.CreateIssueCommentBody(r.Context(), owner, name, number, req.Body)
+	comment, err := s.platform.CreateIssueComment(r.Context(), actor, slug, repo, number, req.Body)
 	if err != nil {
-		s.logger.Error("create issue comment failed", "error", err)
-		httpx.Error(w, http.StatusBadGateway, "forgejo_error", "could not post comment")
+		s.writePlatformError(w, err, "could not post comment")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newIssueCommentResponse(comment)})

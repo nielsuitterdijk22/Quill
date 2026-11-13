@@ -59,18 +59,26 @@ func scanPull(row pgx.Row) (PullRequest, error) {
 // allocation: the caller retries (bounded) or fails with a conflict.
 var ErrPullNumberTaken = errors.New("pull request number raced")
 
-// CreatePull allocates the next per-repo number and inserts the row atomically
-// (the UNIQUE (repo_id, number) constraint is the arbiter).
+// CreatePull allocates the next per-repo number — shared with issues, under
+// the same advisory lock (store/issues.go) — and inserts the row atomically
+// (the UNIQUE (repo_id, number) constraint stays the last-line arbiter).
 func (s *Store) CreatePull(ctx context.Context, repoID, tenantID, createdBy uuid.UUID, createdByLogin, title, body, headRef, headSHA, baseRef, baseSHA string) (PullRequest, error) {
 	const q = `
 		INSERT INTO pull_requests
 			(repo_id, tenant_id, number, title, body, head_ref, head_sha, base_ref, base_sha,
 			 created_by, created_by_name)
-		VALUES ($1, $2,
-			(SELECT COALESCE(MAX(number), 0) + 1 FROM pull_requests WHERE repo_id = $1),
+		VALUES ($1, $2, ` + nextRepoNumberSQL + `,
 			$3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING ` + pullColumns
-	row := s.pool.QueryRow(ctx, q, repoID, tenantID,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return PullRequest{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockRepoNumbers(ctx, tx, repoID); err != nil {
+		return PullRequest{}, err
+	}
+	row := tx.QueryRow(ctx, q, repoID, tenantID,
 		title, body, headRef, headSHA, baseRef, baseSHA, createdBy, createdByLogin)
 	pr, err := scanPull(row)
 	var pgErr *pgconn.PgError
@@ -78,6 +86,9 @@ func (s *Store) CreatePull(ctx context.Context, repoID, tenantID, createdBy uuid
 		return PullRequest{}, ErrPullNumberTaken
 	}
 	if err != nil {
+		return PullRequest{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return PullRequest{}, err
 	}
 	return pr, nil
