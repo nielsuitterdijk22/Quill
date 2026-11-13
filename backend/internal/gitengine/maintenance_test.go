@@ -2,6 +2,7 @@ package gitengine
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -179,10 +180,15 @@ func TestMaintenanceGarbageCollectsOrphans(t *testing.T) {
 }
 
 // gitStdin runs git in dir feeding stdin, failing the test on error.
+// Identity env is pinned because commit-tree/mktree need an author identity
+// and CI runners have no global git config.
 func gitStdin(t *testing.T, dir, stdin string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
 	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

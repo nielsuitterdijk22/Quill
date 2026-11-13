@@ -7,10 +7,12 @@ locals {
 }
 
 resource "scaleway_secret" "s" {
-  # Brevo SMTP entries only exist when credentials are configured
-  # (local.brevo_enabled), so disabling email removes them instead of
-  # overwriting them with empty values.
-  for_each = toset(concat([
+  # The Brevo SMTP Secret Manager copies were retired (2026-11-13): the values
+  # live in GitHub secrets and are injected straight into the Forgejo mailer
+  # env by the deploy workflow; the API-side secrets had already been deleted,
+  # which made every CI apply fail on their scheduled-for-deletion versions
+  # ("cannot act on deleted resource"). SMTP creds are GH-secrets-only now.
+  for_each = toset([
     "app/jwt-secret",
     "app/secret-encryption-key",
     "app/webhook-secret",
@@ -25,11 +27,7 @@ resource "scaleway_secret" "s" {
     "backup/s3-access-key",
     "backup/s3-secret-key",
     "vm/ssh-private-key",
-    ], local.brevo_enabled ? [
-    "mail/brevo-smtp-user",
-    "mail/brevo-smtp-password",
-    "mail/brevo-smtp-from",
-  ] : []))
+  ])
 
   name       = replace(each.value, "/", "-")
   path       = "${local.secret_path_prefix}/${split("/", each.value)[0]}"
@@ -58,9 +56,6 @@ resource "scaleway_secret_version" "v" {
     "db/quill-url"                 = local.db_url["quill"]
     "backup/s3-access-key"         = scaleway_iam_api_key.backup.access_key
     "backup/s3-secret-key"         = scaleway_iam_api_key.backup.secret_key
-    "vm/ssh-private-key"           = tls_private_key.vm.private_key_openssh
-    "mail/brevo-smtp-user"         = var.brevo_smtp_user
-    "mail/brevo-smtp-password"     = var.brevo_smtp_password
-    "mail/brevo-smtp-from"         = local.brevo_from
+    "vm/ssh-private-key"           = tls_private_key.vm.private_key_openssh,
   }, each.key, "")
 }
