@@ -221,23 +221,53 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 		if err != nil {
 			return nil, err
 		}
-		for _, l := range rows {
-			repo, err := s.store.GetRepositoryByID(ctx, l.Pull.RepoID)
-			if err != nil {
-				continue // best-effort, like the forgejo arm
+		// Group by repo: hydrate each repo once, repos in parallel (the
+		// overview computes mergeability live, which needs the git data).
+		byRepo := map[uuid.UUID][]int{}
+		var order []uuid.UUID
+		for i, l := range rows {
+			if _, ok := byRepo[l.Pull.RepoID]; !ok {
+				order = append(order, l.Pull.RepoID)
 			}
-			project, err := s.store.GetProjectByID(ctx, repo.ProjectID)
-			if err != nil {
-				continue
-			}
-			be := gitBackend{engine: true, repoID: repo.ID, tenantID: project.TenantID,
-				projectSlug: l.ProjectSlug, repoSlug: l.RepoSlug}
-			if dir, err := s.engineDir(ctx, be); err == nil {
-				if dto, err := s.enginePullDTO(ctx, repo, be, dir, l.Pull, true); err == nil {
-					all = append(all, RepoPull{ProjectSlug: l.ProjectSlug, RepoSlug: l.RepoSlug,
-						RepoName: l.RepoName, Pull: dto})
+			byRepo[l.Pull.RepoID] = append(byRepo[l.Pull.RepoID], i)
+		}
+		results := make([][]RepoPull, len(order))
+		g, gctx := errgroup.WithContext(ctx)
+		g.SetLimit(maxPullListConcurrency)
+		for gi, repoID := range order {
+			gi, repoID := gi, repoID
+			g.Go(func() error {
+				repo, err := s.store.GetRepositoryByID(gctx, repoID)
+				if err != nil {
+					return nil // best-effort, like the forgejo arm
 				}
-			}
+				project, err := s.store.GetProjectByID(gctx, repo.ProjectID)
+				if err != nil {
+					return nil
+				}
+				first := rows[byRepo[repoID][0]]
+				be := gitBackend{engine: true, repoID: repo.ID, tenantID: project.TenantID,
+					projectSlug: first.ProjectSlug, repoSlug: first.RepoSlug}
+				dir, err := s.engineDir(gctx, be)
+				if err != nil {
+					s.logger.Warn("cross-repo pull listing: hydrate failed", "repo", first.ProjectSlug+"/"+first.RepoSlug, "error", err)
+					return nil
+				}
+				for _, i := range byRepo[repoID] {
+					l := rows[i]
+					if dto, err := s.enginePullDTO(gctx, repo, be, dir, l.Pull, true); err == nil {
+						results[gi] = append(results[gi], RepoPull{ProjectSlug: l.ProjectSlug, RepoSlug: l.RepoSlug,
+							RepoName: l.RepoName, Pull: dto})
+					}
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+		for _, r := range results {
+			all = append(all, r...)
 		}
 	}
 	if !s.forgejoEnabled() {
@@ -254,7 +284,20 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 		if err != nil {
 			return nil, fmt.Errorf("list repos: %w", err)
 		}
+		// Engine-owned repos were listed above from Postgres; asking Forgejo
+		// about them is one wasted (404) round trip per repo.
+		repoIDs := make([]uuid.UUID, 0, len(repos))
 		for _, repo := range repos {
+			repoIDs = append(repoIDs, repo.ID)
+		}
+		engineOwned, err := s.store.EngineRepoIDs(ctx, repoIDs)
+		if err != nil {
+			return nil, fmt.Errorf("engine repo lookup: %w", err)
+		}
+		for _, repo := range repos {
+			if engineOwned[repo.ID] {
+				continue
+			}
 			if owner, name, ok := forgejoTarget(repo, project); ok {
 				targets = append(targets, target{
 					owner:       owner,
@@ -267,7 +310,9 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 		}
 	}
 	if len(targets) == 0 {
-		return nil, nil
+		// Nothing left on Forgejo: the engine rows are the whole answer.
+		sort.Slice(all, func(i, j int) bool { return all[i].Pull.UpdatedAt.After(all[j].Pull.UpdatedAt) })
+		return all, nil
 	}
 
 	results := make([][]RepoPull, len(targets))

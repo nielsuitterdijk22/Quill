@@ -193,3 +193,24 @@ func (s *Store) ReleasePushLease(ctx context.Context, repoID uuid.UUID, holder s
 	}
 	return nil
 }
+
+// EngineRepoIDs returns which of ids have a referee row (engine-owned).
+func (s *Store) EngineRepoIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]bool, error) {
+	out := make(map[uuid.UUID]bool, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, "SELECT repo_id FROM git_repo_state WHERE repo_id = ANY($1)", ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
