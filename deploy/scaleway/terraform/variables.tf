@@ -290,9 +290,9 @@ variable "creem_pro_product_id" {
 }
 
 variable "ci_queue_mode" {
-  description = "Phase A switch: true routes pipeline runs through the Postgres queue + broker + ephemeral CI instances; false keeps the inline VM dispatch."
+  description = "Phase A switch: true routes pipeline runs through the Postgres queue + broker + ephemeral CI instances; false keeps the inline VM dispatch (the one-week warm fallback)."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "ci_instance_type" {
