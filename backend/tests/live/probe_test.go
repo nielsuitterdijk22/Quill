@@ -194,7 +194,7 @@ func pushBranch(t *testing.T, token, proj, repo, branch, filename, content strin
 	tok, _ := cred["token"].(string)
 	username, _ := cred["username"].(string)
 	dir := t.TempDir()
-	sh(t, dir, "git", "clone", fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo), "r")
+	sh(t, dir, "git", "clone", gitCloneURL(t, username, tok, proj, repo), "r")
 	rd := dir + "/r"
 	sh(t, rd, "git", "config", "user.email", "e2e@black-tulip.nl")
 	sh(t, rd, "git", "config", "user.name", "e2e")

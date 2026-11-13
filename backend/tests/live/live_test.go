@@ -582,6 +582,8 @@ func sh(t *testing.T, dir, name string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	// Never block on a credential prompt: a rejected token must fail fast.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
@@ -630,7 +632,7 @@ func TestGitRoundtripAndPullRequest(t *testing.T) {
 
 	// clone + commit + push over HTTPS
 	dir := t.TempDir()
-	cloneURL := fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo)
+	cloneURL := gitCloneURL(t, username, tok, proj, repo)
 	sh(t, dir, "git", "clone", cloneURL, "repo")
 	rdir := dir + "/repo"
 	sh(t, rdir, "git", "config", "user.email", "e2e@black-tulip.nl")
@@ -769,7 +771,7 @@ func TestPRReviewAndMerge(t *testing.T) {
 		t.Fatalf("git token empty: %s", b)
 	}
 	dir := t.TempDir()
-	sh(t, dir, "git", "clone", fmt.Sprintf("https://%s:%s@git.black-tulip.nl/%s/%s.git", username, tok, proj, repo), "r")
+	sh(t, dir, "git", "clone", gitCloneURL(t, username, tok, proj, repo), "r")
 	rd := dir + "/r"
 	sh(t, rd, "git", "config", "user.email", "e2e@black-tulip.nl")
 	sh(t, rd, "git", "config", "user.name", "e2e")
