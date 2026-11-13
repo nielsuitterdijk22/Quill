@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -25,10 +26,16 @@ type logCapture struct {
 	mu     sync.Mutex
 	logger *logrus.Logger
 	jobs   map[string]*jobCapture
-	sink   LogSink // may be nil
+	// reusable holds the jobs of called (reusable) workflows, keyed by the
+	// CALLER's job name, then the inner job id. act runs them with their own
+	// jobID and tags entries job="<caller>/<workflow>/<inner>".
+	reusable map[string]map[string]*jobCapture
+	sink     LogSink // may be nil
 }
 
 type jobCapture struct {
+	// name is the inner job's display name (reusable-workflow jobs only).
+	name     string
 	result   string
 	steps    map[string]*stepCapture
 	order    []string
@@ -54,7 +61,8 @@ func newLogCapture(sink LogSink) *logCapture {
 	// Capture every level: act emits step stdout at Info and some markers at
 	// Debug; hooks only fire for levels the logger has enabled.
 	l.SetLevel(logrus.TraceLevel)
-	c := &logCapture{logger: l, jobs: make(map[string]*jobCapture), sink: sink}
+	c := &logCapture{logger: l, jobs: make(map[string]*jobCapture),
+		reusable: make(map[string]map[string]*jobCapture), sink: sink}
 	l.AddHook(c)
 	return c
 }
@@ -81,10 +89,24 @@ func (c *logCapture) Fire(e *logrus.Entry) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	jc := c.jobs[jobID]
-	if jc == nil {
-		jc = &jobCapture{steps: make(map[string]*stepCapture), started: now}
-		c.jobs[jobID] = jc
+	var jc *jobCapture
+	if caller, inner, ok := reusableJobName(e.Data["job"]); ok {
+		byJob := c.reusable[caller]
+		if byJob == nil {
+			byJob = make(map[string]*jobCapture)
+			c.reusable[caller] = byJob
+		}
+		jc = byJob[jobID]
+		if jc == nil {
+			jc = &jobCapture{name: inner, steps: make(map[string]*stepCapture), started: now}
+			byJob[jobID] = jc
+		}
+	} else {
+		jc = c.jobs[jobID]
+		if jc == nil {
+			jc = &jobCapture{steps: make(map[string]*stepCapture), started: now}
+			c.jobs[jobID] = jc
+		}
 	}
 	jc.finished = now
 	if jr, ok := e.Data["jobResult"]; ok {
@@ -129,6 +151,31 @@ func (c *logCapture) Fire(e *logrus.Entry) error {
 		}
 	}
 	return nil
+}
+
+// reusableJobName recognizes act's job tag for a called workflow's job:
+// rc.String() is "<caller>/<workflow>/<job>" (padded) when the run context has
+// a caller, "<workflow>/<job>" otherwise.
+func reusableJobName(v any) (caller, inner string, ok bool) {
+	name, _ := v.(string)
+	parts := strings.Split(strings.TrimSpace(name), "/")
+	if len(parts) < 3 {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[len(parts)-1]), true
+}
+
+// reusableJobs returns the called-workflow jobs captured for a caller job,
+// in start order.
+func (c *logCapture) reusableJobs(caller string) []*jobCapture {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]*jobCapture, 0, len(c.reusable[caller]))
+	for _, jc := range c.reusable[caller] {
+		out = append(out, jc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].started.Before(out[j].started) })
+	return out
 }
 
 func (c *logCapture) job(jobID string) *jobCapture {

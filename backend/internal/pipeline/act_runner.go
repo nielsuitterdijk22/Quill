@@ -189,33 +189,34 @@ func (r *actRunner) assemble(plan *model.Plan, cap *logCapture, started time.Tim
 			}
 
 			jc := cap.job(run.JobID)
-			if jc == nil {
+			// A reusable-workflow caller has no steps of its own: its work is
+			// the called workflow's jobs, captured under the caller's name.
+			inner := cap.reusableJobs(jr.Name)
+			if jc == nil && len(inner) == 0 {
 				jr.Status = StatusSkipped
 				res.Jobs = append(res.Jobs, jr)
 				continue
 			}
+			if jc == nil {
+				jc = &jobCapture{steps: map[string]*stepCapture{}, started: inner[0].started}
+			}
 			jr.StartedAt = jc.started
 			jr.FinishedAt = jc.finished
+			setupIdx := -1
 			// A failed job with no steps means act couldn't even start it
 			// (container/network/image errors). Surface the job-level lines
 			// as a synthetic "setup" step so the run explains itself in the
-			// UI and the stored logs.
+			// UI and the stored logs. Its status is settled below, once the
+			// job's own status is known.
 			if len(jc.setupLogs.Bytes()) > 0 {
-				setupStatus := "success"
-				if jr.Status != StatusSuccess {
-					setupStatus = jc.result
-					if setupStatus == "" {
-						setupStatus = StatusFailure
-					}
-				}
 				jr.Steps = append(jr.Steps, StepResult{
 					Name:       "setup",
 					Type:       StepTypeRun,
-					Status:     setupStatus,
 					Logs:       clampLog(jc.setupLogs.String(), r.maxLogBytes),
 					StartedAt:  jc.started,
 					FinishedAt: jc.finished,
 				})
+				setupIdx = len(jr.Steps) - 1
 			}
 			for _, sid := range jc.order {
 				sc := jc.steps[sid]
@@ -228,7 +229,54 @@ func (r *actRunner) assemble(plan *model.Plan, cap *logCapture, started time.Tim
 					FinishedAt: sc.finished,
 				})
 			}
-			jr.Status = mapJobStatus(jc.result, jr.Steps)
+			innerFailed := false
+			for _, ij := range inner {
+				prefix := ij.name + " · "
+				if ij.setupLogs.Len() > 0 {
+					st := StatusSuccess
+					if ij.result == "failure" && len(ij.order) == 0 {
+						st = StatusFailure
+					}
+					jr.Steps = append(jr.Steps, StepResult{
+						Name: prefix + "setup", Type: StepTypeRun, Status: st,
+						Logs:      clampLog(ij.setupLogs.String(), r.maxLogBytes),
+						StartedAt: ij.started, FinishedAt: ij.finished,
+					})
+				}
+				for _, sid := range ij.order {
+					sc := ij.steps[sid]
+					jr.Steps = append(jr.Steps, StepResult{
+						Name:      prefix + firstNonEmpty(sc.name, sid),
+						Type:      StepTypeRun,
+						Status:    mapStatus(sc.outcome),
+						Logs:      clampLog(sc.logs.String(), r.maxLogBytes),
+						StartedAt: sc.started, FinishedAt: sc.finished,
+					})
+				}
+				if ij.result == "failure" {
+					innerFailed = true
+				}
+				if ij.finished.After(jr.FinishedAt) {
+					jr.FinishedAt = ij.finished
+				}
+			}
+			result := jc.result
+			if len(inner) > 0 && result == "" {
+				// The caller's outcome is its called jobs' outcome.
+				result = "success"
+				if innerFailed {
+					result = "failure"
+				}
+			}
+			if setupIdx >= 0 {
+				// Exclude the setup step itself from the roll-up it feeds.
+				jr.Steps[setupIdx].Status = StatusSuccess
+			}
+			jr.Status = mapJobStatus(result, jr.Steps)
+			if setupIdx >= 0 && jr.Status == StatusFailure && len(jr.Steps) == 1 {
+				// Nothing but job-level output: the setup lines ARE the failure.
+				jr.Steps[setupIdx].Status = StatusFailure
+			}
 			res.Jobs = append(res.Jobs, jr)
 		}
 	}

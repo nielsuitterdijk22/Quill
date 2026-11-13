@@ -30,10 +30,11 @@ func TestPipelineShowcase(t *testing.T) {
 		t.Skip("QUILL_SHOWCASE=1 not set")
 	}
 	deployEnv := map[string]string{
-		"SCW_ACCESS_KEY":             os.Getenv("QUILL_SHOWCASE_SCW_ACCESS_KEY"),
-		"SCW_SECRET_KEY":             os.Getenv("QUILL_SHOWCASE_SCW_SECRET_KEY"),
-		"SCW_DEFAULT_PROJECT_ID":     os.Getenv("QUILL_SHOWCASE_SCW_PROJECT_ID"),
-		"SCW_CONTAINER_NAMESPACE_ID": os.Getenv("QUILL_SHOWCASE_SCW_CONTAINER_NS"),
+		"SCW_ACCESS_KEY":              os.Getenv("QUILL_SHOWCASE_SCW_ACCESS_KEY"),
+		"SCW_SECRET_KEY":              os.Getenv("QUILL_SHOWCASE_SCW_SECRET_KEY"),
+		"SCW_DEFAULT_PROJECT_ID":      os.Getenv("QUILL_SHOWCASE_SCW_PROJECT_ID"),
+		"SCW_DEFAULT_ORGANIZATION_ID": os.Getenv("QUILL_SHOWCASE_SCW_ORGANIZATION_ID"),
+		"SCW_CONTAINER_NAMESPACE_ID":  os.Getenv("QUILL_SHOWCASE_SCW_CONTAINER_NS"),
 	}
 	for k, v := range deployEnv {
 		if v == "" {
