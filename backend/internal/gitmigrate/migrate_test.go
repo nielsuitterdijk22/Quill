@@ -479,3 +479,48 @@ func TestMigrateRepoLeaseHeld(t *testing.T) {
 		t.Fatalf("wrong failure: %v", err)
 	}
 }
+
+// Production Forgejo-era repos were never provisioned through the engine, so
+// they have NO git_repo_state referee row — the migrator must create it
+// (tenant-stamped) instead of failing "referee load: no rows" (found live on
+// the first production run, 2026-11-13).
+func TestMigrateRepoCreatesMissingRefereeRow(t *testing.T) {
+	st := testDB(t)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	src := buildSourceRepo(t, root, "legacy")
+	link := seedRepo(t, st, "lproj", "lr", "lproj", "lr")
+	if _, err := st.Pool().Exec(ctx, "DELETE FROM git_repo_state WHERE repo_id = $1", link.RepoID); err != nil {
+		t.Fatalf("drop referee row: %v", err)
+	}
+
+	mem := objectstore.NewMemStore()
+	engine := gitengine.New(mem)
+	mg := &gitmigrate.Migrator{
+		Engine: engine,
+		Cache: &gitengine.RepoCache{
+			Root: filepath.Join(root, "cache"), Engine: engine, Packs: gitengine.NewBucketPackSource(mem),
+		},
+		Leases: dbLeases{st}, Store: st, Referee: dbReferee{st},
+		CloneURL: func(owner, name string) string { return "file://" + src },
+		WorkDir:  filepath.Join(root, "scratch"),
+	}
+	res, err := mg.MigrateRepo(ctx, link, gitmigrate.Options{SkipPRs: true, NoFreeze: true})
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if res.Status != "migrated" {
+		t.Fatalf("status = %q (%s)", res.Status, res.SkippedReason)
+	}
+	row, err := st.GetGitRepoState(ctx, link.RepoID)
+	if err != nil {
+		t.Fatalf("referee row after migrate: %v", err)
+	}
+	if row.TenantID == nil || *row.TenantID != *link.TenantID {
+		t.Fatalf("referee row tenant = %v, want %v", row.TenantID, *link.TenantID)
+	}
+	if len(row.Refs) == 0 || row.Revision == 0 {
+		t.Fatalf("referee row not committed: %+v", row)
+	}
+}

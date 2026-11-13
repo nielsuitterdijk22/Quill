@@ -137,6 +137,14 @@ func (mg *Migrator) MigrateRepo(ctx context.Context, link store.ForgejoRepoLink,
 
 	// Engine-owned already? Skip unless Force (re-sync re-commits the same
 	// refs — SyncRepoToBucket's refsEqual short-circuits to a no-op).
+	// Forgejo-era repos were never provisioned through the engine and carry
+	// no referee row yet: create it (tenant-stamped, idempotent — an existing
+	// row keeps its refs and revision) before the first Load.
+	if mg.Store != nil {
+		if _, err := mg.Store.EnsureGitRepoState(ctx, link.RepoID, tenantID); err != nil {
+			return res, fmt.Errorf("ensure referee row: %w", err)
+		}
+	}
 	st, err := mg.Referee.Load(ctx, link.RepoID.String())
 	if err != nil {
 		return res, fmt.Errorf("referee load: %w", err)
