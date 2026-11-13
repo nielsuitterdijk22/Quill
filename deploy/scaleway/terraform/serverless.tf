@@ -81,6 +81,14 @@ resource "scaleway_container" "api" {
     # flip-back fallback.
     QUILL_PIPELINE_QUEUE_MODE = var.ci_queue_mode ? "true" : "false"
     QUILL_BROKER_URL          = "https://${scaleway_container.broker.domain_name}"
+    # D2 cutover: the own git engine serves every migrated/new repository.
+    # Repos without a referee row (not yet migrated) still route to Forgejo.
+    QUILL_GIT_ENGINE_MODE = var.git_engine_mode
+    QUILL_GIT_S3_ENDPOINT = "https://s3.${var.region}.scw.cloud"
+    QUILL_GIT_S3_REGION   = var.region
+    QUILL_GIT_S3_BUCKET   = scaleway_object_bucket.repos.name
+    QUILL_GIT_PUBLIC_URL  = local.git_public_url
+    QUILL_GIT_HOST        = local.git_host
   }
   secret_environment_variables = {
     QUILL_DATABASE_URL             = local.db_url["quill"]
@@ -88,6 +96,8 @@ resource "scaleway_container" "api" {
     QUILL_SECRET_ENCRYPTION_KEY    = base64encode(random_password.secret_encryption_key.result)
     QUILL_WEBHOOK_SECRET           = random_password.webhook_secret.result
     QUILL_PIPELINE_DISPATCH_SECRET = local.dispatch_secret
+    QUILL_GIT_S3_ACCESS_KEY        = scaleway_iam_api_key.git_engine.access_key
+    QUILL_GIT_S3_SECRET_KEY        = scaleway_iam_api_key.git_engine.secret_key
     FORGEJO_ADMIN_TOKEN            = var.forgejo_admin_token
     ZITADEL_MANAGEMENT_TOKEN       = var.zitadel_management_token
     GITHUB_CLIENT_ID               = var.github_client_id
@@ -172,6 +182,16 @@ resource "scaleway_container_domain" "api" {
   container_id = scaleway_container.api.id
   hostname     = local.api_host
   region       = var.region
+}
+
+# git.<domain> on the api container (D2). Only once the Cloudflare `git`
+# record is a CNAME to the api container — Scaleway issues the certificate at
+# create time and a binding made while DNS still answers the VM goes to error
+# (recreate with -replace, the auth lesson of 2026-11-13).
+resource "scaleway_container_domain" "git" {
+  count        = var.git_host_on_api ? 1 : 0
+  container_id = scaleway_container.api.id
+  hostname     = local.git_host
 }
 
 resource "scaleway_container_domain" "app" {

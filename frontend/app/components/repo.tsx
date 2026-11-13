@@ -4,7 +4,7 @@
 import Link from "next/link";
 
 
-import type { Commit, ContentEntry } from "../lib/api";
+import type { Commit, ContentEntry, Meta } from "../lib/api";
 
 // repoBase is the URL prefix for a repository's pages.
 // Uses the short /{owner}/{repo} format; personal namespaces and org namespaces
@@ -14,16 +14,21 @@ export function repoBase(project: string, repo: string): string {
 }
 
 // cloneHttpUrl builds the public HTTPS git URL for a repository, used by the
-// clone widget. owner/name fall back to the project/repo slugs when Forgejo hasn't
-// reported them.
+// clone widget. The own git engine's base (meta.git.publicUrl) addresses repos
+// by project/repo slug; the legacy Forgejo base uses the Forgejo owner/name,
+// falling back to the slugs when Forgejo hasn't reported them.
 export function cloneHttpUrl(
-  publicUrl: string | undefined,
+  meta: Meta | null | undefined,
   owner: string | undefined,
   name: string | undefined,
   project: string,
   repo: string,
 ): string {
-  const base = (publicUrl ?? "http://localhost:3000").replace(/\/+$/, "");
+  const engine = meta?.git?.publicUrl;
+  if (engine) {
+    return `${engine.replace(/\/+$/, "")}/${project}/${repo}.git`;
+  }
+  const base = (meta?.forgejo?.publicUrl ?? "http://localhost:3000").replace(/\/+$/, "");
   return `${base}/${owner ?? project}/${name ?? repo}.git`;
 }
 

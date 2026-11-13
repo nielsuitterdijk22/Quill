@@ -224,7 +224,26 @@ func loginAs(t *testing.T, user, pass string) string {
 	cb := hdr.Get("Location")
 	code := extractQuery(cb, "code")
 	if code == "" {
-		t.Fatalf("no code in callback redirect: %s", cb)
+		// Surface Zitadel's own error text (wrong password, locked user,
+		// unknown login name, init/password-change required, ...).
+		msg := ""
+		for _, cls := range []string{"lgn-error-message", "error-msg", "lgn-error"} {
+			if i := strings.Index(string(page), cls); i >= 0 {
+				end := i + 400
+				if end > len(page) {
+					end = len(page)
+				}
+				msg = string(page[i:end])
+				break
+			}
+		}
+		title := ""
+		if i := strings.Index(string(page), "<title>"); i >= 0 {
+			if j := strings.Index(string(page[i:]), "</title>"); j > 0 {
+				title = string(page[i+7 : i+j])
+			}
+		}
+		t.Fatalf("no code in callback redirect: %q (last status %d, page title %q, error %q)", cb, st, title, msg)
 	}
 
 	tokForm := url.Values{

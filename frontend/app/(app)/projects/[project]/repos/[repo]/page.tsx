@@ -53,11 +53,13 @@ export default async function RepoHomePage({
       );
     }
     const repo = repoRes.data;
-    const forgejoPublicUrl =
-      meta?.forgejo?.publicUrl ?? "http://localhost:2222";
-    const owner = repo.forgejoOwner ?? params.project;
-    const name = repo.forgejoName ?? params.repo;
-    const httpUrl = `${forgejoPublicUrl}/${owner}/${name}.git`;
+    const httpUrl = cloneHttpUrl(
+      meta,
+      repo.forgejoOwner,
+      repo.forgejoName,
+      params.project,
+      params.repo,
+    );
     const base = repoBase(params.project, params.repo);
 
     return (
@@ -155,7 +157,7 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
       ? await renderMarkdown(token, params.project, params.repo, readme.content ?? "")
       : null;
   const httpUrl = cloneHttpUrl(
-    meta?.forgejo?.publicUrl,
+    meta,
     repo.forgejoOwner,
     repo.forgejoName,
     params.project,

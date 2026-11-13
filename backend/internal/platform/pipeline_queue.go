@@ -65,6 +65,15 @@ func (s *Service) WithQueueMode() *Service {
 // queue-mode seam shared by TriggerRun/TriggerWebhook (which resolve the YAML
 // through Forgejo first) and tests.
 func (s *Service) EnqueuePipelineRun(ctx context.Context, repo db.Repository, in TriggerInput, yaml, commitSHA string, triggeredBy uuid.NullUUID) (db.PipelineRun, error) {
+	src, err := s.pipelineSourceFor(ctx, repo)
+	if err != nil {
+		return db.PipelineRun{}, err
+	}
+	return s.enqueuePipelineRun(ctx, repo, src, in, yaml, commitSHA, triggeredBy)
+}
+
+// enqueuePipelineRun is EnqueuePipelineRun with the git backend resolved.
+func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, src pipelineSource, in TriggerInput, yaml, commitSHA string, triggeredBy uuid.NullUUID) (db.PipelineRun, error) {
 	path := in.WorkflowPath
 	ref := in.Ref
 	if ref == "" {
@@ -95,13 +104,8 @@ func (s *Service) EnqueuePipelineRun(ctx context.Context, repo db.Repository, in
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("resolve secrets: %w", err)
 	}
-	cloneAuth := s.cloneAuthForRun(repo.ForgejoOwner.String, repo.ForgejoName.String)
-	fullName := repo.ForgejoOwner.String + "/" + repo.ForgejoName.String
-	if repo.ForgejoOwner.String == "" || repo.ForgejoName.String == "" {
-		// Forgejo-independent rows (queue-mode tests, future own git engine)
-		// fall back to the repo slug for act's github expressions.
-		fullName = repo.Slug
-	}
+	cloneAuth := s.cloneAuth(src)
+	fullName := src.fullName()
 
 	pl, err := s.store.UpsertPipeline(ctx, db.UpsertPipelineParams{
 		RepoID:       repo.ID,

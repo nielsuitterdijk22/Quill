@@ -92,7 +92,7 @@ export default async function TreePage({
       : null;
 
   const httpUrl = cloneHttpUrl(
-    meta?.forgejo?.publicUrl,
+    meta,
     repo.forgejoOwner,
     repo.forgejoName,
     params.project,

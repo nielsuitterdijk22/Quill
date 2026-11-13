@@ -42,6 +42,9 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"version": Version,
 		"env":     s.cfg.Env,
 		"forgejo": s.forgejoStatus(r),
+		// git: the own engine's public clone base (D2). The frontend prefers
+		// it over forgejo.publicUrl for clone URLs when set.
+		"git": map[string]any{"publicUrl": s.cfg.GitEngine.PublicURL},
 	})
 }
 

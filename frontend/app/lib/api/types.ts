@@ -12,6 +12,9 @@ export type Meta = {
   version: string;
   env: string;
   forgejo?: ForgejoStatus;
+  // The own git engine's public clone base (serverless D2). When set, every
+  // repository clones from `${git.publicUrl}/<project>/<repo>.git`.
+  git?: { publicUrl?: string };
 };
 
 export type Project = {

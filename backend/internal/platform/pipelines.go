@@ -70,13 +70,20 @@ type TriggerInput struct {
 // joined with any persisted pipeline + its most recent run, so the overview can
 // show CI status even for workflows that have never run.
 func (s *Service) ListPipelines(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, []PipelineSummary, error) {
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
-	files, err := s.forgejo.ListWorkflows(ctx, owner, name, "")
+	src, err := s.pipelineSourceFor(ctx, repo)
 	if err != nil {
-		return db.Repository{}, nil, translateForgejoRead(err)
+		return db.Repository{}, nil, err
+	}
+	if !src.be.engine && !s.forgejoEnabled() {
+		return db.Repository{}, nil, ErrUnavailable
+	}
+	files, err := s.listWorkflows(ctx, src, "")
+	if err != nil {
+		return db.Repository{}, nil, err
 	}
 	persisted, err := s.store.ListPipelinesByRepo(ctx, repo.ID)
 	if err != nil {
@@ -203,12 +210,19 @@ func (s *Service) TriggerRun(ctx context.Context, actor Actor, projectSlug, repo
 			return db.Repository{}, db.PipelineRun{}, err
 		}
 	}
-	repo, owner, name, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, true)
+	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
 		return db.Repository{}, db.PipelineRun{}, err
 	}
+	src, err := s.pipelineSourceFor(ctx, repo)
+	if err != nil {
+		return db.Repository{}, db.PipelineRun{}, err
+	}
+	if !src.be.engine && !s.forgejoEnabled() {
+		return db.Repository{}, db.PipelineRun{}, ErrUnavailable
+	}
 	triggeredBy := uuid.NullUUID{UUID: actor.UserID, Valid: true}
-	run, err := s.runWorkflow(ctx, repo, owner, name, in, triggeredBy)
+	run, err := s.runWorkflow(ctx, repo, src, in, triggeredBy)
 	if err != nil {
 		return db.Repository{}, db.PipelineRun{}, err
 	}
@@ -222,32 +236,38 @@ func (s *Service) TriggerRun(ctx context.Context, actor Actor, projectSlug, repo
 // is not actor-scoped: the webhook is authenticated by a shared secret at the
 // server layer, so runs are recorded with no triggering user.
 func (s *Service) TriggerWebhook(ctx context.Context, repo db.Repository, owner, name, event, ref string) ([]db.PipelineRun, error) {
-	files, err := s.forgejo.ListWorkflows(ctx, owner, name, ref)
+	return s.triggerEvent(ctx, repo, pipelineSource{repo: repo, be: gitBackend{owner: owner, name: name}}, event, ref)
+}
+
+// triggerEvent runs every workflow in src whose `on:` listens for event at
+// ref — the shared body of the Forgejo webhook and the engine's post-receive.
+func (s *Service) triggerEvent(ctx context.Context, repo db.Repository, src pipelineSource, event, ref string) ([]db.PipelineRun, error) {
+	files, err := s.listWorkflows(ctx, src, ref)
 	if err != nil {
-		return nil, translateForgejoRead(err)
+		return nil, err
 	}
 	var runs []db.PipelineRun
 	for _, f := range files {
-		yaml, err := s.forgejo.GetWorkflowContent(ctx, owner, name, f.Path, ref)
+		yaml, err := s.workflowContent(ctx, src, f.Path, ref)
 		if err != nil {
-			s.logger.Warn("webhook workflow read failed", "repo", owner+"/"+name, "workflow", f.Path, "error", err)
+			s.logger.Warn("event workflow read failed", "repo", src.label(), "workflow", f.Path, "error", err)
 			continue
 		}
 		match, err := pipeline.MatchesEvent(yaml, event)
 		if err != nil {
-			s.logger.Warn("webhook workflow parse failed", "repo", owner+"/"+name, "workflow", f.Path, "error", err)
+			s.logger.Warn("event workflow parse failed", "repo", src.label(), "workflow", f.Path, "error", err)
 			continue
 		}
 		if !match {
 			continue
 		}
-		run, err := s.runWorkflow(ctx, repo, owner, name, TriggerInput{
+		run, err := s.runWorkflow(ctx, repo, src, TriggerInput{
 			WorkflowPath: f.Path,
 			Ref:          ref,
 			Event:        event,
 		}, uuid.NullUUID{})
 		if err != nil {
-			s.logger.Warn("webhook workflow run failed", "repo", owner+"/"+name, "workflow", f.Path, "error", err)
+			s.logger.Warn("event workflow run failed", "repo", src.label(), "workflow", f.Path, "error", err)
 			continue
 		}
 		runs = append(runs, run)
@@ -258,7 +278,7 @@ func (s *Service) TriggerWebhook(ctx context.Context, repo db.Repository, owner,
 // runWorkflow is the shared trigger path: it loads the workflow YAML, creates
 // a run record, and kicks off execution in a goroutine so callers get an
 // immediate response. The goroutine persists the full job/step tree when done.
-func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, name string, in TriggerInput, triggeredBy uuid.NullUUID) (db.PipelineRun, error) {
+func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, src pipelineSource, in TriggerInput, triggeredBy uuid.NullUUID) (db.PipelineRun, error) {
 	path := strings.TrimSpace(in.WorkflowPath)
 	if path == "" {
 		return db.PipelineRun{}, fmt.Errorf("%w: a workflow path is required", ErrInvalidInput)
@@ -284,17 +304,17 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		s.logger.Warn("pipeline quota check skipped: project lookup failed", "repo", repo.Slug, "error", perr)
 	}
 
-	yaml, err := s.forgejo.GetWorkflowContent(ctx, owner, name, path, ref)
+	yaml, err := s.workflowContent(ctx, src, path, ref)
 	if err != nil {
-		return db.PipelineRun{}, translateForgejoRead(err)
+		return db.PipelineRun{}, err
 	}
 
-	commitSHA := s.resolveCommitSHA(ctx, owner, name, ref)
+	commitSHA := s.commitSHA(ctx, src, ref)
 
 	// Queue mode (serverless epic): persist the run and enqueue it; a worker
 	// claims execution through the dispatch API (see pipeline_queue.go).
 	if s.queueMode {
-		return s.EnqueuePipelineRun(ctx, repo, in, yaml, commitSHA, triggeredBy)
+		return s.enqueuePipelineRun(ctx, repo, src, in, yaml, commitSHA, triggeredBy)
 	}
 
 	workflowName := pipeline.WorkflowName(yaml, path)
@@ -325,7 +345,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		return db.PipelineRun{}, fmt.Errorf("create run: %w", err)
 	}
 
-	cloneAuth := s.cloneAuthForRun(owner, name)
+	cloneAuth := s.cloneAuth(src)
 
 	envID, err := s.resolveRunEnvironment(ctx, repo.ProjectID, in.EnvironmentSlug)
 	if err != nil {
@@ -349,7 +369,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, owner, na
 		CloneAuthHeader: cloneAuth.AuthHeader,
 		ServerURL:       cloneAuth.ServerURL,
 		Token:           cloneAuth.Token,
-		RepoFullName:    owner + "/" + name,
+		RepoFullName:    src.fullName(),
 		Secrets:         secrets,
 	})
 

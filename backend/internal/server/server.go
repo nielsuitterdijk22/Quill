@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -45,7 +47,9 @@ type Server struct {
 	projectSync  *projectsync.Dispatcher
 	workItemRefs *workitemrefs.Dispatcher
 	router       chi.Router
-	markupCache  *markupCache
+	// handler is router behind the git-host rewrite (git.<domain> → /git).
+	handler     http.Handler
+	markupCache *markupCache
 	// gitCache is the git engine's hydration cache; nil unless the own
 	// engine is on (then the /git smart-HTTP routes are mounted).
 	gitCache *gitengine.RepoCache
@@ -114,6 +118,10 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		// B4: code browse for engine-backed repos reads from the hydrated
 		// cache (server wiring mirrors the internal seams of the /git mount).
 		platformSvc.WithGitCache(gitCache)
+		// D2: CI jobs clone engine repos from the public git base with a
+		// scoped run token signed by the dispatch secret (same trust group).
+		platformSvc.WithGitPublicURL(cfg.GitEngine.PublicURL).
+			WithGitRunTokenSecret(cfg.Pipeline.DispatchSecret)
 	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()
@@ -202,7 +210,56 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
+	s.handler = gitHostRewrite(cfg.GitEngine.Host, s.router)
 	return s
+}
+
+// gitHostRewrite serves the dedicated git host (git.<domain>, pointed at the
+// api container in the D2 cutover) from the /git mount, so clone URLs keep
+// the familiar https://git.<domain>/<project>/<repo>.git shape. Other hosts
+// pass through untouched; an empty host disables the rewrite.
+func gitHostRewrite(gitHost string, next http.Handler) http.Handler {
+	gitHost = strings.ToLower(strings.TrimSpace(gitHost))
+	if gitHost == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := strings.ToLower(r.Host)
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if host == gitHost && r.URL.Path != "/git" && !strings.HasPrefix(r.URL.Path, "/git/") {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/git" + r.URL.Path
+			if r.URL.RawPath != "" {
+				r2.URL.RawPath = "/git" + r.URL.RawPath
+			}
+			next.ServeHTTP(w, r2)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// gitPostReceive backs the engine's OnRefsUpdated seam: CI triggers (and
+// SBOM generation on the default branch) for the refs a push moved. Runs
+// detached — the push already committed and must not wait on CI.
+func (s *Server) gitPostReceive(rcx gitengine.ReceiveContext, _ string, cmds []gitengine.PushCommand) {
+	repoID, err := uuid.Parse(rcx.ID)
+	if err != nil {
+		return
+	}
+	updates := make([]platform.EngineRefUpdate, 0, len(cmds))
+	for _, c := range cmds {
+		updates = append(updates, platform.EngineRefUpdate{Ref: c.Ref, Old: c.Old, New: c.New})
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if _, err := s.platform.HandleEnginePush(ctx, repoID, updates); err != nil {
+			s.logger.Warn("engine post-receive failed", "repo", rcx.ProjectSlug+"/"+rcx.RepoSlug, "error", err)
+		}
+	}()
 }
 
 // StartAuth begins background JWKS refresh for the configured external IdP's
@@ -236,7 +293,7 @@ func (s *Server) StartWorkItemRefs(ctx context.Context) {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.router.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 func (s *Server) setupMiddleware() {
@@ -244,7 +301,9 @@ func (s *Server) setupMiddleware() {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(requestLogger(s.logger))
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Timeout(60 * time.Second))
+	// Git transfers (clone/push of large repos) legitimately outlive the API
+	// budget; the container's own request timeout still bounds them.
+	s.router.Use(skipForGit(middleware.Timeout(60 * time.Second)))
 	s.router.Use(securityHeaders)
 	s.router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.cfg.CORSAllowedOrigins,
@@ -339,6 +398,7 @@ func (s *Server) setupRoutes() {
 				Guard:         s.platform.GitPushGuard(),
 				Leases:        s.platform.GitPushLeases(),
 				OnPushSuccess: s.gitPushAuditor,
+				OnRefsUpdated: s.gitPostReceive,
 			},
 		})))
 	}
@@ -609,4 +669,18 @@ func (s *Server) gitPushAuditor(rcx gitengine.ReceiveContext, actor string) {
 		}
 	}
 	s.platform.LogGitPush(ctx, tenantID, actorID, actor, rcx.ProjectSlug, rcx.RepoSlug, "")
+}
+
+// skipForGit applies mw to every route except the /git smart-HTTP mount.
+func skipForGit(mw func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		wrapped := mw(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/git" || strings.HasPrefix(r.URL.Path, "/git/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			wrapped.ServeHTTP(w, r)
+		})
+	}
 }

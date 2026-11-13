@@ -125,6 +125,10 @@ type ReceiveConfig struct {
 	// manifest) for successful pushes — audit/metering live here, never in
 	// the engine itself.
 	OnPushSuccess func(rcx ReceiveContext, actor string)
+	// OnRefsUpdated fires after OnPushSuccess with the ref commands the push
+	// applied (post-receive: CI triggers, SBOM). It must not block the push —
+	// implementations hand off to a goroutine.
+	OnRefsUpdated func(rcx ReceiveContext, actor string, cmds []PushCommand)
 	// MaxPushBytes caps the request body; 0 = DefaultMaxPushBytes.
 	MaxPushBytes int64
 }
@@ -285,6 +289,9 @@ func (h *SmartHTTP) serveReceivePack(w http.ResponseWriter, r *http.Request, own
 	}
 	if cfg.OnPushSuccess != nil {
 		cfg.OnPushSuccess(rcx, actor)
+	}
+	if cfg.OnRefsUpdated != nil {
+		cfg.OnRefsUpdated(rcx, actor, cmds)
 	}
 
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")

@@ -42,7 +42,7 @@ export default async function BranchesPage({
 
   const { repository: repo, defaultBranch, branches } = result.data;
   const httpUrl = cloneHttpUrl(
-    meta?.forgejo?.publicUrl,
+    meta,
     repo.forgejoOwner,
     repo.forgejoName,
     params.project,

@@ -15,6 +15,10 @@ locals {
   auth_host = "auth.${var.domain}"
   ssh_host  = "ssh.${var.domain}"
 
+  # Public clone base of the own git engine: the dedicated git host once DNS
+  # points it at the api container, the api host's /git mount until then.
+  git_public_url = var.git_host_on_api ? "https://${local.git_host}" : "https://${local.api_host}/git"
+
   # Serverless SQL databases: quill (platform metadata) + zitadel (C1: the
   # zitadel SERVERLESS CONTAINER drops its connection pool when scaled to
   # zero, so its SDB scales to zero too — unlike Forgejo, whose always-on pool

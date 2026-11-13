@@ -120,6 +120,13 @@ type GitEngineConfig struct {
 	// is RAM against memory_limit, which sizes hand in hand with the pack
 	// budget; warm pools pin this to a real disk later.
 	CacheDir string
+	// PublicURL is the public smart-HTTP base engine repos clone from
+	// (QUILL_GIT_PUBLIC_URL, e.g. https://git.<domain>); CI jobs and the
+	// frontend clone widget use it.
+	PublicURL string
+	// Host, when set (QUILL_GIT_HOST, e.g. git.<domain>), routes every
+	// request on that host to the /git mount without the prefix.
+	Host string
 }
 
 // Own reports whether the own git engine is active.
@@ -271,6 +278,9 @@ func Load() (*Config, error) {
 			S3Bucket:    getenv("QUILL_GIT_S3_BUCKET", ""),
 			S3AccessKey: getenv("QUILL_GIT_S3_ACCESS_KEY", ""),
 			S3SecretKey: getenv("QUILL_GIT_S3_SECRET_KEY", ""),
+			CacheDir:    getenv("QUILL_GIT_CACHE_DIR", ""),
+			PublicURL:   strings.TrimRight(getenv("QUILL_GIT_PUBLIC_URL", ""), "/"),
+			Host:        strings.ToLower(getenv("QUILL_GIT_HOST", "")),
 		},
 		TempoSync: TempoSyncConfig{
 			URL:                 getenv("QUILL_TEMPO_SYNC_URL", ""),

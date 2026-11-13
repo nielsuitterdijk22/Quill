@@ -41,6 +41,9 @@ type GitActor struct {
 	Username      string
 	IsAdmin       bool
 	Authenticated bool
+	// RunTenant is set for CI run tokens: read-only access confined to the
+	// run's tenant (no user identity behind it).
+	RunTenant uuid.NullUUID
 }
 
 // GitPATIntrospector is the seam the server wires from the auth package so
@@ -68,6 +71,14 @@ func (s *Service) AuthenticateGitRequest(ctx context.Context, r *http.Request) (
 	}
 	if password == "" {
 		return GitActor{}, ErrGitUnauthorized
+	}
+	// CI run token: read-only, tenant-scoped, expiring (git_run_token.go).
+	if strings.HasPrefix(password, runTokenPrefix) {
+		tenant, ok := s.verifyRunToken(password)
+		if !ok {
+			return GitActor{}, ErrGitUnauthorized
+		}
+		return GitActor{Username: "ci", Authenticated: true, RunTenant: uuid.NullUUID{UUID: tenant, Valid: true}}, nil
 	}
 	// Primary: Quill-issued git token (username is cosmetic).
 	if strings.HasPrefix(password, nativeTokenPrefix) {
@@ -109,6 +120,17 @@ func (s *Service) ResolveRepoForGitAccess(ctx context.Context, ga GitActor, proj
 			return store.GitRepoRef{}, ErrNotFound
 		}
 		return store.GitRepoRef{}, err
+	}
+	if ga.RunTenant.Valid {
+		// CI run tokens read their own tenant's repos and nothing else; a
+		// foreign tenant's repo is indistinguishable from a missing one.
+		if wantPush {
+			return store.GitRepoRef{}, ErrForbidden
+		}
+		if ref.TenantID != ga.RunTenant.UUID {
+			return store.GitRepoRef{}, ErrNotFound
+		}
+		return ref, nil
 	}
 	actor := Actor{UserID: ga.UserID, IsAdmin: ga.IsAdmin}
 	if wantPush {

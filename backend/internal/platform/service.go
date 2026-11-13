@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,12 @@ type Service struct {
 	// gitCache is the engine's hydration cache (B4 browse reads hydrate a
 	// bare repo from the bucket; nil unless WithGitCache was called).
 	gitCache *gitengine.RepoCache
+	// gitPublicURL is the public smart-HTTP base engine repos are cloned
+	// from (e.g. https://git.<domain>); CI jobs and clone widgets use it.
+	gitPublicURL string
+	// gitRunTokenSecret signs the scoped, expiring qgr_ tokens CI jobs use
+	// to read engine repos (never an admin credential).
+	gitRunTokenSecret string
 	// gitPAT introspects provider PATs for the git endpoint (B6; optional).
 	gitPAT GitPATIntrospector
 	// gitEngine is the own git storage engine (serverless epic, Phase B).
@@ -142,6 +149,21 @@ func (s *Service) WithGitEngine(e *gitengine.Engine) *Service {
 	s.gitEngine = e
 	return s
 }
+
+// WithGitPublicURL sets the public smart-HTTP base for engine repos.
+func (s *Service) WithGitPublicURL(u string) *Service {
+	s.gitPublicURL = strings.TrimRight(strings.TrimSpace(u), "/")
+	return s
+}
+
+// WithGitRunTokenSecret sets the HMAC key for CI run tokens.
+func (s *Service) WithGitRunTokenSecret(secret string) *Service {
+	s.gitRunTokenSecret = secret
+	return s
+}
+
+// GitPublicURL reports the configured public git base ("" when unset).
+func (s *Service) GitPublicURL() string { return s.gitPublicURL }
 
 // WithGitCache installs the engine's repo hydration cache. Code browsing for
 // engine-backed repos (B4) shells git in the hydrated directory; the server

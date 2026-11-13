@@ -300,3 +300,15 @@ variable "ci_instance_type" {
   type        = string
   default     = "DEV1-S"
 }
+
+variable "git_engine_mode" {
+  description = "D2 switch: \"own\" serves repositories from the own git engine (bucket + Postgres referee); \"\" keeps everything on Forgejo."
+  type        = string
+  default     = "own"
+}
+
+variable "git_host_on_api" {
+  description = "true once the Cloudflare git record is a CNAME to the api container: binds git.<domain> to the api and makes it the public clone base."
+  type        = bool
+  default     = false
+}
