@@ -2,6 +2,7 @@ package ciworker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,8 +14,11 @@ import (
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
-// metadataBase is Scaleway's AWS-compatible instance metadata endpoint.
-const metadataBase = "http://169.254.169.254/latest"
+// metadataBase is Scaleway's instance metadata service (/conf). Not the
+// AWS-style 169.254.169.254 — that address answers nothing on Scaleway (the
+// first live run never resolved its own id). A var so tests can point it at
+// an httptest server.
+var metadataBase = "http://169.254.42.42"
 
 // OwnInstanceID resolves the worker's own instance id — from the metadata
 // service on a real ephemeral CI box, or SCW_INSTANCE_ID when the metadata
@@ -25,7 +29,7 @@ func OwnInstanceID(ctx context.Context) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataBase+"/meta-data/instance-id", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metadataBase+"/conf?format=json", nil)
 	if err != nil {
 		return "", err
 	}
@@ -34,11 +38,16 @@ func OwnInstanceID(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("instance metadata unreachable: %w", err)
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if err != nil {
-		return "", err
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("instance metadata: HTTP %d", resp.StatusCode)
 	}
-	id := strings.TrimSpace(string(b))
+	var conf struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&conf); err != nil {
+		return "", fmt.Errorf("instance metadata: %w", err)
+	}
+	id := strings.TrimSpace(conf.ID)
 	if id == "" {
 		return "", fmt.Errorf("instance metadata returned an empty id")
 	}

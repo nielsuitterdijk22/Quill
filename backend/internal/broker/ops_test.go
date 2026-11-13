@@ -70,6 +70,7 @@ func TestCloudInitCarriesTerminationCredsAndBlocksMetadata(t *testing.T) {
 		"QUILL_PIPELINE_UBUNTU_IMAGE=node:22-bookworm",
 		// user workflow containers must not read user-data (secrets) off the
 		// metadata service
+		"DOCKER-USER -d 169.254.42.42", // Scaleway's metadata service
 		"DOCKER-USER -d 169.254.169.254",
 		// the backend image runs unprivileged; the worker needs the socket
 		"-u 0",
@@ -80,7 +81,7 @@ func TestCloudInitCarriesTerminationCredsAndBlocksMetadata(t *testing.T) {
 		}
 	}
 	// The metadata block must be in place before the worker starts.
-	if strings.Index(ci, "169.254.169.254") > strings.Index(ci, "docker run") {
+	if strings.Index(ci, "169.254.42.42") > strings.Index(ci, "docker run") {
 		t.Error("metadata block must precede the worker run")
 	}
 }

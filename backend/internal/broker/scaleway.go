@@ -82,6 +82,7 @@ func NewScalewayOrchestrator(cfg ScalewayConfig, logger *slog.Logger) (*Scaleway
 // it boots one; it also TTL-kills strays created by a previous broker run
 // whose ciworker never self-terminated.
 func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, error) {
+	o.reapOrphanVolumes(ctx)
 	resp, err := o.api.ListServers(&instance.ListServersRequest{
 		Zone: o.zone, Tags: []string{o.cfg.InstanceTag},
 	}, scw.WithContext(ctx))
@@ -140,6 +141,18 @@ func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, 
 	}, scw.WithContext(ctx))
 	if err != nil {
 		return "", false, fmt.Errorf("create ci instance: %w", err)
+	}
+	// Tag the SBS root volume: the server-side terminate action deletes the
+	// server but NOT its SBS volumes, so the reaper finds orphans by this tag.
+	for _, v := range created.Server.Volumes {
+		if v != nil && v.VolumeType == instance.VolumeServerVolumeTypeSbsVolume {
+			tags := []string{o.cfg.InstanceTag}
+			if _, err := o.block.UpdateVolume(&block.UpdateVolumeRequest{
+				Zone: o.zone, VolumeID: v.ID, Tags: &tags,
+			}, scw.WithContext(ctx)); err != nil {
+				o.logger.Warn("tag CI root volume", "volume", v.ID, "error", err)
+			}
+		}
 	}
 	// cloud-init travels as user data (this SDK generation dropped the
 	// CreateServerRequest.CloudInit field): set before power-on, key is
@@ -214,4 +227,26 @@ func (o *ScalewayOrchestrator) reapStopped(ctx context.Context, srv *instance.Se
 		}
 	}
 	o.logger.Info("reaped stopped CI instance", "id", srv.ID)
+}
+
+// reapOrphanVolumes deletes detached SBS volumes carrying the CI tag — the
+// leftovers of workers that terminated themselves (terminate keeps SBS).
+func (o *ScalewayOrchestrator) reapOrphanVolumes(ctx context.Context) {
+	resp, err := o.block.ListVolumes(&block.ListVolumesRequest{
+		Zone: o.zone, ProjectID: &o.cfg.ProjectID, Tags: []string{o.cfg.InstanceTag},
+	}, scw.WithAllPages(), scw.WithContext(ctx))
+	if err != nil {
+		o.logger.Warn("list CI volumes", "error", err)
+		return
+	}
+	for _, v := range resp.Volumes {
+		if v.Status != block.VolumeStatusAvailable || len(v.References) > 0 {
+			continue // attached or transitioning
+		}
+		if err := o.block.DeleteVolume(&block.DeleteVolumeRequest{Zone: o.zone, VolumeID: v.ID}, scw.WithContext(ctx)); err != nil {
+			o.logger.Warn("reap CI volume", "volume", v.ID, "error", err)
+			continue
+		}
+		o.logger.Info("reaped orphan CI volume", "volume", v.ID)
+	}
 }

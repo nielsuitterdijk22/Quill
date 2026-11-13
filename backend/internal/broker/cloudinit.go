@@ -71,6 +71,7 @@ func CloudInit(o CloudInitOpts) string {
 	// traffic; the worker itself runs on the host network and keeps metadata
 	// access for its own instance id.
 	b.WriteString("  - systemctl start docker\n")
+	b.WriteString("  - iptables -I DOCKER-USER -d 169.254.42.42 -j DROP\n")
 	b.WriteString("  - iptables -I DOCKER-USER -d 169.254.169.254 -j DROP\n")
 	b.WriteString("  - ip6tables -I DOCKER-USER -d fd00:42::42 -j DROP || true\n")
 	if o.RegistryUser != "" {
