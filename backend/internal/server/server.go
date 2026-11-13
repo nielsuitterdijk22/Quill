@@ -122,6 +122,11 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		// scoped run token signed by the dispatch secret (same trust group).
 		platformSvc.WithGitPublicURL(cfg.GitEngine.PublicURL).
 			WithGitRunTokenSecret(cfg.Pipeline.DispatchSecret)
+		// SBOM per default-branch push: syft is baked into the image; a
+		// missing binary only fails individual generations (status: failed).
+		if !cfg.SBOMDisabled {
+			platformSvc.WithSBOMGenerator(platform.SyftGenerator{Bin: cfg.SBOMSyftBin})
+		}
 	}
 	// Install the configured pipeline-secret cipher. NewService defaults to the
 	// insecure dev cipher; a set QUILL_SECRET_ENCRYPTION_KEY overrides it. Load()
@@ -598,6 +603,9 @@ func (s *Server) setupRoutes() {
 							r.Get("/commits/{sha}", s.handleGetCommit)
 							r.Get("/contents", s.handleGetContents)
 							r.Post("/markup", s.handleRenderMarkup)
+							r.Get("/sbom", s.handleGetSBOM)
+							r.Post("/sbom", s.handleRequestSBOM)
+							r.Get("/sbom/download", s.handleDownloadSBOM)
 							r.Route("/policies", func(r chi.Router) {
 								r.Get("/", s.handleListBranchPolicies)
 								r.Put("/", s.handleSetBranchPolicy)

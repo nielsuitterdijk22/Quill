@@ -1,0 +1,15 @@
+name: reusable-tests
+on:
+  workflow_call:
+    inputs:
+      suite:
+        type: string
+        required: true
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: run suite
+        run: |
+          echo "running the ${{ inputs.suite }} suite"
+          test "${{ inputs.suite }}" = unit

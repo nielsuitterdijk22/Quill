@@ -14,6 +14,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-a
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill-ciworker ./cmd/ciworker && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/quill ./cmd/quill
 
+# ---- syft (SBOM generation on default-branch pushes) ----
+# Pinned: the SBOM format/content must not drift with an upstream "latest".
+FROM anchore/syft:v1.18.1 AS syft
+
 # ---- run ----
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates git
@@ -26,6 +30,7 @@ COPY --from=build /out/quill-dispatch /quill-dispatch
 COPY --from=build /out/quill-broker /quill-broker
 COPY --from=build /out/quill-ciworker /quill-ciworker
 COPY --from=build /out/quill /quill
+COPY --from=syft /syft /usr/local/bin/syft
 EXPOSE 8080
 USER quill:quill
 CMD ["/quill-api"]

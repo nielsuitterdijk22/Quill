@@ -1,0 +1,57 @@
+name: deploy-scaleway
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container: docker:27-cli
+    defaults:
+      run:
+        shell: sh
+    env:
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+      SCW_DEFAULT_REGION: fr-par
+      NS: ${{ secrets.SCW_CONTAINER_NAMESPACE_ID }}
+      IMAGE: rg.fr-par.scw.cloud/quill-showcase/hello:${{ github.sha }}
+    steps:
+      - name: build image
+        run: docker build --build-arg SHA=${{ github.sha }} -t "$IMAGE" .
+      - name: push to the Scaleway registry
+        run: |
+          echo "$SCW_SECRET_KEY" | docker login rg.fr-par.scw.cloud -u nologin --password-stdin
+          docker push "$IMAGE"
+      - name: install the scw CLI
+        run: |
+          apk add --no-cache curl jq >/dev/null
+          curl -fsSL -o /usr/local/bin/scw https://github.com/scaleway/scaleway-cli/releases/download/v2.35.0/scaleway-cli_2.35.0_linux_amd64
+          chmod +x /usr/local/bin/scw
+          scw version
+      - name: deploy the serverless container
+        run: |
+          ID=$(scw container container list namespace-id="$NS" name=showcase-hello -o json | jq -r '.[0].id // empty')
+          if [ -z "$ID" ]; then
+            ID=$(scw container container create namespace-id="$NS" name=showcase-hello registry-image="$IMAGE" \
+              port=8080 min-scale=0 max-scale=1 cpu-limit=70 memory-limit=128 privacy=public deploy=true -o json | jq -r .id)
+          else
+            scw container container update "$ID" registry-image="$IMAGE" redeploy=true -o json >/dev/null
+          fi
+          echo "container: $ID"
+          for i in $(seq 1 60); do
+            ST=$(scw container container get "$ID" -o json | jq -r .status)
+            [ "$ST" = ready ] && break
+            if [ "$ST" = error ]; then scw container container get "$ID" -o json | jq -r .error_message; exit 1; fi
+            sleep 5
+          done
+          DOMAIN=$(scw container container get "$ID" -o json | jq -r .domain_name)
+          for i in $(seq 1 36); do
+            if curl -fsS "https://$DOMAIN/" | grep -q "${{ github.sha }}"; then
+              echo "LIVE: commit ${{ github.sha }} is served at https://$DOMAIN/"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "deployed container never served this commit"
+          exit 1

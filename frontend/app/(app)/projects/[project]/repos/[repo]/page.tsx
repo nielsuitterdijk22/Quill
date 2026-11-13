@@ -14,6 +14,7 @@ import { CloneButton } from "../../../../../components/CloneButton";
 import { BranchSelector } from "../../../../../components/BranchSelector";
 import { ForkButton } from "./ForkButton";
 import { StarButton } from "./StarButton";
+import { SBOMButton } from "./SBOMButton";
 import {
   BrowseError,
   cloneHttpUrl,
@@ -202,6 +203,7 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
             Sign in to star or fork
           </Link>
         )}
+        {token ? <SBOMButton project={params.project} repo={params.repo} /> : null}
         <CloneButton httpUrl={httpUrl} />
       </div>
 

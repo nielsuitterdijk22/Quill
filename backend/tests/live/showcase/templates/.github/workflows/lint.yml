@@ -1,0 +1,16 @@
+# Shared, cross-repo reusable workflow. Callers reference it as
+#   uses: <project>/pipeline-templates/.github/workflows/lint.yml@main
+# and Quill resolves it against its own git engine with the run's scoped token.
+name: shared-lint
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        default: "."
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: shared template
+        run: echo "shared lint template (pipeline-templates) linting ${{ inputs.target }}"

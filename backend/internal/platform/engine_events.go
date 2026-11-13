@@ -39,6 +39,16 @@ func (s *Service) HandleEnginePush(ctx context.Context, repoID uuid.UUID, update
 	if !src.be.engine {
 		return nil, fmt.Errorf("%w: repo %s is not engine-backed", ErrInvalidInput, repo.Slug)
 	}
+	// SBOM per default-branch push (not a pipeline; see sbom.go).
+	if s.sbomGen != nil {
+		for _, u := range updates {
+			if u.Ref == "refs/heads/"+repo.DefaultBranch && !isZeroSHA(u.New) {
+				if _, err := s.queueSBOM(ctx, src.be, u.New, u.Ref); err != nil {
+					s.logger.Warn("sbom queue failed", "repo", src.label(), "error", err)
+				}
+			}
+		}
+	}
 	var runs []db.PipelineRun
 	for _, u := range updates {
 		if isZeroSHA(u.New) {

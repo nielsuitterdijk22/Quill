@@ -1,0 +1,25 @@
+name: ci
+on: [push]
+jobs:
+  unit:
+    uses: ./.github/workflows/test.yml
+    with:
+      suite: unit
+  shared-lint:
+    uses: e2e-tester/pipeline-templates/.github/workflows/lint.yml@main
+    with:
+      target: pipeline-showcase
+  docker-build:
+    needs: [unit]
+    runs-on: ubuntu-latest
+    container: docker:27-cli
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: docker build
+        run: docker build --build-arg SHA=${{ github.sha }} -t showcase-ci:${{ github.sha }} .
+      - name: smoke the image
+        run: docker run --rm showcase-ci:${{ github.sha }} cat /www/index.html | grep ${{ github.sha }}
+      - name: clean up
+        run: docker image rm showcase-ci:${{ github.sha }}

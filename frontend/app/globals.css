@@ -4141,3 +4141,48 @@ a.row-item:hover {
   font-size: 11px;
   opacity: 0.7;
 }
+
+/* ---- SBOM status button (repo landing toolbar) ------------------------------ */
+.sbom-btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+.sbom-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.sbom-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.sbom-ready {
+  color: var(--text);
+}
+.sbom-ready:hover {
+  border-color: color-mix(in oklab, var(--green) 45%, transparent);
+}
+.sbom-ready .sbom-dot {
+  background: var(--green);
+}
+.sbom-pending {
+  cursor: progress;
+}
+.sbom-pending .sbom-dot {
+  background: var(--amber);
+  animation: sbom-pulse 1.2s ease-in-out infinite;
+}
+.sbom-failed .sbom-dot {
+  background: var(--red);
+}
+@keyframes sbom-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sbom-pending .sbom-dot {
+    animation: none;
+  }
+}

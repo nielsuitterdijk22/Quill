@@ -62,6 +62,10 @@ type Config struct {
 	// check fails. Empty keeps host-only cookies (fine for localhost dev where
 	// both sides share one host).
 	CookieDomain string
+	// SBOMDisabled turns off SBOM generation on default-branch pushes
+	// (QUILL_SBOM_DISABLED); SBOMSyftBin is the syft binary (QUILL_SBOM_SYFT_BIN).
+	SBOMDisabled bool
+	SBOMSyftBin  string
 }
 
 // JWTConfig configures Quill-issued access tokens (used from PR 3 onward).
@@ -295,6 +299,8 @@ func Load() (*Config, error) {
 		SecretEncryptionKey: getenv("QUILL_SECRET_ENCRYPTION_KEY", ""),
 		CORSAllowedOrigins:  getlist("QUILL_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3001"}),
 		CookieDomain:        getenv("QUILL_COOKIE_DOMAIN", ""),
+		SBOMDisabled:        getbool("QUILL_SBOM_DISABLED"),
+		SBOMSyftBin:         getenv("QUILL_SBOM_SYFT_BIN", "syft"),
 	}
 
 	// Placeholder values must never reach GitHub: terraform's default is

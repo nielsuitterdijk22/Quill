@@ -84,6 +84,10 @@ type Service struct {
 	// gitRunTokenSecret signs the scoped, expiring qgr_ tokens CI jobs use
 	// to read engine repos (never an admin credential).
 	gitRunTokenSecret string
+	// sbomGen generates SBOMs on default-branch pushes (nil = disabled);
+	// sbomSem serializes generations per instance.
+	sbomGen SBOMGenerator
+	sbomSem chan struct{}
 	// gitPAT introspects provider PATs for the git endpoint (B6; optional).
 	gitPAT GitPATIntrospector
 	// gitEngine is the own git storage engine (serverless epic, Phase B).
@@ -120,6 +124,7 @@ func NewService(st *store.Store, fj *forgejo.Client, logger *slog.Logger) *Servi
 		runner:    pipeline.NewActRunner(),
 		evaluator: policy.NewTypedEvaluator(),
 		cipher:    secretbox.NewDev(),
+		sbomSem:   make(chan struct{}, 1),
 	}
 	// Method value: the storage gate's size probe defaults to the Forgejo-backed
 	// measurement; tests swap this field for a fake.

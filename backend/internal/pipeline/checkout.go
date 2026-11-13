@@ -19,8 +19,8 @@ func Checkout(ctx context.Context, cloneURL, ref, sha, dest, authHeader string) 
 	if strings.TrimSpace(authHeader) != "" {
 		args = append(args, "-c", "http.extraHeader="+authHeader)
 	}
-	if strings.TrimSpace(ref) != "" {
-		args = append(args, "--branch", ref)
+	if b := cloneBranchName(ref); b != "" {
+		args = append(args, "--branch", b)
 	}
 	args = append(args, cloneURL, dest)
 
@@ -60,4 +60,17 @@ func sanitizeGitOutput(out, cloneURL string) string {
 		out = out[:i] + "Authorization: <redacted>"
 	}
 	return ": " + out
+}
+
+// cloneBranchName maps a ref to what `git clone --branch` accepts: short
+// branch/tag names only. Push events carry full refs (refs/heads/main,
+// refs/tags/v1) — passed verbatim, every push-triggered run failed checkout.
+func cloneBranchName(ref string) string {
+	ref = strings.TrimSpace(ref)
+	for _, prefix := range []string{"refs/heads/", "refs/tags/"} {
+		if strings.HasPrefix(ref, prefix) {
+			return strings.TrimPrefix(ref, prefix)
+		}
+	}
+	return ref
 }
