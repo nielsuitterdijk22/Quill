@@ -103,6 +103,9 @@ func TestPipelineShowcase(t *testing.T) {
 	sha := push("pipeline-showcase", "showcase/app")
 	fmt.Printf("SHOWCASE pushed %s; https://app.black-tulip.nl/%s/pipeline-showcase/pipelines\n", sha, proj)
 
+	// The default-branch push also produced an SBOM (not a pipeline).
+	verifySBOM(t, token, proj, "pipeline-showcase", sha)
+
 	// Every workflow listening on push must run for this commit and succeed.
 	want := map[string]bool{".github/workflows/ci.yml": true, ".github/workflows/secrets.yml": true, ".github/workflows/deploy.yml": true}
 	rp := "/projects/" + proj + "/repos/pipeline-showcase/pipelines"
@@ -172,7 +175,7 @@ func TestPipelineShowcase(t *testing.T) {
 				t.Errorf("secrets run log shows no masked value")
 			}
 		case ".github/workflows/ci.yml":
-			for _, s := range []string{"running the unit suite", "shared lint template", "<h1>Quill pipeline showcase</h1>"} {
+			for _, s := range []string{"running the unit suite", "shared lint template", "Quill pipeline showcase"} {
 				if !strings.Contains(l, s) {
 					t.Errorf("ci log missing %q", s)
 				}
@@ -188,6 +191,39 @@ func TestPipelineShowcase(t *testing.T) {
 				t.Errorf("deploy log has no LIVE: line")
 			}
 		}
+	}
+}
+
+// verifySBOM waits for the default-branch push's SBOM and checks the download.
+func verifySBOM(t *testing.T, token, proj, repo, sha string) {
+	t.Helper()
+	base := "/projects/" + proj + "/repos/" + repo + "/sbom"
+	deadline := time.Now().Add(5 * time.Minute)
+	var status string
+	for time.Now().Before(deadline) {
+		st, b := apiCall(t, token, http.MethodGet, base, nil)
+		if st != 200 {
+			t.Fatalf("sbom status: %d %s", st, b)
+		}
+		v, _ := jbody(t, b)["sbom"].(map[string]any)
+		if v != nil && v["commitSha"] == sha {
+			status, _ = v["status"].(string)
+			if status == "ready" {
+				fmt.Printf("SHOWCASE SBOM ready for %s: %v components (CycloneDX %v)\n", sha[:7], v["componentCount"], v["specVersion"])
+				break
+			}
+			if status == "failed" {
+				t.Fatalf("SBOM failed: %v", v["error"])
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+	if status != "ready" {
+		t.Fatalf("SBOM for %s not ready (last status %q)", sha, status)
+	}
+	st, b := apiCall(t, token, http.MethodGet, base+"/download?sha="+sha, nil)
+	if st != 200 || !strings.Contains(string(b), `"bomFormat":"CycloneDX"`) && !strings.Contains(string(b), `"bomFormat": "CycloneDX"`) {
+		t.Fatalf("sbom download: %d %.200s", st, b)
 	}
 }
 

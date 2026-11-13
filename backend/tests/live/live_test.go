@@ -809,13 +809,21 @@ func TestPRReviewAndMerge(t *testing.T) {
 	if st, b := apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/pulls/%d/reviews", rp, num), nil); st >= 500 {
 		t.Errorf("list reviews: %d %s", st, b)
 	}
-	if st, b := apiCall(t, token, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", rp, num), map[string]any{}); st >= 500 {
-		t.Errorf("merge: %d %s", st, b)
+	mst, mb := apiCall(t, token, http.MethodPost, fmt.Sprintf("%s/pulls/%d/merge", rp, num), map[string]any{})
+	if mst >= 500 {
+		t.Errorf("merge: %d %s", mst, mb)
 	}
 	st, b = apiCall(t, token, http.MethodGet, fmt.Sprintf("%s/pulls/%d", rp, num), nil)
 	if st == 200 {
-		state, _ := jbody(t, b)["pull"].(map[string]any)["state"].(string)
-		t.Logf("PR state after merge attempt: %s", state)
+		pull, _ := jbody(t, b)["pull"].(map[string]any)
+		state, _ := pull["state"].(string)
+		merged, _ := pull["merged"].(bool)
+		t.Logf("PR state after merge attempt: %s merged=%v (merge: %d %.300s)", state, merged, mst, mb)
+		// An approved, conflict-free PR in a repo without branch policies
+		// must actually merge.
+		if !merged {
+			t.Errorf("PR not merged: merge answered %d %.300s", mst, mb)
+		}
 	}
 }
 

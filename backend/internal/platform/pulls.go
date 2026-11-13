@@ -635,6 +635,10 @@ func (s *Service) CreateLineComment(ctx context.Context, actor Actor, projectSlu
 // policy governing the PR's base branch (required approvals, no outstanding
 // change requests) — the authoritative gate for the PR flow.
 func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, method string) (db.Repository, forgejo.PullRequest, error) {
+	// Empty means "merge" on every backend (GitHub API semantics).
+	if method == "" {
+		method = "merge"
+	}
 	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
@@ -642,9 +646,6 @@ func (s *Service) MergePull(ctx context.Context, actor Actor, projectSlug, repoS
 	if be.engine {
 		merged, err := s.engineMergePull(ctx, repo, be, actor, number, method)
 		return repo, merged, err
-	}
-	if method == "" {
-		method = "merge"
 	}
 	if !validMergeMethods[method] {
 		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: merge method must be merge, squash or rebase", ErrInvalidInput)
