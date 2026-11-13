@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -586,10 +587,15 @@ func sh(t *testing.T, dir, name string, args ...string) string {
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+		// Clone URLs embed the git token: never print it.
+		t.Fatalf("%s %v: %v\n%s", name, redactTokens(fmt.Sprint(args)), err, redactTokens(string(out)))
 	}
 	return string(out)
 }
+
+var tokenRE = regexp.MustCompile(`q(gt|gr)_[A-Za-z0-9._-]+`)
+
+func redactTokens(s string) string { return tokenRE.ReplaceAllString(s, "q${1}_***") }
 
 // setupProjectRepo logs in, ensures a personal project, creates a repo and
 // returns (token, projectSlug, repoSlug).

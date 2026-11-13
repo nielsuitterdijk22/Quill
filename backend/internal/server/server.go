@@ -360,7 +360,9 @@ func (s *Server) setupRoutes() {
 				return err
 			}
 		}
-		s.router.Mount("/git", gitAuth(http.Handler(&gitengine.SmartHTTP{
+		// StripPrefix: chi's Mount keeps "/git" in r.URL.Path, and the engine
+		// parses /{owner}/{repo}/... — without it every clone 404'd.
+		s.router.Mount("/git", http.StripPrefix("/git", gitAuth(http.Handler(&gitengine.SmartHTTP{
 			Hydrate: func(ctx context.Context, owner, repo string) (string, error) {
 				ga := actorFrom(ctx)
 				ref, err := s.platform.ResolveRepoForGitAccess(ctx, ga, owner, repo, false)
@@ -400,7 +402,7 @@ func (s *Server) setupRoutes() {
 				OnPushSuccess: s.gitPushAuditor,
 				OnRefsUpdated: s.gitPostReceive,
 			},
-		})))
+		}))))
 	}
 
 	// Versioned API surface. Resource routes are added in later PRs.
