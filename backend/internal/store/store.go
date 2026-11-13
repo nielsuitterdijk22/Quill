@@ -347,8 +347,10 @@ func (s *Store) GetPipelineQueueJob(ctx context.Context, id uuid.UUID) (Pipeline
 // different worker (a stale worker reporting late after a reclaim): returns
 // false, nil in that case.
 func (s *Store) FinishPipelineJob(ctx context.Context, id uuid.UUID, worker string) (bool, error) {
+	// The finished row keeps its spec for debugging but never the secrets:
+	// they were only needed while a worker executed the job.
 	const q = `
-		UPDATE pipeline_queue SET status = 'done', updated_at = now()
+		UPDATE pipeline_queue SET status = 'done', updated_at = now(), spec = spec - 'Secrets'
 		WHERE id = $1 AND claimed_by = $2 AND status = 'claimed'`
 	ct, err := s.pool.Exec(ctx, q, id, worker)
 	if err != nil {
@@ -366,5 +368,73 @@ func (s *Store) SetPipelineRunRunning(ctx context.Context, runID uuid.UUID) erro
 		SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
 		WHERE id = $1 AND status = 'pending'`
 	_, err := s.pool.Exec(ctx, q, runID)
+	return err
+}
+
+// DoneQueueJobWithSecrets is a finished queue row that still holds secrets
+// (reported before the scrub-on-finish fix).
+type DoneQueueJobWithSecrets struct {
+	ID    uuid.UUID
+	RunID uuid.UUID
+	Spec  []byte
+}
+
+// ListDoneQueueJobsWithSecrets returns finished rows whose spec still carries
+// a non-empty Secrets map.
+func (s *Store) ListDoneQueueJobsWithSecrets(ctx context.Context) ([]DoneQueueJobWithSecrets, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, run_id, spec FROM pipeline_queue
+		WHERE status = 'done' AND jsonb_typeof(spec->'Secrets') = 'object'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DoneQueueJobWithSecrets
+	for rows.Next() {
+		var r DoneQueueJobWithSecrets
+		if err := rows.Scan(&r.ID, &r.RunID, &r.Spec); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ScrubQueueJobSecrets removes the Secrets map from a queue row's spec.
+func (s *Store) ScrubQueueJobSecrets(ctx context.Context, id uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, "UPDATE pipeline_queue SET spec = spec - 'Secrets' WHERE id = $1", id)
+	return err
+}
+
+// RunStepLog is one step's stored log.
+type RunStepLog struct {
+	StepID uuid.UUID
+	Logs   string
+}
+
+// ListStepLogsByRun returns every step log of a run.
+func (s *Store) ListStepLogsByRun(ctx context.Context, runID uuid.UUID) ([]RunStepLog, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT st.id, st.logs FROM pipeline_steps st
+		JOIN pipeline_jobs j ON j.id = st.job_id
+		WHERE j.run_id = $1`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunStepLog
+	for rows.Next() {
+		var r RunStepLog
+		if err := rows.Scan(&r.StepID, &r.Logs); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// UpdateStepLogs rewrites one step's stored log.
+func (s *Store) UpdateStepLogs(ctx context.Context, stepID uuid.UUID, logs string) error {
+	_, err := s.pool.Exec(ctx, "UPDATE pipeline_steps SET logs = $2 WHERE id = $1", stepID, logs)
 	return err
 }

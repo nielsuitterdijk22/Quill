@@ -265,6 +265,33 @@ func (s *Service) ReportQueuedJob(ctx context.Context, workerID string, queueID 
 		return ErrConflict
 	}
 
+	// Mask the run's secrets out of everything the worker reports, exactly as
+	// the inline path does (executeRun). The queue row's spec carries the
+	// values this run was given; act also traces evaluated expressions
+	// (secrets included) at debug level, so EVERY line goes through the mask.
+	// Fail closed: a spec we cannot decode means we cannot mask → persist no
+	// logs at all rather than risk clear-text secrets.
+	var spec pipeline.JobSpec
+	if err := json.Unmarshal(row.Spec, &spec); err != nil {
+		s.logger.Error("queue report: undecodable spec; dropping logs to stay safe", "queue", queueID, "error", err)
+		if result != nil {
+			for i := range result.Jobs {
+				for j := range result.Jobs[i].Steps {
+					result.Jobs[i].Steps[j].Logs = "[logs withheld: secret masking unavailable]\n"
+				}
+			}
+		}
+		if runErr != "" {
+			runErr = "run failed (details withheld: secret masking unavailable)"
+		}
+	} else {
+		masker := newSecretMasker(spec.Secrets)
+		if result != nil {
+			masker.maskResult(result)
+		}
+		runErr = masker.mask(runErr)
+	}
+
 	if runErr != "" {
 		cause := errors.New(runErr)
 		s.recordStartupFailure(ctx, row.RunID, cause)

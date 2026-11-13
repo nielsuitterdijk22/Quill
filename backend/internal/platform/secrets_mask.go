@@ -1,6 +1,9 @@
 package platform
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -81,4 +84,43 @@ func (m *secretMask) maskResult(result *pipeline.RunResult) {
 			result.Jobs[ji].Steps[si].Logs = m.mask(result.Jobs[ji].Steps[si].Logs)
 		}
 	}
+}
+
+// RemaskStoredRunLogs is the one-off repair for queue-mode runs reported
+// before report-time masking existed (2026-11-13): every finished queue row
+// that still carries its secrets masks its run's stored step logs with those
+// exact values, then has the secrets scrubbed from its spec. Idempotent.
+func (s *Service) RemaskStoredRunLogs(ctx context.Context) (runs, steps int, err error) {
+	rows, err := s.store.ListDoneQueueJobsWithSecrets(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, r := range rows {
+		var spec pipeline.JobSpec
+		if err := json.Unmarshal(r.Spec, &spec); err != nil {
+			return runs, steps, fmt.Errorf("decode spec %s: %w", r.ID, err)
+		}
+		masker := newSecretMasker(spec.Secrets)
+		logs, err := s.store.ListStepLogsByRun(ctx, r.RunID)
+		if err != nil {
+			return runs, steps, err
+		}
+		touched := false
+		for _, l := range logs {
+			if masked := masker.mask(l.Logs); masked != l.Logs {
+				if err := s.store.UpdateStepLogs(ctx, l.StepID, masked); err != nil {
+					return runs, steps, err
+				}
+				steps++
+				touched = true
+			}
+		}
+		if touched {
+			runs++
+		}
+		if err := s.store.ScrubQueueJobSecrets(ctx, r.ID); err != nil {
+			return runs, steps, err
+		}
+	}
+	return runs, steps, nil
 }

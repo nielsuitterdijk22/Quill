@@ -72,7 +72,7 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket, remask-run-logs)")
 	}
 	switch args[0] {
 	case "create-repo":
@@ -85,8 +85,10 @@ func runAdmin(args []string) error {
 		return runGitMaintenance(args[1:])
 	case "migrate-forgejo-to-bucket":
 		return runForgejoMigrate(args[1:])
+	case "remask-run-logs":
+		return runRemaskRunLogs(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket, remask-run-logs)", args[0])
 	}
 }
 
