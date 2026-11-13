@@ -171,8 +171,10 @@ web-session verification themselves):
   then `POST /management/v1/users/<userId>/password` with the PAT as bearer
   (`userId` from `POST /v2/users` search), then complete the forced password change by
   logging in once through the UI flow (Zitadel then requires a fresh sign-in).
-- `QUILL_E2E_CLIENT_ID` / `QUILL_E2E_PROJECT_ID`: the GitHub repo variables
-  `NEXT_PUBLIC_ZITADEL_CLIENT_ID` / `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (`gh variable list`).
+- `QUILL_E2E_CLIENT_ID`: the public-PKCE probe app `quill-e2e-probe`
+  (`399023859392643080`); the web app's own client is confidential and its secret
+  is unreadable (GH secret / hashed container env). `QUILL_E2E_PROJECT_ID`: the
+  GitHub repo variable `NEXT_PUBLIC_ZITADEL_PROJECT_ID` (`gh variable list`).
 - Signed-in web verification without a browser: start the app's own Auth.js OIDC flow
   (`GET /api/auth/csrf` → `POST /api/auth/signin/zitadel` with the csrfToken), complete
   the Zitadel stepwise login inside that flow, land the callback on the app, and the
