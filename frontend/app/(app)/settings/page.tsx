@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Icon } from "@/components/Icon";
 
-import { getMyProjects, listGitTokens, listSSHKeys } from "../../lib/api";
+import { getMyProjects, listGitTokens } from "../../lib/api";
 import type { User } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
 import {
@@ -18,10 +18,9 @@ import { ExportDataButton } from "./ExportDataButton";
 import { GitTokenPanel } from "./GitTokenPanel";
 import { PersonalBillingPanel } from "./PersonalBillingPanel";
 import { ProfileForm } from "./ProfileForm";
-import { SSHKeyPanel } from "./SSHKeyPanel";
 
 // SettingsPage is the signed-in user's settings home. It has up to three tabs:
-//   * Account — profile, email, password, git tokens, SSH keys, data export.
+//   * Account — profile, email, password, git tokens, data export.
 //   * Policies — branch and environment policies for the user's personal
 //     project, which is their global ("all my repos") scope.
 //   * Secrets & environments — secrets and deployment environments for the same.
@@ -97,7 +96,7 @@ export default async function SettingsPage({
 }
 
 // AccountTab renders the user's account settings: profile, email, password, git
-// access tokens for HTTPS clone/push, SSH keys, data export, and account
+// access tokens for HTTPS clone/push, data export, and account
 // deletion.
 async function AccountTab({
   user,
@@ -106,14 +105,11 @@ async function AccountTab({
   user: User;
   token: string | undefined;
 }) {
-  const [tokensRes, sshRes] = await Promise.all([
-    token
-      ? listGitTokens(token)
-      : Promise.resolve({ ok: false as const, status: 401, message: "Not signed in." }),
-    token
-      ? listSSHKeys(token)
-      : Promise.resolve({ ok: false as const, status: 401, message: "Not signed in." }),
-  ]);
+  // Git is HTTPS-only since the own engine replaced Forgejo (2026-11-14):
+  // git tokens are the credential; there are no SSH keys any more.
+  const tokensRes = token
+    ? await listGitTokens(token)
+    : { ok: false as const, status: 401, message: "Not signed in." };
 
   return (
     <>
@@ -145,11 +141,6 @@ async function AccountTab({
         <GitTokenPanel
           tokens={tokensRes.ok ? tokensRes.data : []}
           loadError={tokensRes.ok ? undefined : tokensRes.message}
-        />
-
-        <SSHKeyPanel
-          keys={sshRes.ok ? sshRes.data : []}
-          loadError={sshRes.ok ? undefined : sshRes.message}
         />
       </div>
 

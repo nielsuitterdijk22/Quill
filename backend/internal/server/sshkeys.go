@@ -29,6 +29,10 @@ func (s *Server) handleListSSHKeys(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	if !s.sshAvailable() {
+		httpx.JSON(w, http.StatusOK, map[string]any{"keys": []sshKeyResponse{}, "sshAvailable": false})
+		return
+	}
 	user, err := s.auth.CurrentUser(r.Context(), id)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not load user")
@@ -56,6 +60,10 @@ func (s *Server) handleAddSSHKey(w http.ResponseWriter, r *http.Request) {
 	id, ok := identityFrom(r.Context())
 	if !ok {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if !s.sshAvailable() {
+		httpx.Error(w, http.StatusBadRequest, "ssh_unavailable", "git over SSH is not available; clone and push over HTTPS with a git token")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
@@ -96,6 +104,10 @@ func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	if !s.sshAvailable() {
+		httpx.Error(w, http.StatusNotFound, "not_found", "no such SSH key")
+		return
+	}
 	keyID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "invalid_id", "key id must be an integer")
@@ -118,4 +130,10 @@ func (s *Server) handleDeleteSSHKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sshAvailable reports whether git over SSH exists. SSH keys lived in Forgejo;
+// the own git engine serves HTTPS only (Forgejo removed 2026-11-14).
+func (s *Server) sshAvailable() bool {
+	return s.forgejo != nil && s.forgejo.Enabled()
 }
