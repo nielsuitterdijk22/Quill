@@ -253,11 +253,27 @@ func (s *Service) SetUsername(ctx context.Context, userID uuid.UUID, desired str
 
 	// The personal project's slug equals the username, so rename it too (best
 	// effort — the user row is already updated and authoritative).
+	// Engine repos live in the bucket under the project slug: their objects
+	// move along (copy → rename → drop the old prefix), or the rename is
+	// skipped and the repos stay readable under the old slug (2026-11-14: a
+	// username change once orphaned every repo of the personal project).
 	if projects, perr := s.store.ListProjectsByUser(ctx, userID); perr == nil {
 		for _, p := range projects {
 			if p.IsPersonal && p.Slug != clean {
+				moves, merr := s.prepareProjectEngineMoves(ctx, db.Project{ID: p.ID, TenantID: p.TenantID, Slug: p.Slug}, clean)
+				if merr != nil {
+					s.logger.Error("username set: could not move repo storage; personal project keeps its slug", "project", p.Slug, "error", merr)
+					continue
+				}
 				if _, uerr := s.store.UpdateProjectSlug(ctx, db.UpdateProjectSlugParams{ID: p.ID, Slug: clean}); uerr != nil {
 					s.logger.Warn("username set: failed to rename personal project slug", "project", p.ID, "error", uerr)
+					for _, m := range moves {
+						m.abort(ctx, s)
+					}
+					continue
+				}
+				for _, m := range moves {
+					m.commit(ctx, s)
 				}
 			}
 		}

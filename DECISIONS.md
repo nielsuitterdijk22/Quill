@@ -318,3 +318,18 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   main, browse code, and get that sbom."
 - **Rejected:** parsing documents per search request (cost grows with every repo); a dependency graph (syft
   emits no dependency edges for directory scans, so it would be empty).
+
+## 2026-11-14 — Renames move engine storage (incident: repos unreadable after a username change)
+
+- **Incident:** the owner changed their username (`n.uitterdijk` → `nuitterdijk`); `SetUsername` renames the
+  personal project's slug, but engine repos live in the bucket under `repos/<tenant>/<project>/<repo>/`, so
+  all three repos became unreadable ("no repos are loading"). Repaired with the new
+  `quill admin git-relocate --project nuitterdijk --from-project n.uitterdijk --confirm` (copies objects; the
+  old prefix is kept as a backup).
+- **Decision:** project-slug renames (username change) and repo-slug renames now move the bucket objects:
+  `CopyRepoObjects` (manifest written last) → database update → delete the old prefix; a failed database
+  update drops the copy instead, and a failed copy keeps the old slug. Repo slug renames for engine repos
+  are allowed again (follow-up #1 done).
+- **Accepted risk:** a push landing between the copy and the database update goes to the old prefix and is
+  lost from the new one; at today's scale renames are rare and manual.
+- **Rejected:** keying bucket objects by repo id (the right long-term shape, but a migration of every key).

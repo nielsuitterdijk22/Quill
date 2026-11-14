@@ -351,3 +351,38 @@ func (e *Engine) DeleteRepoObjects(ctx context.Context, tenantID, projectSlug, r
 	}
 	return n, nil
 }
+
+// CopyRepoObjects copies every object of one repo to another repo prefix (a
+// project or repo slug rename: keys are slug-addressed, manifests hold only
+// repo-relative pack paths). The manifest is written last, so the target is
+// never readable before its packs exist. Existing target objects are
+// overwritten. Returns how many objects were copied.
+func (e *Engine) CopyRepoObjects(ctx context.Context, tenantID, fromProject, fromRepo, toProject, toRepo string) (int, error) {
+	ls, ok := e.store.(ListSource)
+	if !ok {
+		return 0, ErrListingUnsupported
+	}
+	from := RepoPrefix(tenantID, fromProject, fromRepo)
+	to := RepoPrefix(tenantID, toProject, toRepo)
+	if from == to {
+		return 0, nil
+	}
+	keys, err := ls.List(ctx, from)
+	if err != nil {
+		return 0, err
+	}
+	manifest := ManifestKey(tenantID, fromProject, fromRepo)
+	sort.SliceStable(keys, func(i, j int) bool { return keys[j] == manifest && keys[i] != manifest })
+	n := 0
+	for _, k := range keys {
+		body, _, err := e.store.Get(ctx, k)
+		if err != nil {
+			return n, fmt.Errorf("read %s: %w", k, err)
+		}
+		if _, err := e.store.Put(ctx, to+strings.TrimPrefix(k, from), body, objectstore.PutOptions{}); err != nil {
+			return n, fmt.Errorf("write %s: %w", to+strings.TrimPrefix(k, from), err)
+		}
+		n++
+	}
+	return n, nil
+}

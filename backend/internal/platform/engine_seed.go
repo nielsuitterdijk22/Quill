@@ -251,3 +251,65 @@ func (s *Service) deleteEngineObjects(ctx context.Context, repo db.Repository, p
 		s.logger.Warn("could not delete engine repo objects", "project", project.Slug, "repo", repo.Slug, "error", err)
 	}
 }
+
+// engineMove is a slug rename of one engine repo's bucket objects, split so
+// the caller can commit the database change in between: copy (target becomes
+// readable), then either commit (old prefix dropped) or abort (copy dropped).
+type engineMove struct {
+	tenant             string
+	fromProj, fromRepo string
+	toProj, toRepo     string
+}
+
+// prepareEngineMove copies a repo's objects to its new slugs. Keys in the
+// bucket are slug-addressed (manifests hold repo-relative pack paths), so a
+// project or repo rename that skips this leaves the repo unreadable.
+func (s *Service) prepareEngineMove(ctx context.Context, tenantID uuid.UUID, fromProj, fromRepo, toProj, toRepo string) (*engineMove, error) {
+	m := &engineMove{tenant: tenantID.String(), fromProj: fromProj, fromRepo: fromRepo, toProj: toProj, toRepo: toRepo}
+	if _, err := s.gitEngine.CopyRepoObjects(ctx, m.tenant, fromProj, fromRepo, toProj, toRepo); err != nil {
+		_, _ = s.gitEngine.DeleteRepoObjects(context.WithoutCancel(ctx), m.tenant, toProj, toRepo)
+		return nil, fmt.Errorf("move repository storage: %w", err)
+	}
+	return m, nil
+}
+
+// commit drops the old prefix once the database points at the new slugs.
+func (m *engineMove) commit(ctx context.Context, s *Service) {
+	if _, err := s.gitEngine.DeleteRepoObjects(context.WithoutCancel(ctx), m.tenant, m.fromProj, m.fromRepo); err != nil {
+		s.logger.Warn("rename: could not delete the old repo objects", "from", m.fromProj+"/"+m.fromRepo, "error", err)
+	}
+}
+
+// abort drops the copy when the database change failed.
+func (m *engineMove) abort(ctx context.Context, s *Service) {
+	if _, err := s.gitEngine.DeleteRepoObjects(context.WithoutCancel(ctx), m.tenant, m.toProj, m.toRepo); err != nil {
+		s.logger.Warn("rename: could not delete the aborted copy", "to", m.toProj+"/"+m.toRepo, "error", err)
+	}
+}
+
+// prepareProjectEngineMoves copies every engine repo of a project to the new
+// project slug; on failure the copies made so far are dropped.
+func (s *Service) prepareProjectEngineMoves(ctx context.Context, project db.Project, newSlug string) ([]*engineMove, error) {
+	if s.gitEngine == nil {
+		return nil, nil
+	}
+	repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 10000})
+	if err != nil {
+		return nil, err
+	}
+	var moves []*engineMove
+	for _, r := range repos {
+		if _, err := s.store.GetGitRepoState(ctx, r.ID); err != nil {
+			continue
+		}
+		m, err := s.prepareEngineMove(ctx, project.TenantID, project.Slug, r.Slug, newSlug, r.Slug)
+		if err != nil {
+			for _, done := range moves {
+				done.abort(ctx, s)
+			}
+			return nil, err
+		}
+		moves = append(moves, m)
+	}
+	return moves, nil
+}

@@ -341,11 +341,6 @@ func (s *Service) UpdateRepo(ctx context.Context, actor Actor, projectSlug, repo
 			if !validSlug(slug) {
 				return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 			}
-			// Engine repos are addressed by slug in the bucket; renaming would
-			// orphan the content until a move is implemented.
-			if _, err := s.store.GetGitRepoState(ctx, repo.ID); err == nil {
-				return db.Repository{}, fmt.Errorf("%w: renaming a repository's URL slug is not supported yet (change its display name instead)", ErrInvalidInput)
-			}
 			// Reject a slug already taken by another repo in the same project.
 			if _, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{ProjectID: project.ID, Lower: slug}); err == nil {
 				return db.Repository{}, ErrConflict
@@ -406,12 +401,29 @@ func (s *Service) UpdateRepo(ctx context.Context, actor Actor, projectSlug, repo
 		return saved, nil
 	}
 
+	// Engine repos are addressed by slug in the bucket: a rename moves the
+	// objects (copy first, drop the old prefix once the row points at the new
+	// slug).
+	var move *engineMove
+	if renamed && s.gitEngine != nil {
+		if _, err := s.store.GetGitRepoState(ctx, repo.ID); err == nil {
+			if move, err = s.prepareEngineMove(ctx, project.TenantID, project.Slug, repo.Slug, project.Slug, next.Slug); err != nil {
+				return db.Repository{}, err
+			}
+		}
+	}
 	saved, err := s.store.UpdateRepository(ctx, updateRepoParams(repo.ID, next))
 	if err != nil {
+		if move != nil {
+			move.abort(ctx, s)
+		}
 		if isUniqueViolation(err) {
 			return db.Repository{}, ErrConflict
 		}
 		return db.Repository{}, fmt.Errorf("update repo: %w", err)
+	}
+	if move != nil {
+		move.commit(ctx, s)
 	}
 	return saved, nil
 }

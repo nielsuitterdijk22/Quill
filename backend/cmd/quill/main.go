@@ -83,6 +83,8 @@ func runAdmin(args []string) error {
 		return runSeedFile(args[1:])
 	case "purge-e2e":
 		return runPurgeE2e(args[1:])
+	case "git-relocate":
+		return runGitRelocate(args[1:])
 	case "git-maintenance":
 		return runGitMaintenance(args[1:])
 	case "migrate-forgejo-to-bucket":
