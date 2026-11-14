@@ -17,8 +17,11 @@ import type {
 //     blocked it falls back to polling the same feed as JSON;
 //   - when the run finishes the feed delivers the persisted job/step tree and
 //     the view swaps to it in place — no reload needed.
-// Every job and step starts folded; failures are highlighted and one click
-// away ("Jump to failure").
+// A finished run opens with every job and step folded; failures are
+// highlighted and one click away ("Jump to failure"). While a run is live the
+// step that is running stays open on its last lines (the rest folded) and the
+// view follows it from step to step — until the reader opens or folds
+// something themselves, which always wins.
 
 type LiveLine = { id: number; jobKey: string; stepName: string; line: string };
 
@@ -97,7 +100,14 @@ function finalJobs(jobs: PipelineJob[]): ViewJob[] {
 }
 
 // liveJobs groups streamed lines by job, then step, in order of appearance.
-// While the run is active the newest step of each job is "running".
+// act's own markers in the live output: a job ends with "🏁  Job succeeded" /
+// "🏁  Job failed"; a step that failed prints "❌  Failure - …".
+const JOB_DONE = /🏁\s+Job (succeeded|failed)/;
+const STEP_FAILED = /❌\s+Failure - /;
+
+// Live job/step tree from the streamed lines. Jobs whose end marker has not
+// arrived are running, and so is their newest step; jobs run one after the
+// other, so earlier ones carry their marker by the time a later one starts.
 function liveJobs(lines: LiveLine[], active: boolean): ViewJob[] {
   const jobs: ViewJob[] = [];
   const byJob = new Map<string, ViewJob>();
@@ -119,14 +129,20 @@ function liveJobs(lines: LiveLine[], active: boolean): ViewJob[] {
     buf.get(stepKey)!.push(clean(l.line));
   }
   for (const job of jobs) {
-    job.steps.forEach((s, i) => {
+    let done: string | null = null;
+    job.steps.forEach((s) => {
       s.logs = (buf.get(s.key) ?? []).join("");
+      const m = JOB_DONE.exec(s.logs);
+      if (m) done = m[1];
+    });
+    const jobRunning = active && done === null;
+    job.steps.forEach((s, i) => {
       s.lineCount = countLines(s.logs);
       s.lastLine = lastNonEmptyLine(s.logs);
       const newest = i === job.steps.length - 1;
-      s.status = active && newest ? "running" : "success";
+      s.status = jobRunning && newest ? "running" : STEP_FAILED.test(s.logs) ? "failure" : "success";
     });
-    job.status = active ? "running" : "success";
+    job.status = jobRunning ? "running" : done === "failed" ? "failure" : "success";
   }
   return jobs;
 }
@@ -197,35 +213,48 @@ function StatusPill({ status }: { status: PipelineRunStatus }) {
 
 // LogBlock renders numbered log lines in its own scroll box. While `follow`
 // is on it sticks to the bottom unless the reader scrolled up.
-function LogBlock({ text, follow }: { text: string; follow: boolean }) {
+// With `tail` it shows only the last `tail` lines (real line numbers kept)
+// and offers the full log.
+const LIVE_TAIL = 30;
+
+function LogBlock({ text, follow, tail }: { text: string; follow: boolean; tail?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const [full, setFull] = useState(false);
   const lines = useMemo(() => {
     const ls = text.split("\n");
     if (ls.length && ls[ls.length - 1] === "") ls.pop();
     return ls;
   }, [text]);
+  const from = tail && !full ? Math.max(0, lines.length - tail) : 0;
   useEffect(() => {
     const el = ref.current;
     if (el && follow && stick.current) el.scrollTop = el.scrollHeight;
-  }, [lines, follow]);
-  if (!lines.length) return <div className="log-empty">No output.</div>;
+  }, [lines, follow, from]);
+  if (!lines.length) return <div className="log-empty">{follow ? "Waiting for output…" : "No output."}</div>;
   return (
-    <div
-      className="log-block"
-      ref={ref}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-      }}
-    >
-      {lines.map((l, i) => (
-        <div className="log-line" key={i}>
-          <span className="log-ln">{i + 1}</span>
-          <span className="log-tx">{l || " "}</span>
-        </div>
-      ))}
-    </div>
+    <>
+      {from > 0 && (
+        <button type="button" className="log-more" onClick={() => setFull(true)}>
+          Showing the last {lines.length - from} lines · show all {lines.length}
+        </button>
+      )}
+      <div
+        className="log-block"
+        ref={ref}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
+      >
+        {lines.slice(from).map((l, i) => (
+          <div className="log-line" key={from + i}>
+            <span className="log-ln">{from + i + 1}</span>
+            <span className="log-tx">{l || " "}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -247,7 +276,9 @@ export function RunView({
   const [final, setFinal] = useState<PipelineJob[] | null>(isActive(initial.status) ? null : initial.jobs);
   const [lines, setLines] = useState<LiveLine[]>([]);
   const [conn, setConn] = useState<Conn>(isActive(initial.status) ? "connecting" : "closed");
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  // Explicit open/fold choices by the reader; everything else follows `auto`.
+  const [pinned, setPinned] = useState<Map<string, boolean>>(() => new Map());
+  const wasLive = useRef(isActive(initial.status));
   const lastId = useRef(0);
   const active = isActive(run.status) && final === null;
   const now = useNow(active);
@@ -386,15 +417,6 @@ export function RunView({
     [final, lines, run.status],
   );
 
-  const toggle = (key: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  const allKeys = useMemo(() => jobs.flatMap((j) => [j.key, ...j.steps.map((s) => s.key)]), [jobs]);
-  const anyOpen = open.size > 0;
   const firstFailure = useMemo(() => {
     for (const j of jobs) {
       const s = j.steps.find((st) => st.status === "failure");
@@ -404,12 +426,36 @@ export function RunView({
     return null;
   }, [jobs]);
 
+  // What is open without the reader's say: the running job + step while live;
+  // the failure, when the run finished in front of the reader; nothing for a
+  // run that was already finished when opened.
+  const auto = useMemo(() => {
+    const keys = new Set<string>();
+    if (active) {
+      for (const j of jobs) {
+        if (j.status !== "running") continue;
+        keys.add(j.key);
+        const s = j.steps.find((st) => st.status === "running");
+        if (s) keys.add(s.key);
+      }
+    } else if (wasLive.current && firstFailure) {
+      keys.add(firstFailure.job);
+      if (firstFailure.step) keys.add(firstFailure.step);
+    }
+    return keys;
+  }, [jobs, active, firstFailure]);
+  const isOpen = (key: string) => pinned.get(key) ?? auto.has(key);
+  const toggle = (key: string) =>
+    setPinned((prev) => new Map(prev).set(key, !(prev.get(key) ?? auto.has(key))));
+  const allKeys = useMemo(() => jobs.flatMap((j) => [j.key, ...j.steps.map((s) => s.key)]), [jobs]);
+  const anyOpen = allKeys.some(isOpen);
+  const setAll = (value: boolean) => setPinned(new Map(allKeys.map((k) => [k, value])));
+
   const jumpToFailure = () => {
     if (!firstFailure) return;
-    setOpen((prev) => {
-      const next = new Set(prev);
-      next.add(firstFailure.job);
-      if (firstFailure.step) next.add(firstFailure.step);
+    setPinned((prev) => {
+      const next = new Map(prev).set(firstFailure.job, true);
+      if (firstFailure.step) next.set(firstFailure.step, true);
       return next;
     });
     setTimeout(() => {
@@ -502,7 +548,7 @@ export function RunView({
             <button
               type="button"
               className="btn ghost"
-              onClick={() => setOpen(anyOpen ? new Set() : new Set(allKeys))}
+              onClick={() => setAll(!anyOpen)}
             >
               {anyOpen ? "Collapse all" : "Expand all"}
             </button>
@@ -524,7 +570,7 @@ export function RunView({
           </div>
         ) : (
           jobs.map((job) => {
-            const jobOpen = open.has(job.key);
+            const jobOpen = isOpen(job.key);
             const jobDur = span(job.startedAt, job.finishedAt, now);
             const failedSteps = job.steps.filter((s) => s.status === "failure").length;
             return (
@@ -544,7 +590,7 @@ export function RunView({
                 {jobOpen && (
                   <div className="run-steps">
                     {job.steps.map((s) => {
-                      const stepOpen = open.has(s.key);
+                      const stepOpen = isOpen(s.key);
                       const dur = span(s.startedAt, s.finishedAt, now);
                       return (
                         <div className={`run-step run-step-${s.status}${stepOpen ? " open" : ""}`} key={s.key} id={`step-${s.key}`}>
@@ -559,7 +605,13 @@ export function RunView({
                             {dur && <span className="sub run-dur">{dur}</span>}
                             <span className="run-chev" aria-hidden />
                           </button>
-                          {stepOpen && <LogBlock text={s.logs} follow={s.status === "running"} />}
+                          {stepOpen && (
+                            <LogBlock
+                              text={s.logs}
+                              follow={s.status === "running"}
+                              tail={s.status === "running" && pinned.get(s.key) === undefined ? LIVE_TAIL : undefined}
+                            />
+                          )}
                         </div>
                       );
                     })}

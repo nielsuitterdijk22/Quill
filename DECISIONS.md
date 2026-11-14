@@ -282,3 +282,24 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   but production sets `__Secure-authjs.session-token` — every browser call without an explicit bearer
   (the SBOM download link among them) reached the api anonymous and 401'd. It now tries each Auth.js
   cookie name. Engine PRs between unrelated histories answer 400 instead of 500.
+
+## 2026-11-14 — Step actions resolve on github.com first
+
+- **Decision:** `uses: org/repo@ref` step actions are fetched from github.com first, anonymously, and only when
+  GitHub has no such repository from Quill's own git host (with the run token) — a wrapping `ActionCache`
+  (`pipeline/action_cache.go`). Executor errors raised outside a step's main stage are now appended to the
+  failed job's `setup` step and the live feed.
+- **Why:** act builds action URLs from `GITHUB_SERVER_URL`, which points at Quill. Forgejo used to stand in
+  for that; with it gone every `actions/checkout` / `actions/setup-go` job failed in its pre-stage with all
+  steps "skipped" and no error in the logs. GitHub-first matches GitHub and Forgejo
+  (`DEFAULT_ACTIONS_URL=github`) semantics, keeps the Quill token off github.com, and stops any tenant from
+  shadowing a well-known action for everyone by creating a public Quill repo named `actions/checkout`.
+- **Rejected:** Quill-first with GitHub fallback (cross-tenant action shadowing); a fixed
+  `ReplaceGheActionWithGithubCom` list (breaks every action not on the list).
+
+## 2026-11-14 — Live run view follows the running step
+
+- **Decision:** a finished run still opens fully folded; while a run is live the running job and step are open
+  on the last 30 lines (with "show all"), the rest folded, and the view follows the next step. Any open/fold
+  by the reader pins that item. Job/step status in the live tree comes from act's own markers
+  (`🏁 Job succeeded/failed`, `❌ Failure -`). Owner feedback.

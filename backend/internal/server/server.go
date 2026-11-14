@@ -494,6 +494,7 @@ func (s *Server) setupRoutes() {
 
 			r.Get("/me/export", s.handleExportMyData)
 			r.Get("/me/pulls", s.handleListMyPulls)
+			r.Get("/sbom/search", s.handleSearchSBOMs)
 			r.Get("/me/pulls/open-count", s.handleOpenPullCount)
 			r.Post("/me/git-token", s.handleCreateGitToken)
 			r.Get("/me/git-tokens", s.handleListGitTokens)
@@ -607,6 +608,7 @@ func (s *Server) setupRoutes() {
 							r.Get("/sbom", s.handleGetSBOM)
 							r.Post("/sbom", s.handleRequestSBOM)
 							r.Get("/sbom/download", s.handleDownloadSBOM)
+							r.Get("/sbom/history", s.handleSBOMHistory)
 							r.Route("/policies", func(r chi.Router) {
 								r.Get("/", s.handleListBranchPolicies)
 								r.Put("/", s.handleSetBranchPolicy)

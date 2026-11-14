@@ -31,10 +31,16 @@ func (f *fakeSBOM) Generate(_ context.Context, dir string) ([]byte, error) {
 	if f.fail {
 		return nil, errors.New("syft exploded")
 	}
-	return []byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","components":[{"name":"a"},{"name":"b"},{"name":"c"}]}`), nil
+	return []byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","components":[{"name":"a"},{"name":"left-pad","version":"1.3.0","purl":"pkg:npm/left-pad@1.3.0","licenses":[{"license":{"id":"MIT"}}]},{"name":"c"}]}`), nil
 }
 
 func sbomRepo(t *testing.T, slug string, gen platform.SBOMGenerator) (*platform.Service, platform.Actor, string, uuid.UUID, string) {
+	t.Helper()
+	svc, act, slug, repoID, head, _ := sbomRepoWork(t, slug, gen)
+	return svc, act, slug, repoID, head
+}
+
+func sbomRepoWork(t *testing.T, slug string, gen platform.SBOMGenerator) (*platform.Service, platform.Actor, string, uuid.UUID, string, string) {
 	t.Helper()
 	browseGitAvailable(t)
 	svc, st, gitURL := browseFixture(t)
@@ -59,7 +65,7 @@ func sbomRepo(t *testing.T, slug string, gen platform.SBOMGenerator) (*platform.
 	if out, err := browseGitPush(t, work, "origin", "main"); err != nil {
 		t.Fatalf("push: %v\n%s", err, out)
 	}
-	return svc, act, slug, repo.ID, head
+	return svc, act, slug, repo.ID, head, work
 }
 
 func waitSBOM(t *testing.T, svc *platform.Service, act platform.Actor, slug, want string) *platform.SBOMView {
@@ -217,5 +223,100 @@ func TestSBOMBackfill(t *testing.T) {
 		if v2, _ := svc.RepoSBOM(ctx, act, slug, "app"); v2 == nil || v2.CommitSHA != head || v2.Status != "ready" {
 			t.Fatalf("second backfill disturbed the repo: %+v", v2)
 		}
+	}
+}
+
+// TestSBOMCommitsHistoryAndSearch: SBOMs per commit (an older commit on
+// request), the history list, and the cross-repo component search scoped to
+// the caller's projects.
+func TestSBOMCommitsHistoryAndSearch(t *testing.T) {
+	gen := &fakeSBOM{}
+	svc, act, slug, repoID, first, work := sbomRepoWork(t, "sbom-hist", gen)
+	ctx := context.Background()
+	if _, err := svc.HandleEnginePush(ctx, repoID, []platform.EngineRefUpdate{{Ref: "refs/heads/main", New: first}}); err != nil {
+		t.Fatal(err)
+	}
+	waitSBOM(t, svc, act, slug, "ready")
+
+	// A second commit becomes the head; the first keeps its SBOM.
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("hi\n"), 0o644)
+	browseGit(t, work, "add", "-A")
+	browseGit(t, work, "commit", "-qm", "second")
+	second := browseGit(t, work, "rev-parse", "HEAD")
+	if out, err := browseGitPush(t, work, "origin", "main"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	if _, err := svc.HandleEnginePush(ctx, repoID, []platform.EngineRefUpdate{{Ref: "refs/heads/main", Old: first, New: second}}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		v, err := svc.CommitSBOM(ctx, act, slug, "app", second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v != nil && v.Status == "ready" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("second commit SBOM never ready: %+v", v)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if v, err := svc.CommitSBOM(ctx, act, slug, "app", first); err != nil || v == nil || v.Status != "ready" {
+		t.Fatalf("first commit SBOM: %+v %v", v, err)
+	}
+	none := strings.Repeat("0", 39) + "1"
+	if v, err := svc.CommitSBOM(ctx, act, slug, "app", none); err != nil || v != nil {
+		t.Fatalf("unknown commit SBOM: %+v %v", v, err)
+	}
+	if _, err := svc.RequestCommitSBOM(ctx, act, slug, "app", none); err == nil {
+		t.Fatal("generating an SBOM for a commit that does not exist succeeded")
+	}
+	hist, err := svc.RepoSBOMHistory(ctx, act, slug, "app")
+	if err != nil || len(hist) != 2 || hist[0].CommitSHA != second {
+		t.Fatalf("history: %+v %v", hist, err)
+	}
+
+	// Search finds the package in this repo's current SBOM, with its facts.
+	res, err := svc.SearchSBOMs(ctx, act, "LEFT-pad", "")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	var hit *platform.SBOMPackage
+	for i := range res.Packages {
+		if res.Packages[i].Name == "left-pad" {
+			hit = &res.Packages[i]
+		}
+	}
+	if hit == nil || hit.Ecosystem != "npm" || len(hit.Versions) != 1 || hit.Versions[0].Version != "1.3.0" ||
+		hit.Versions[0].License != "MIT" || len(hit.Versions[0].Repos) != 1 || hit.Versions[0].Repos[0].CommitSHA != second {
+		t.Fatalf("search hit: %+v (all %+v)", hit, res)
+	}
+	if res.ReposSearched < 1 {
+		t.Fatalf("reposSearched = %d", res.ReposSearched)
+	}
+	// LIKE wildcards are literal.
+	if res, _ := svc.SearchSBOMs(ctx, act, "left_pad", slug); len(res.Packages) != 0 {
+		t.Fatalf("wildcard matched: %+v", res.Packages)
+	}
+	// Someone outside the project finds nothing of it.
+	_, st := newService(t)
+	stranger := actor(makeUser(t, st, "sbom-hist-stranger"))
+	res, err = svc.SearchSBOMs(ctx, stranger, "left-pad", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range res.Packages {
+		for _, v := range p.Versions {
+			for _, r := range v.Repos {
+				if r.Project == slug {
+					t.Fatalf("stranger found %s/%s", r.Project, r.Repo)
+				}
+			}
+		}
+	}
+	if _, err := svc.RepoSBOMHistory(ctx, stranger, slug, "app"); err == nil {
+		t.Fatal("stranger listed a private repo's SBOMs")
 	}
 }

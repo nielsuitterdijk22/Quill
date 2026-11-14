@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -410,4 +411,180 @@ func (s *Service) BackfillSBOMs(ctx context.Context) (generated, failed int, err
 		}
 	}
 	return generated, failed, nil
+}
+
+// CommitSBOM returns the SBOM of one commit (nil when it has none).
+func (s *Service) CommitSBOM(ctx context.Context, actor Actor, projectSlug, repoSlug, sha string) (*SBOMView, error) {
+	be, err := s.sbomRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.store.SBOMByCommit(ctx, be.repoID, sha)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sbomView(row), nil
+}
+
+// RequestCommitSBOM generates the SBOM of an older commit on request
+// (members only) — the default branch head always has one already. The row
+// keeps an empty ref so it never stands in for the branch head.
+func (s *Service) RequestCommitSBOM(ctx context.Context, actor Actor, projectSlug, repoSlug, sha string) (*SBOMView, error) {
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return nil, err
+	}
+	if !be.engine {
+		return nil, fmt.Errorf("%w: SBOMs are available for engine-backed repositories", ErrUnavailable)
+	}
+	src := pipelineSource{repo: repo, be: be}
+	if s.commitSHA(ctx, src, sha) != sha {
+		return nil, fmt.Errorf("%w: commit %s does not exist in this repository", ErrNotFound, sha)
+	}
+	ref := ""
+	if head, headRef, err := s.defaultHead(ctx, be.repoID, repo.DefaultBranch); err == nil && head == sha {
+		ref = headRef
+	}
+	row, err := s.queueSBOM(ctx, be, sha, ref)
+	if err != nil {
+		return nil, err
+	}
+	return sbomView(row), nil
+}
+
+// RepoSBOMHistory lists the repo's SBOMs, newest first.
+func (s *Service) RepoSBOMHistory(ctx context.Context, actor Actor, projectSlug, repoSlug string) ([]SBOMView, error) {
+	be, err := s.sbomRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.store.SBOMHistory(ctx, be.repoID, 100)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SBOMView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *sbomView(r))
+	}
+	return out, nil
+}
+
+// SBOM search across repositories (2026-11-14).
+
+const (
+	sbomSearchRowLimit = 5000
+	sbomSearchPackages = 200
+)
+
+// SBOMRepoRef is a repository whose current SBOM contains a package version.
+type SBOMRepoRef struct {
+	Project   string `json:"project"`
+	Repo      string `json:"repo"`
+	CommitSHA string `json:"commitSha"`
+}
+
+// SBOMPackageVersion is one version of a package and where it is used.
+type SBOMPackageVersion struct {
+	Version string        `json:"version"`
+	License string        `json:"license"`
+	Purl    string        `json:"purl"`
+	Repos   []SBOMRepoRef `json:"repos"`
+}
+
+// SBOMPackage groups a package's versions across repositories.
+type SBOMPackage struct {
+	Name      string               `json:"name"`
+	Ecosystem string               `json:"ecosystem"`
+	RepoCount int                  `json:"repoCount"`
+	Versions  []SBOMPackageVersion `json:"versions"`
+}
+
+// SBOMSearchResult answers a cross-repo component search.
+type SBOMSearchResult struct {
+	Query         string        `json:"query"`
+	ReposSearched int           `json:"reposSearched"`
+	Truncated     bool          `json:"truncated"`
+	Packages      []SBOMPackage `json:"packages"`
+}
+
+// SearchSBOMs searches the current default-branch SBOM of every repository in
+// the projects the actor belongs to (optionally one project). An empty query
+// lists the most widely used packages.
+func (s *Service) SearchSBOMs(ctx context.Context, actor Actor, query, projectSlug string) (SBOMSearchResult, error) {
+	query = strings.TrimSpace(query)
+	if len(query) > 200 {
+		return SBOMSearchResult{}, fmt.Errorf("%w: query too long", ErrInvalidInput)
+	}
+	out := SBOMSearchResult{Query: query, Packages: []SBOMPackage{}}
+	projects, err := s.visibleProjects(ctx, actor, projectSlug)
+	if err != nil {
+		return out, err
+	}
+	ids := make([]uuid.UUID, 0, len(projects))
+	for _, p := range projects {
+		ids = append(ids, p.ID)
+	}
+	hits, repos, err := s.store.SearchSBOMComponents(ctx, ids, query, sbomSearchRowLimit)
+	if err != nil {
+		return out, err
+	}
+	out.ReposSearched = repos
+	out.Truncated = len(hits) >= sbomSearchRowLimit
+	type pkgKey struct{ name, eco string }
+	byPkg := map[pkgKey]*SBOMPackage{}
+	var order []pkgKey
+	repoSets := map[pkgKey]map[string]bool{}
+	for _, h := range hits {
+		k := pkgKey{h.Name, h.Ecosystem}
+		p, ok := byPkg[k]
+		if !ok {
+			p = &SBOMPackage{Name: h.Name, Ecosystem: h.Ecosystem}
+			byPkg[k] = p
+			repoSets[k] = map[string]bool{}
+			order = append(order, k)
+		}
+		ref := SBOMRepoRef{Project: h.ProjectSlug, Repo: h.RepoSlug, CommitSHA: h.CommitSHA}
+		repoSets[k][h.ProjectSlug+"/"+h.RepoSlug] = true
+		found := false
+		for i := range p.Versions {
+			if p.Versions[i].Version == h.Version {
+				v := &p.Versions[i]
+				dup := false
+				for _, r := range v.Repos {
+					dup = dup || r == ref
+				}
+				if !dup {
+					v.Repos = append(v.Repos, ref)
+				}
+				if v.License == "" {
+					v.License = h.License
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			p.Versions = append(p.Versions, SBOMPackageVersion{Version: h.Version, License: h.License, Purl: h.Purl, Repos: []SBOMRepoRef{ref}})
+		}
+	}
+	for _, k := range order {
+		p := byPkg[k]
+		p.RepoCount = len(repoSets[k])
+		out.Packages = append(out.Packages, *p)
+	}
+	sort.SliceStable(out.Packages, func(i, j int) bool {
+		a, b := out.Packages[i], out.Packages[j]
+		if a.RepoCount != b.RepoCount {
+			return a.RepoCount > b.RepoCount
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
+	if len(out.Packages) > sbomSearchPackages {
+		out.Packages = out.Packages[:sbomSearchPackages]
+		out.Truncated = true
+	}
+	return out, nil
 }

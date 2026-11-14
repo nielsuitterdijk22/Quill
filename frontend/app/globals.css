@@ -3262,6 +3262,23 @@ h2.section {
   word-break: break-word;
   min-width: 0;
 }
+.log-more {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.log-more:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
 .log-empty {
   padding: 10px 12px;
   border-top: 1px solid var(--line);
@@ -4212,7 +4229,7 @@ a.row-item {
 }
 
 a.row-item:hover {
-  background: var(--hover, rgba(127, 127, 127, 0.08));
+  background: var(--row-hover);
 }
 
 /* Blob preview/code toggle for markdown files. */

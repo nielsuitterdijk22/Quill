@@ -123,7 +123,7 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 		Vars:                  map[string]string{},
 		GitHubInstance:        "github.com",
 		ActionCacheDir:        actionCacheDir,
-		ActionCache:           &runner.GoGitActionCache{Path: actionCacheDir},
+		ActionCache:           newActionSource(&runner.GoGitActionCache{Path: actionCacheDir}, spec.ServerURL),
 		// One job at a time: the dispatcher shares the VM with forgejo,
 		// zitadel and the databases, and two concurrent builds (go + next)
 		// have wedged the entire box - ssh banners timed out, auth/git down
@@ -146,6 +146,9 @@ func (r *actRunner) Run(ctx context.Context, spec JobSpec) (RunResult, error) {
 	execErr := exec(runCtx)
 
 	result := r.assemble(plan, cap, started)
+	if execErr != nil {
+		explainFailure(&result, execErr, spec.LogSink)
+	}
 	if len(result.Jobs) == 0 {
 		// act produced no captured jobs — surface why it couldn't start.
 		if execErr != nil {
@@ -496,4 +499,49 @@ func clampLog(s string, max int) string {
 		return s
 	}
 	return s[:max] + "\n… (log truncated)\n"
+}
+
+// explainFailure puts the executor's error into the run. act reports errors
+// raised outside a step's main stage (fetching a `uses:` action, a pre-step)
+// only through its return value, so a job could fail with every step
+// "skipped" and nothing in the logs explaining why. The error lands at the
+// end of each failed job's setup step (created when missing) and in the live
+// feed.
+func explainFailure(res *RunResult, execErr error, sink LogSink) {
+	msg := "Error: " + strings.TrimSpace(execErr.Error())
+	for i := range res.Jobs {
+		jr := &res.Jobs[i]
+		if jr.Status != StatusFailure {
+			continue
+		}
+		idx := -1
+		for j, st := range jr.Steps {
+			if st.Name == "setup" {
+				idx = j
+				break
+			}
+		}
+		if idx < 0 {
+			jr.Steps = append([]StepResult{{Name: "setup", Type: StepTypeRun, Status: StatusSuccess, StartedAt: jr.StartedAt, FinishedAt: jr.FinishedAt}}, jr.Steps...)
+			idx = 0
+		}
+		st := &jr.Steps[idx]
+		if st.Logs != "" && !strings.HasSuffix(st.Logs, "\n") {
+			st.Logs += "\n"
+		}
+		st.Logs += msg + "\n"
+		// Nothing after setup ran: the setup stage is where it failed.
+		ran := false
+		for j, other := range jr.Steps {
+			if j != idx && other.Status != StatusSkipped && other.Status != "" {
+				ran = true
+			}
+		}
+		if !ran {
+			st.Status = StatusFailure
+		}
+		if sink != nil {
+			sink(jr.Key, "setup", msg+"\n")
+		}
+	}
 }
