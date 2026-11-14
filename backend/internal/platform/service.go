@@ -88,6 +88,8 @@ type Service struct {
 	// sbomSem serializes generations per instance.
 	sbomGen SBOMGenerator
 	sbomSem chan struct{}
+	// importURLCheck overrides validateImportURL (tests only).
+	importURLCheck func(string) error
 	// gitPAT introspects provider PATs for the git endpoint (B6; optional).
 	gitPAT GitPATIntrospector
 	// gitEngine is the own git storage engine (serverless epic, Phase B).

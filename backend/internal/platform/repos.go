@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
-	"github.com/nielsuitterdijk22/quill/internal/objectstore"
+	"github.com/nielsuitterdijk22/quill/internal/gitengine"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -130,56 +130,24 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 		// repository. The manifest is written create-if-absent first, the
 		// repo row + referee row commit in one transaction, and a DB failure
 		// compensates by deleting the (still empty) manifest — so bucket and
-		// Postgres never disagree about a repo's existence. Imports
-		// (CloneFrom) are not supported until the migration tool (PR D).
+		// Postgres never disagree about a repo's existence. Imports clone the
+		// source and commit it like a push (engine_seed.go, 2026-11-14).
+		params := db.CreateRepositoryParams{
+			ProjectID:     project.ID,
+			Slug:          slug,
+			Name:          name,
+			Description:   strings.TrimSpace(in.Description),
+			Visibility:    visibility,
+			DefaultBranch: defaultBranch,
+		}
 		if in.CloneFrom != nil {
-			return db.Repository{}, fmt.Errorf("%w: importing an external repository is not supported for own-engine repositories yet", ErrInvalidInput)
+			if err := s.checkImportURL(in.CloneFrom.URL); err != nil {
+				return db.Repository{}, err
+			}
+			return s.createSeededEngineRepo(ctx, project, params,
+				seedSource{url: strings.TrimSpace(in.CloneFrom.URL), token: in.CloneFrom.AuthToken}, "import:"+actor.UserID.String())
 		}
-		if err := s.gitEngine.ProvisionRepo(ctx, project.TenantID.String(), project.Slug, slug, defaultBranch); err != nil {
-			if errors.Is(err, objectstore.ErrPreconditionFailed) {
-				return db.Repository{}, fmt.Errorf("provision repo: manifest already exists for %s/%s: %w", project.Slug, slug, err)
-			}
-			return db.Repository{}, fmt.Errorf("provision repo: %w", err)
-		}
-		var createdRepo db.Repository
-		err = s.store.InTxTx(ctx, func(tx pgx.Tx) error {
-			q := db.New(tx)
-			repo, err := q.CreateRepository(ctx, db.CreateRepositoryParams{
-				ProjectID:     project.ID,
-				Slug:          slug,
-				Name:          name,
-				Description:   strings.TrimSpace(in.Description),
-				Visibility:    visibility,
-				DefaultBranch: defaultBranch,
-			})
-			if err != nil {
-				return err
-			}
-			// Referee row in the same transaction: repo existence and ref
-			// state are created atomically — provisioning twice can never
-			// fork them.
-			if _, err := tx.Exec(ctx,
-				"INSERT INTO git_repo_state (repo_id, tenant_id) VALUES ($1, $2)",
-				repo.ID, project.TenantID); err != nil {
-				return err
-			}
-			createdRepo = repo
-			return nil
-		})
-		if err != nil {
-			// Compensation: the manifest was empty, so deleting it loses
-			// nothing and keeps the bucket clean.
-			cctx, cancel := detachedContext(ctx)
-			defer cancel()
-			if delErr := s.gitEngine.DeleteManifest(cctx, project.TenantID.String(), project.Slug, slug); delErr != nil {
-				s.logger.Error("failed to roll back provisioned manifest", "project", project.Slug, "repo", slug, "error", delErr)
-			}
-			if isUniqueViolation(err) {
-				return db.Repository{}, ErrConflict
-			}
-			return db.Repository{}, err
-		}
-		return createdRepo, nil
+		return s.provisionEngineRepo(ctx, project, params)
 	case s.forgejoEnabled():
 		var fjRepo forgejo.Repo
 		var err error
@@ -373,6 +341,11 @@ func (s *Service) UpdateRepo(ctx context.Context, actor Actor, projectSlug, repo
 			if !validSlug(slug) {
 				return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 			}
+			// Engine repos are addressed by slug in the bucket; renaming would
+			// orphan the content until a move is implemented.
+			if _, err := s.store.GetGitRepoState(ctx, repo.ID); err == nil {
+				return db.Repository{}, fmt.Errorf("%w: renaming a repository's URL slug is not supported yet (change its display name instead)", ErrInvalidInput)
+			}
 			// Reject a slug already taken by another repo in the same project.
 			if _, err := s.store.GetRepositoryBySlug(ctx, db.GetRepositoryBySlugParams{ProjectID: project.ID, Lower: slug}); err == nil {
 				return db.Repository{}, ErrConflict
@@ -470,6 +443,20 @@ func (s *Service) DeleteRepo(ctx context.Context, actor Actor, projectSlug, repo
 		if owner, name, ok := forgejoTarget(repo, project); ok {
 			if err := s.forgejo.DeleteRepo(ctx, owner, name); err != nil && !forgejo.NotFound(err) {
 				return fmt.Errorf("forgejo delete repo: %w", err)
+			}
+		}
+	}
+	// Engine repo: remove its bucket objects too — a leftover manifest
+	// would block re-creating the same slug (create-if-absent).
+	if s.gitEngine != nil {
+		if _, err := s.store.GetGitRepoState(ctx, repo.ID); err == nil {
+			if _, err := s.gitEngine.DeleteRepoObjects(ctx, project.TenantID.String(), project.Slug, repo.Slug); err != nil {
+				if !errors.Is(err, gitengine.ErrListingUnsupported) {
+					return fmt.Errorf("delete repo objects: %w", err)
+				}
+				if err := s.gitEngine.DeleteManifest(ctx, project.TenantID.String(), project.Slug, repo.Slug); err != nil {
+					return fmt.Errorf("delete manifest: %w", err)
+				}
 			}
 		}
 	}
@@ -573,6 +560,29 @@ func (s *Service) ForkRepo(ctx context.Context, actor Actor, sourceProjectSlug, 
 		return db.Repository{}, ErrConflict
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return db.Repository{}, fmt.Errorf("lookup repo: %w", err)
+	}
+
+	// Engine source (2026-11-14): fork = a seeded engine repo cloned from the
+	// source's hydrated copy. No Forgejo involved.
+	if s.gitEngine != nil {
+		_, srcBE, err := s.resolveBrowseRepo(ctx, actor, sourceProjectSlug, sourceRepoSlug, true)
+		if err != nil {
+			return db.Repository{}, err
+		}
+		if srcBE.engine {
+			srcDir, err := s.engineDir(ctx, srcBE)
+			if err != nil {
+				return db.Repository{}, fmt.Errorf("hydrate fork source: %w", err)
+			}
+			return s.createSeededEngineRepo(ctx, targetProject, db.CreateRepositoryParams{
+				ProjectID:     targetProject.ID,
+				Slug:          forkSlug,
+				Name:          forkSlug,
+				Description:   "Fork of " + sourceProjectSlug + "/" + sourceRepoSlug,
+				Visibility:    srcRepo.Visibility,
+				DefaultBranch: srcRepo.DefaultBranch,
+			}, seedSource{localDir: srcDir}, "fork:"+actor.UserID.String())
+		}
 	}
 
 	targetOwner := targetProject.Slug

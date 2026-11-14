@@ -107,30 +107,9 @@ func (s *Service) billingView(ctx context.Context, tenant db.Tenant) (BillingVie
 		return BillingView{}, fmt.Errorf("sum pipeline minutes: %w", err)
 	}
 
-	var storage int64
-	if s.forgejoEnabled() {
-		projects, err := s.store.ListProjectsByTenant(ctx, tenant.ID)
-		if err != nil {
-			return BillingView{}, fmt.Errorf("list projects: %w", err)
-		}
-		for _, p := range projects {
-			repoRows, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: p.ID, Limit: 500, Offset: 0})
-			if err != nil {
-				return BillingView{}, fmt.Errorf("list repositories: %w", err)
-			}
-			for _, r := range repoRows {
-				if !r.ForgejoOwner.Valid || !r.ForgejoName.Valid {
-					continue
-				}
-				repo, err := s.forgejo.GetRepo(ctx, r.ForgejoOwner.String, r.ForgejoName.String)
-				if err != nil {
-					// A missing Forgejo repo still counts as 0 bytes; don't fail billing.
-					s.logger.Warn("billing: forgejo repo size unavailable", "repo", r.Slug, "error", err)
-					continue
-				}
-				storage += repo.Size
-			}
-		}
+	storage, err := s.storageUsage(ctx, tenant.ID)
+	if err != nil {
+		return BillingView{}, err
 	}
 
 	return BillingView{
@@ -205,26 +184,39 @@ func (s *Service) enforcePipelineMinutesQuota(ctx context.Context, tenantID uuid
 	return nil
 }
 
-// storageUsage sums the git-byte size of every repository in the tenant as
-// reported by Forgejo. It mirrors GetBilling's metering so enforcement and the
+// storageUsage sums the git-byte size of every repository in the tenant:
+// engine repos from the referee rows, any remaining Forgejo repos from Forgejo. It mirrors GetBilling's metering so enforcement and the
 // billing view always agree. Repos whose Forgejo linkage or API read fails
 // count as zero bytes, matching the billing view's tolerant behavior.
 func (s *Service) storageUsage(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	// Engine repos (all repos since the D2 cutover): the referee's bytes.
+	engineBytes, err := s.store.SumEngineStorageByTenant(ctx, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("sum engine storage: %w", err)
+	}
 	if !s.forgejoEnabled() {
-		return 0, nil
+		return engineBytes, nil
+	}
+	all, err := s.store.ListEngineRepos(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list engine repos: %w", err)
+	}
+	engineRepos := make(map[uuid.UUID]bool, len(all))
+	for _, r := range all {
+		engineRepos[r.RepoID] = true
 	}
 	projects, err := s.store.ListProjectsByTenantID(ctx, tenantID)
 	if err != nil {
 		return 0, fmt.Errorf("list projects: %w", err)
 	}
-	var total int64
+	total := engineBytes
 	for _, project := range projects {
 		repos, err := s.store.ListRepositoriesByProject(ctx, db.ListRepositoriesByProjectParams{ProjectID: project.ID, Limit: 500, Offset: 0})
 		if err != nil {
 			return 0, fmt.Errorf("list repositories: %w", err)
 		}
 		for _, r := range repos {
-			if !r.ForgejoOwner.Valid || !r.ForgejoName.Valid {
+			if !r.ForgejoOwner.Valid || !r.ForgejoName.Valid || engineRepos[r.ID] {
 				continue
 			}
 			repo, err := s.forgejo.GetRepo(ctx, r.ForgejoOwner.String, r.ForgejoName.String)

@@ -44,20 +44,31 @@ const API_COOKIE_NAMES = new Set([
 // (AUTH_SECRET + the cookie name as salt — the v5 defaults the app signs
 // with) and returns the Zitadel access token it carries, if any.
 async function sessionAccessToken(req: NextRequest): Promise<string | null> {
-  // Auth.js v5 hardens the cookie to __Host-... when AUTH_URL is https —
-  // use that name for both the lookup and the decode salt.
-  const SALT = "__Host-authjs.session-token";
   const secret = process.env.AUTH_SECRET;
   if (!secret) return null;
-  // getToken resolves the (possibly __Host- prefixed, possibly chunked)
-  // session cookie from the request, reassembles it, and decrypts the JWE —
-  // everything that had to be hand-rolled before and kept failing.
-  const payload = (await getToken({
-    req,
-    secret,
-    salt: SALT,
-  })) as { accessToken?: string } | null;
-  return payload?.accessToken ?? null;
+  // Auth.js names the cookie after the deployment: `__Secure-` on https
+  // (what production actually sets), `__Host-` in some hardened setups, and
+  // no prefix on plain http (local dev). The cookie name is also the JWE
+  // salt, so decode with whichever name the request carries. (Hardcoding
+  // `__Host-` made every header-less browser call — e.g. a plain download
+  // link — reach the api anonymous and 401.)
+  for (const name of [
+    "__Secure-authjs.session-token",
+    "__Host-authjs.session-token",
+    "authjs.session-token",
+  ]) {
+    const present = req.cookies.has(name) || req.cookies.has(`${name}.0`);
+    if (!present) continue;
+    const payload = (await getToken({
+      req,
+      secret,
+      salt: name,
+      cookieName: name,
+      secureCookie: name.startsWith("__"),
+    }).catch(() => null)) as { accessToken?: string } | null;
+    if (payload?.accessToken) return payload.accessToken;
+  }
+  return null;
 }
 
 function sameOrigin(req: NextRequest): boolean {

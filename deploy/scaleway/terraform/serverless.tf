@@ -2,11 +2,9 @@
 # no charge when idle) + the api/web containers (min_scale = 0) + a cron backup
 # job.
 #
-# Forgejo itself is NOT serverless: git data needs a durable disk and CI needs a
-# Docker daemon, so it runs on one small VM (forgejo_vm.tf) — and its Postgres
-# runs on that VM too (forgejo-db container in cloud-init.yml). The serverless
-# "forgejo" SDB was removed because Forgejo's persistent connection pool kept
-# it at ~0.22 vCPU 24/7 (~EUR 22/mo CPU); see DECISIONS.md.
+# Since 2026-11-14 there is no VM at all: git lives in the object-storage
+# engine (bucket + Postgres referee) and CI runs on ephemeral instances
+# started by the broker (ci_broker.tf).
 
 # ---- Serverless SQL databases ----------------------------------------------------
 
@@ -64,8 +62,6 @@ resource "scaleway_container" "api" {
     QUILL_ENV                  = "production"
     QUILL_HTTP_ADDR            = ":8080"
     QUILL_LOG_FORMAT           = "json"
-    FORGEJO_BASE_URL           = "https://${local.git_host}"
-    FORGEJO_PUBLIC_URL         = "https://${local.git_host}"
     QUILL_CORS_ALLOWED_ORIGINS = "https://${local.app_host}"
     # The GitHub import OAuth cookies must be shared between the app host (where
     # the flow starts via the frontend rewrite) and the API host (where the
@@ -73,16 +69,13 @@ resource "scaleway_container" "api" {
     QUILL_COOKIE_DOMAIN = var.domain
     QUILL_AUTH_PROVIDER = "zitadel"
     ZITADEL_ISSUER      = "https://${local.auth_host}"
-    # The api triggers pipelines by calling the dispatcher on the Forgejo VM
-    # (HMAC-protected with QUILL_PIPELINE_DISPATCH_SECRET).
-    QUILL_PIPELINE_DISPATCH_URL = "http://${scaleway_instance_server.forgejo.public_ips[0].address}:8090"
-    # Phase A: queue mode routes runs through the broker + ephemeral CI
-    # instances instead (ci_broker.tf). The VM dispatch URL stays as the
-    # flip-back fallback.
+    # Pipelines run in queue mode: broker + ephemeral CI instances
+    # (ci_broker.tf). The Forgejo VM and its inline dispatcher are gone
+    # (2026-11-14).
     QUILL_PIPELINE_QUEUE_MODE = var.ci_queue_mode ? "true" : "false"
     QUILL_BROKER_URL          = "https://${scaleway_container.broker.domain_name}"
-    # D2 cutover: the own git engine serves every migrated/new repository.
-    # Repos without a referee row (not yet migrated) still route to Forgejo.
+    # The own git engine serves every repository. Forgejo is off: no
+    # FORGEJO_* settings means the api never calls it (2026-11-14).
     QUILL_GIT_ENGINE_MODE = var.git_engine_mode
     QUILL_GIT_S3_ENDPOINT = "https://s3.${var.region}.scw.cloud"
     QUILL_GIT_S3_REGION   = var.region
@@ -98,7 +91,6 @@ resource "scaleway_container" "api" {
     QUILL_PIPELINE_DISPATCH_SECRET = local.dispatch_secret
     QUILL_GIT_S3_ACCESS_KEY        = scaleway_iam_api_key.git_engine.access_key
     QUILL_GIT_S3_SECRET_KEY        = scaleway_iam_api_key.git_engine.secret_key
-    FORGEJO_ADMIN_TOKEN            = var.forgejo_admin_token
     ZITADEL_MANAGEMENT_TOKEN       = var.zitadel_management_token
     GITHUB_CLIENT_ID               = var.github_client_id
     GITHUB_CLIENT_SECRET           = var.github_client_secret

@@ -214,3 +214,13 @@ func (s *Store) EngineRepoIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UU
 	}
 	return out, rows.Err()
 }
+
+// SumEngineStorageByTenant totals the bucket bytes of a tenant's engine repos
+// (the referee's storage_bytes, maintained on every push) — storage metering
+// without asking any git server.
+func (s *Store) SumEngineStorageByTenant(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	var total int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(storage_bytes), 0)::bigint FROM git_repo_state WHERE tenant_id = $1`, tenantID).Scan(&total)
+	return total, err
+}

@@ -2,6 +2,7 @@ package platform_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -256,4 +257,40 @@ func dirOf(rel string) string {
 		return rel[:i]
 	}
 	return ""
+}
+
+// A PR between branches with entirely different histories is a 4xx-class
+// input error (GitHub: "nothing to compare"), not an internal error.
+func TestEnginePullUnrelatedHistories(t *testing.T) {
+	browseGitAvailable(t)
+	svc, st, gitURL := browseFixture(t)
+	ctx := context.Background()
+	act := actor(makeUser(t, st, "unrel-owner"))
+	if _, err := svc.CreateProject(ctx, act, platform.CreateProjectInput{Slug: "unrel", Name: "unrel"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateRepo(ctx, act, "unrel", platform.CreateRepoInput{Slug: "r", Name: "r"}); err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	if out, err := exec.Command("git", "clone", "-q", gitURL+"/unrel/r", work).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	os.WriteFile(work+"/a", []byte("a\n"), 0o644)
+	browseGit(t, work, "add", "-A")
+	browseGit(t, work, "commit", "-qm", "main root")
+	if out, err := browseGitPush(t, work, "origin", "main"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	browseGit(t, work, "checkout", "-q", "--orphan", "other")
+	os.WriteFile(work+"/b", []byte("b\n"), 0o644)
+	browseGit(t, work, "add", "-A")
+	browseGit(t, work, "commit", "-qm", "other root")
+	if out, err := browseGitPush(t, work, "origin", "other"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	_, _, err := svc.CreatePull(ctx, act, "unrel", "r", platform.CreatePullInput{Title: "x", Head: "other", Base: "main"})
+	if !errors.Is(err, platform.ErrInvalidInput) {
+		t.Fatalf("unrelated histories: want ErrInvalidInput, got %v", err)
+	}
 }

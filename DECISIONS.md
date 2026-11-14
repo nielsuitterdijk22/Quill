@@ -263,3 +263,22 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   through Quill's merge path, not receive-pack, so they are unaffected.
 - **Why:** on Forgejo this rule mapped to branch protection (`EnablePush=false`); the engine only enforced
   force-push protection, so "require a PR" silently allowed direct pushes after the cutover.
+
+## 2026-11-14 — Forgejo off, VM removed (owner: "you can remove the VM")
+
+- **Decision:** the api runs without any `FORGEJO_*` settings (Forgejo disabled); the Forgejo VM (Forgejo,
+  its Postgres, Caddy, the inline dispatcher, the old VM Zitadel + backup sidecar) is destroyed by terraform
+  (`forgejo_vm.tf` deleted). The root volume has `delete_on_termination = false`, so it survives detached as
+  a 2-week safety copy (delete it by hand afterwards). The deploy workflow loses the SSH VM deploy and the
+  git/ssh DNS sync; its health check probes `api.<domain>/healthz`. Zitadel SMTP config runs on manual
+  dispatch only (settings persist in the serverless Zitadel).
+- **Engine-native replacements:** GitHub/URL import and fork clone the source bare (heads + tags), repack, and
+  commit through `SyncRepoToBucket` (engine_seed.go); imports accept only https URLs resolving to public
+  addresses (SSRF guard), tokens travel via git env-config, never argv/URLs. Storage metering sums
+  `git_repo_state.storage_bytes`. Deleting a repo deletes its bucket prefix (a leftover manifest used to
+  block re-creating the slug). Renaming an engine repo's slug is refused until a bucket move exists.
+- **Lost on purpose:** git over SSH (`ssh.<domain>`); HTTPS with `qgt_` tokens is the only transport.
+- **Also fixed:** the app's `/api/backend` proxy decoded the session cookie as `__Host-authjs.session-token`,
+  but production sets `__Secure-authjs.session-token` — every browser call without an explicit bearer
+  (the SBOM download link among them) reached the api anonymous and 401'd. It now tries each Auth.js
+  cookie name. Engine PRs between unrelated histories answer 400 instead of 500.

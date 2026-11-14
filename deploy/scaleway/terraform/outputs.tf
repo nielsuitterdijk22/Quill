@@ -83,16 +83,9 @@ output "backup_secret_key" {
   sensitive = true
 }
 
-# ---- Forgejo VM ----
-output "vm_id" {
-  value = scaleway_instance_server.forgejo.id
-}
-
-output "vm_public_ip" {
-  description = "Dynamic public IP of the Forgejo VM (point git/ssh A records here — scripts/dns-sync.sh automates it)."
-  value       = scaleway_instance_server.forgejo.public_ips[0].address
-}
-
+# ---- Forgejo VM (removed 2026-11-14) ----
+# The VM was torn down after the own-engine cutover. The SSH key stays in
+# Secret Manager (/quill/vm/ssh-private-key) for the detached root volume.
 output "vm_ssh_private_key" {
   description = "SSH private key for the VM (also in Secret Manager at /quill/vm/ssh-private-key)."
   value       = tls_private_key.vm.private_key_openssh

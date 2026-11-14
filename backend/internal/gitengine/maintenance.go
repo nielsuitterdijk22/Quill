@@ -329,3 +329,25 @@ func refsFromMap(refs map[string]string) []ManifestRef {
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
+
+// DeleteRepoObjects removes every object under a repo's bucket prefix (packs,
+// manifest, anything else) — repository deletion. Requires a listing store.
+// Missing objects are fine: a retried delete converges.
+func (e *Engine) DeleteRepoObjects(ctx context.Context, tenantID, projectSlug, repoSlug string) (int, error) {
+	ls, ok := e.store.(ListSource)
+	if !ok {
+		return 0, ErrListingUnsupported
+	}
+	keys, err := ls.List(ctx, RepoPrefix(tenantID, projectSlug, repoSlug))
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, k := range keys {
+		if err := e.store.Delete(ctx, k); err != nil && !errors.Is(err, objectstore.ErrNotFound) {
+			return n, fmt.Errorf("delete %s: %w", k, err)
+		}
+		n++
+	}
+	return n, nil
+}

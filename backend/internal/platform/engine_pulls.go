@@ -292,6 +292,13 @@ func (s *Service) engineCreatePull(ctx context.Context, repo db.Repository, be g
 	if !ok {
 		return forgejo.PullRequest{}, fmt.Errorf("%w: target branch %q not found", ErrInvalidInput, in.Base)
 	}
+	// Like GitHub: branches with entirely different histories have nothing
+	// to compare (no merge base) — a 4xx, not a broken PR row.
+	if hasBase, err := haveMergeBase(dir, baseSHA, headSHA); err != nil {
+		return forgejo.PullRequest{}, err
+	} else if !hasBase {
+		return forgejo.PullRequest{}, fmt.Errorf("%w: %s and %s have entirely different commit histories", ErrInvalidInput, in.Base, in.Head)
+	}
 	// Number allocation races only on concurrent creation in one repo:
 	// retry the insert once, then surface a conflict.
 	pr, err := s.store.CreatePull(ctx, be.repoID, be.tenantID, actor.UserID, login,
@@ -545,4 +552,19 @@ func pullRefsEqual(refs map[string]string, m *gitengine.Manifest) bool {
 		}
 	}
 	return true
+}
+
+// haveMergeBase reports whether two commits share history.
+func haveMergeBase(dir, a, b string) (bool, error) {
+	cmd := exec.Command("git", "merge-base", a, b)
+	cmd.Dir = dir
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git merge-base: %w", err)
 }

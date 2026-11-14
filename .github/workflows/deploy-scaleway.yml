@@ -1,15 +1,15 @@
 name: Deploy to Scaleway (serverless)
 
 # Serverless deploy: build + push images to the Scaleway Container Registry,
-# terraform apply (serverless containers/job get the new image tag), SSH-deploy
-# the Forgejo VM stack when vm files change, sync DNS, health-check.
+# terraform apply (serverless containers/jobs get the new image tag),
+# health-check. There is no VM since 2026-11-14.
 #
 # Required GitHub repo secrets/variables (see deploy/scaleway/README.md):
 #   secrets: SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_ORGANIZATION_ID,
-#            VM_SSH_KEY, FORGEJO_ADMIN_TOKEN, ZITADEL_MANAGEMENT_TOKEN,
+#            FORGEJO_ADMIN_TOKEN (legacy, unused), ZITADEL_MANAGEMENT_TOKEN,
 #            SDB_USER, SDB_PASSWORD
 #   vars:    QUILL_DOMAIN, SCW_REGION, SCW_PROJECT_ID, BACKUP_BUCKET, REGISTRY,
-#            VM_IP, LETSENCRYPT_EMAIL, NEXT_PUBLIC_ZITADEL_ISSUER,
+#            LETSENCRYPT_EMAIL, NEXT_PUBLIC_ZITADEL_ISSUER,
 #            NEXT_PUBLIC_ZITADEL_CLIENT_ID, NEXT_PUBLIC_ZITADEL_PROJECT_ID
 # Optional (transactional email via Brevo — invites/activation/password-reset):
 #   secrets: BREVO_SMTP_NAME, BREVO_SMTP_KEY
@@ -52,20 +52,10 @@ jobs:
     name: Build & push images
     if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
     runs-on: ubuntu-24.04
-    outputs:
-      vm_changed: ${{ steps.changes.outputs.vm }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
-      - id: changes
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            vm:
-              - "deploy/scaleway/vm/**"
-              - "deploy/compose/**"
 
       - name: Login to Scaleway Container Registry
         run: |
@@ -215,69 +205,13 @@ jobs:
           echo "job state: $STATE"
           [ "$STATE" = "succeeded" ] || { echo "zitadel setup job did not succeed"; exit 1; }
 
-  vm-deploy:
-    name: Deploy Forgejo VM stack (SSH)
-    needs: [build, apply]
-    if: ${{ needs.build.outputs.vm_changed == 'true' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: SSH deploy to the Forgejo VM
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ vars.VM_IP }}
-          username: ubuntu
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            cd /opt/quill
-            SMTP_FROM="${{ vars.BREVO_SMTP_FROM }}"
-            if [ -z "$SMTP_FROM" ]; then
-              SMTP_FROM="info@$(echo "black-tulip.nl" | cut -d. -f2-)"
-            fi
-            # Transactional mail (Brevo): compose auto-merges docker-compose.override.yml.
-            # Forgejo reads [mailer] env on every start; Zitadel's env-based SMTP only
-            # applies at instance creation, so the mail-config job also pushes the same
-            # settings through the admin API on the running instance.
-            if [ -n "${{ secrets.BREVO_SMTP_KEY }}" ]; then
-              sudo tee docker-compose.override.yml >/dev/null <<'YAML'
-            services:
-              forgejo:
-                environment:
-                  FORGEJO__mailer__ENABLED: "true"
-                  FORGEJO__mailer__MAILER_TYPE: smtp
-                  FORGEJO__mailer__HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}"
-                  FORGEJO__mailer__USER: "${{ secrets.BREVO_SMTP_NAME }}"
-                  FORGEJO__mailer__PASSWD: "${{ secrets.BREVO_SMTP_KEY }}"
-                  FORGEJO__mailer__FROM: "__SMTP_FROM__"
-                  FORGEJO__mailer__SUBJECT_PREFIX: "[Quill] "
-                  FORGEJO__mailer__IS_TLS_ENABLED: "false"
-              zitadel:
-                environment:
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST: "${{ vars.BREVO_SMTP_HOST || 'smtp-relay.brevo.com' }}:${{ vars.BREVO_SMTP_PORT || '2525' }}"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER: "${{ secrets.BREVO_SMTP_NAME }}"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD: "${{ secrets.BREVO_SMTP_KEY }}"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS: "true"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM: "__SMTP_FROM__"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME: "Quill"
-                  ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_REPLYTOADDRESS: "__SMTP_FROM__"
-            YAML
-              sudo sed -i "s|__SMTP_FROM__|${SMTP_FROM}|g" docker-compose.override.yml
-              sudo chmod 600 docker-compose.override.yml
-            else
-              sudo rm -f docker-compose.override.yml
-            fi
-            sudo docker compose pull
-            sudo docker compose up -d
-            sudo docker image prune -f >/dev/null 2>&1 || true
-
   mail-config:
     name: Configure Zitadel SMTP (Brevo) via admin API
-    needs: [build, apply, vm-deploy]
+    needs: [build, apply]
     # NOTE: the secrets context is not allowed in a job-level if — the
-    # "are Brevo creds set?" guard runs inside the step instead.
-    if: ${{ needs.build.outputs.vm_changed == 'true' || github.event_name == 'workflow_dispatch' }}
+    # "are Brevo creds set?" guard runs inside the step instead. Manual runs
+    # only since the VM is gone (Zitadel is serverless; settings persist).
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -324,7 +258,7 @@ jobs:
         run: deploy/scaleway/scripts/provision.sh
 
   post:
-    name: DNS sync + health check
+    name: Health check
     needs: [build, apply]
     if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
     runs-on: ubuntu-24.04
@@ -335,24 +269,15 @@ jobs:
         run: |
           curl -sL https://github.com/scaleway/scaleway-cli/releases/download/v2.65.2/scaleway-cli_2.65.2_linux_amd64 | sudo tee /usr/local/bin/scw >/dev/null && sudo chmod +x /usr/local/bin/scw
 
-      - name: Sync git/ssh DNS records to the VM IP
-        env:
-          QUILL_DOMAIN: black-tulip.nl
-          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
-          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
-          SCW_PROJECT_ID: ${{ vars.SCW_PROJECT_ID }}
-          SCW_DEFAULT_REGION: ${{ vars.SCW_REGION }}
-        run: deploy/scaleway/scripts/dns-sync.sh
-
       - name: Health check
         run: |
           for i in $(seq 1 40); do
             if curl -fsS -o /dev/null "https://app.black-tulip.nl/login" \
-               && curl -fsS -o /dev/null "https://git.black-tulip.nl/api/healthz"; then
-              echo "app + git are serving"
+               && curl -fsS -o /dev/null "https://api.black-tulip.nl/healthz"; then
+              echo "app + api are serving"
               exit 0
             fi
             sleep 15
           done
-          echo "::error::app/git not reachable after 10 min" >&2
+          echo "::error::app/api not reachable after 10 min" >&2
           exit 1
