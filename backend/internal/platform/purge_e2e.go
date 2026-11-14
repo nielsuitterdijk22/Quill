@@ -103,6 +103,7 @@ func (s *Service) PurgeE2eDebris(ctx context.Context) (PurgeReport, error) {
 					}
 				}
 			}
+			s.deleteEngineObjects(ctx, repo, personal)
 			if derr := s.store.DeleteRepository(ctx, repo.ID); derr != nil {
 				s.logger.Warn("purge-e2e: delete repo row failed", "repo", repo.Slug, "error", derr)
 				continue

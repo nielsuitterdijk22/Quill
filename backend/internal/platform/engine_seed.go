@@ -236,3 +236,18 @@ func (s *Service) checkImportURL(raw string) error {
 	}
 	return validateImportURL(raw)
 }
+
+// deleteEngineObjects removes an engine repo's bucket objects before its row
+// goes (project deletion, purge). Best-effort: a failure is logged and the
+// orphaned objects are harmless (maintenance never resurrects a repo).
+func (s *Service) deleteEngineObjects(ctx context.Context, repo db.Repository, project db.Project) {
+	if s.gitEngine == nil {
+		return
+	}
+	if _, err := s.store.GetGitRepoState(ctx, repo.ID); err != nil {
+		return
+	}
+	if _, err := s.gitEngine.DeleteRepoObjects(ctx, project.TenantID.String(), project.Slug, repo.Slug); err != nil {
+		s.logger.Warn("could not delete engine repo objects", "project", project.Slug, "repo", repo.Slug, "error", err)
+	}
+}

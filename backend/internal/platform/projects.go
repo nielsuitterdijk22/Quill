@@ -326,6 +326,7 @@ func (s *Service) purgeProject(ctx context.Context, project db.Project) error {
 				}
 			}
 		}
+		s.deleteEngineObjects(ctx, repo, project)
 		if derr := s.store.DeleteRepository(ctx, repo.ID); derr != nil {
 			return fmt.Errorf("delete repo %s: %w", repo.Slug, derr)
 		}

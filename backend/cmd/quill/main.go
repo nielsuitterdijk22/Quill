@@ -13,7 +13,9 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
+	"github.com/nielsuitterdijk22/quill/internal/gitengine"
 	"github.com/nielsuitterdijk22/quill/internal/logging"
+	"github.com/nielsuitterdijk22/quill/internal/objectstore"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
 )
@@ -118,6 +120,16 @@ func runPurgeE2e(args []string) error {
 	defer st.Close()
 
 	svc := platform.NewService(st, forgejo.New(cfg.Forgejo), logging.New("info", "text"))
+	if cfg.GitEngine.Own() && cfg.GitEngine.S3Bucket != "" {
+		// Engine repos: delete their bucket objects too, not just the rows.
+		svc = svc.WithGitEngine(gitengine.New(objectstore.New(objectstore.Config{
+			Endpoint:  cfg.GitEngine.S3Endpoint,
+			Region:    cfg.GitEngine.S3Region,
+			Bucket:    cfg.GitEngine.S3Bucket,
+			AccessKey: cfg.GitEngine.S3AccessKey,
+			SecretKey: cfg.GitEngine.S3SecretKey,
+		})))
+	}
 	report, err := svc.PurgeE2eDebris(ctx)
 	if err != nil {
 		return err
