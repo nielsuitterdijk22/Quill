@@ -423,11 +423,15 @@ func (s *Service) executeRun(runID uuid.UUID, bc *logBroadcaster, spec pipeline.
 	// secret can never leak through the SSE stream or the persisted logs
 	// regardless of runner behaviour.
 	masker := newSecretMasker(spec.Secrets)
+	live := s.newLiveLogBuffer(runID)
 	spec.LogSink = func(jobKey, stepName, line string) {
-		bc.publish(LogLine{JobKey: jobKey, StepName: stepName, Line: masker.mask(line)})
+		masked := masker.mask(line)
+		bc.publish(LogLine{JobKey: jobKey, StepName: stepName, Line: masked})
+		live.add(jobKey, stepName, masked)
 	}
 
 	result, runErr := s.runner.Run(bgCtx, spec)
+	live.close()
 	masker.maskResult(&result)
 	if runErr != nil {
 		// "read log stream" errors come from the HTTP dispatcher's SSE stream
@@ -546,6 +550,10 @@ func (s *Service) finishRun(ctx context.Context, runID uuid.UUID, status string)
 	})
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("finish run: %w", err)
+	}
+	// The persisted step logs are now the durable copy; drop the live buffer.
+	if err := s.store.DeleteLiveLogs(ctx, runID); err != nil {
+		s.logger.Warn("could not drop live logs", "run", runID, "error", err)
 	}
 	return run, nil
 }

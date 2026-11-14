@@ -54,11 +54,3 @@ export function durationText(startedAt?: string, finishedAt?: string): string | 
   const remMinutes = minutes % 60;
   return remMinutes ? `${hours}h ${remMinutes}m` : `${hours}h`;
 }
-
-// StepLogs renders a step's captured output in a monospace block.
-export function StepLogs({ logs }: { logs: string }) {
-  if (!logs.trim()) {
-    return <div className="empty">No output.</div>;
-  }
-  return <pre className="step-logs mono">{logs.replace(/\n$/, "")}</pre>;
-}

@@ -427,6 +427,7 @@ func (s *Server) setupRoutes() {
 		// caller is trusted infrastructure, not a user.
 		r.Route("/internal/dispatch", func(r chi.Router) {
 			r.Post("/claim", s.handleDispatchClaim)
+			r.Post("/logs", s.handleDispatchLogs)
 			r.Post("/heartbeat", s.handleDispatchHeartbeat)
 			r.Post("/report", s.handleDispatchReport)
 		})
@@ -636,6 +637,7 @@ func (s *Server) setupRoutes() {
 								r.Get("/runs", s.handleListRuns)
 								r.Get("/runs/{number}", s.handleGetRun)
 								r.Get("/runs/{number}/logs", s.handleStreamRunLogs)
+								r.Get("/runs/{number}/live", s.handleRunLive)
 								r.Post("/runs/{number}/cancel", s.handleCancelRun)
 							})
 							r.Route("/pulls", func(r chi.Router) {
@@ -681,12 +683,13 @@ func (s *Server) gitPushAuditor(rcx gitengine.ReceiveContext, actor string) {
 	s.platform.LogGitPush(ctx, tenantID, actorID, actor, rcx.ProjectSlug, rcx.RepoSlug, "")
 }
 
-// skipForGit applies mw to every route except the /git smart-HTTP mount.
+// skipForGit applies mw to every route except the /git smart-HTTP mount and
+// the long-lived pipeline live feed (WebSocket).
 func skipForGit(mw func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		wrapped := mw(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/git" || strings.HasPrefix(r.URL.Path, "/git/") {
+			if r.URL.Path == "/git" || strings.HasPrefix(r.URL.Path, "/git/") || isLiveFeed(r) {
 				next.ServeHTTP(w, r)
 				return
 			}

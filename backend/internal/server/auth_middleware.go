@@ -94,7 +94,11 @@ func identityFrom(ctx context.Context) (auth.Identity, bool) {
 func bearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if h == "" {
-		return ""
+		// Browsers cannot set headers on a WebSocket handshake, so the live
+		// run feed carries the bearer as a subprotocol ("bearer.<token>",
+		// next to the "quill.v1" protocol the server selects). Never in the
+		// URL: query strings end up in access logs.
+		return websocketBearer(r)
 	}
 	const prefix = "Bearer "
 	if len(h) > len(prefix) && strings.EqualFold(h[:len(prefix)], prefix) {
@@ -171,3 +175,22 @@ func (s *Server) requireAuthOrPublicRead(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// websocketBearer extracts the bearer a browser WebSocket client sends as a
+// "bearer.<token>" subprotocol on an upgrade request.
+func websocketBearer(r *http.Request) string {
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return ""
+	}
+	for _, v := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, p := range strings.Split(v, ",") {
+			p = strings.TrimSpace(p)
+			if strings.HasPrefix(p, wsBearerPrefix) && len(p) > len(wsBearerPrefix) {
+				return p[len(wsBearerPrefix):]
+			}
+		}
+	}
+	return ""
+}
+
+const wsBearerPrefix = "bearer."

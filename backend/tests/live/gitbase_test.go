@@ -33,8 +33,12 @@ func gitCloneURL(t *testing.T, user, token, project, repo string) string {
 		}
 		defer resp.Body.Close()
 		var meta struct {
-			Git     struct{ PublicURL string `json:"publicUrl"` } `json:"git"`
-			Forgejo struct{ PublicURL string `json:"publicUrl"` } `json:"forgejo"`
+			Git struct {
+				PublicURL string `json:"publicUrl"`
+			} `json:"git"`
+			Forgejo struct {
+				PublicURL string `json:"publicUrl"`
+			} `json:"forgejo"`
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&meta)
 		gitBase = meta.Git.PublicURL

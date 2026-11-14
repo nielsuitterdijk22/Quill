@@ -14,19 +14,21 @@ import (
 
 var shaParam = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-// handleGetSBOM: GET /projects/{slug}/repos/{repo}/sbom → {"sbom": view|null}.
+// handleGetSBOM: GET /projects/{slug}/repos/{repo}/sbom →
+// {"sbom": head view|null, "latestReady"?: view}. Reading ensures the
+// default branch head has an SBOM (generation is queued when missing).
 func (s *Server) handleGetSBOM(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
 	if !ok {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	view, err := s.platform.RepoSBOM(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
+	status, err := s.platform.EnsureRepoSBOM(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"))
 	if err != nil {
 		s.writePlatformError(w, err, "could not load SBOM status")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"sbom": view})
+	httpx.JSON(w, http.StatusOK, status)
 }
 
 // handleRequestSBOM: POST /projects/{slug}/repos/{repo}/sbom → (re)generate

@@ -46,6 +46,9 @@ const nextConfig = {
   async headers() {
     const zitadel = zitadelOrigin();
     const zitadelSrc = zitadel ? ` ${zitadel}` : "";
+    // The live pipeline feed is a WebSocket straight to the api host (the
+    // app's proxy route cannot carry an upgrade).
+    const wsApi = process.env.NEXT_PUBLIC_API_WS_URL || "ws://localhost:8080";
     const csp = [
       "default-src 'self'",
       // Next.js injects inline scripts for hydration; unsafe-inline is required
@@ -56,7 +59,7 @@ const nextConfig = {
       "font-src 'self' data:",
       `worker-src 'self' blob:`,
       // Zitadel origin is allowed for the OIDC discovery fetch on logout.
-      `connect-src 'self'${zitadelSrc}`,
+      `connect-src 'self'${zitadelSrc} ${wsApi}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       // Sign-in / logout redirect the browser to Zitadel's authorize / end-session

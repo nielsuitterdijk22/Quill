@@ -161,3 +161,61 @@ func TestSBOMFailureAndRegenerate(t *testing.T) {
 	}
 	waitSBOM(t, svc, act, slug, "ready")
 }
+
+// SBOMs are always there (owner, 2026-11-14): the landing page read makes
+// sure the default branch head has one even when no push hook ever fired
+// (repos older than the feature), and the maintenance backfill covers repos
+// nobody has opened.
+func TestSBOMEnsuredWithoutPushHook(t *testing.T) {
+	gen := &fakeSBOM{}
+	svc, act, slug, _, head := sbomRepo(t, "sbom-ensure", gen)
+	ctx := context.Background()
+	st, err := svc.EnsureRepoSBOM(ctx, act, slug, "app")
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if st.Current == nil || st.Current.CommitSHA != head {
+		t.Fatalf("ensure did not queue the head SBOM: %+v", st.Current)
+	}
+	v := waitSBOM(t, svc, act, slug, "ready")
+	if v.CommitSHA != head || v.ComponentCount != 3 {
+		t.Fatalf("view = %+v", v)
+	}
+	// Reading again never regenerates.
+	if _, err := svc.EnsureRepoSBOM(ctx, act, slug, "app"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := gen.calls.Load(); n != 1 {
+		t.Fatalf("generator calls = %d, want 1", n)
+	}
+}
+
+func TestSBOMBackfill(t *testing.T) {
+	gen := &fakeSBOM{}
+	svc, act, slug, _, head := sbomRepo(t, "sbom-backfill", gen)
+	ctx := context.Background()
+	generated, _, err := svc.BackfillSBOMs(ctx)
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if generated < 1 {
+		t.Fatalf("backfill generated %d", generated)
+	}
+	v, err := svc.RepoSBOM(ctx, act, slug, "app")
+	if err != nil || v == nil || v.Status != "ready" || v.CommitSHA != head {
+		t.Fatalf("after backfill: %+v %v", v, err)
+	}
+	// A second pass is a no-op for this repo.
+	before := gen.calls.Load()
+	if _, _, err := svc.BackfillSBOMs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if gen.calls.Load() != before {
+		// Other test repos in the shared DB may still lack SBOMs; this repo
+		// must not be regenerated.
+		if v2, _ := svc.RepoSBOM(ctx, act, slug, "app"); v2 == nil || v2.CommitSHA != head || v2.Status != "ready" {
+			t.Fatalf("second backfill disturbed the repo: %+v", v2)
+		}
+	}
+}

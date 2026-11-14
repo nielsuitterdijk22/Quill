@@ -9,6 +9,8 @@ import type {
   Result,
   DataResult,
   MutationResult,
+  SBOMStatus,
+  CycloneDXDocument,
 } from "./types";
 
 export function getRepo(
@@ -130,4 +132,22 @@ export async function renderMarkdown(
     { text },
   );
   return res.ok ? res.data.html : null;
+}
+
+export function getRepoSBOM(
+  token: string | null | undefined,
+  project: string,
+  repo: string,
+): Promise<Result<SBOMStatus>> {
+  return authGet<SBOMStatus>(token, `/api/v1/projects/${project}/repos/${repo}/sbom`);
+}
+
+export function getRepoSBOMDocument(
+  token: string | null | undefined,
+  project: string,
+  repo: string,
+  sha?: string,
+): Promise<Result<CycloneDXDocument>> {
+  const q = sha ? `?sha=${encodeURIComponent(sha)}` : "";
+  return authGet<CycloneDXDocument>(token, `/api/v1/projects/${project}/repos/${repo}/sbom/download${q}`);
 }

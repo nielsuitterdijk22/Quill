@@ -135,3 +135,18 @@ func (c *Client) Report(ctx context.Context, workerID string, queueID uuid.UUID,
 	_, err := c.do(ctx, "/api/v1/internal/dispatch/report", body, nil)
 	return err
 }
+
+// LogLine is one live output line shipped to the api.
+type LogLine struct {
+	JobKey   string `json:"jobKey"`
+	StepName string `json:"stepName"`
+	Line     string `json:"line"`
+}
+
+// Logs ships a batch of live output lines for a claimed job.
+func (c *Client) Logs(ctx context.Context, workerID string, queueID uuid.UUID, lines []LogLine) error {
+	_, err := c.do(ctx, "/api/v1/internal/dispatch/logs", map[string]any{
+		"worker": workerID, "queue_id": queueID.String(), "lines": lines,
+	}, nil)
+	return err
+}

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
@@ -28,6 +29,7 @@ func runGitMaintenance(args []string) error {
 	fs := flag.NewFlagSet("git-maintenance", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	repackThreshold := fs.Int("repack-threshold", 0, "consolidate into one pack when a repo lists more than N packs (0 = never)")
+	sboms := fs.Bool("sboms", true, "backfill missing default-branch SBOMs after the walk")
 	repoFilter := fs.String("repo", "", "restrict to one repo as project/repo (default: all engine repos)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -108,6 +110,18 @@ func runGitMaintenance(args []string) error {
 	}
 	fmt.Printf("done: %d repos, %d repaired, %d repacked, %d orphan packs deleted, %d lease-skipped, %d FAILED\n",
 		len(repos), repaired, repacked, orphaned, skipped, failed)
+
+	// SBOM backfill (2026-11-14): every repo's default-branch head gets its
+	// SBOM here, so the landing page never has to start one on view. Skipped
+	// when the syft binary is absent (local runs); never fails the job.
+	if *sboms {
+		if _, err := exec.LookPath(cfg.SBOMSyftBin); err != nil {
+			fmt.Printf("sbom backfill: skipped (%s not found)\n", cfg.SBOMSyftBin)
+		} else {
+			gen, bad, err := svc.WithSBOMGenerator(platform.SyftGenerator{Bin: cfg.SBOMSyftBin}).BackfillSBOMs(ctx)
+			fmt.Printf("sbom backfill: %d generated, %d failed, err=%v\n", gen, bad, err)
+		}
+	}
 	if failed > 0 {
 		return fmt.Errorf("git-maintenance: %d repo(s) failed", failed)
 	}

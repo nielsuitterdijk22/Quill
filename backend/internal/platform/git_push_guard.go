@@ -27,7 +27,9 @@ import (
 // merges a PR through its API, B5); the push path enforces only what a push
 // can actually violate: BlockForcePush, which covers force pushes AND
 // deletions of matched branches (removing history from the branch is the
-// damage force-push protection exists for).
+// damage force-push protection exists for). Since 2026-11-14 the push path
+// also enforces RequirePullRequest — like GitHub's protected branches, a
+// direct push to such a branch is refused (merges arrive via the PR path).
 
 var zeroGitID = "0000000000000000000000000000000000000000"
 
@@ -123,7 +125,20 @@ func (g *gitPushGuard) PreReceive(ctx context.Context, rcx gitengine.ReceiveCont
 	for _, c := range cmds {
 		branch := strings.TrimPrefix(c.Ref, "refs/heads/")
 		rule, pattern := policy.EffectiveBranch(scoped, branch)
-		if rule == nil || !rule.BlockForcePush {
+		if rule == nil {
+			continue
+		}
+		// RequirePullRequest (2026-11-14): a protected branch changes only
+		// through a merged PR (Quill's merge path updates refs itself, not via
+		// receive-pack). Creating the branch — the first push into an empty
+		// repo — stays allowed so a repo can be bootstrapped.
+		if rule.RequirePullRequest && c.Old != zeroGitID {
+			if c.New == zeroGitID {
+				return fmt.Errorf("deleting %s is blocked by branch policy %q", c.Ref, pattern)
+			}
+			return fmt.Errorf("%s requires a pull request (branch policy %q): push to another branch and open a PR", c.Ref, pattern)
+		}
+		if !rule.BlockForcePush {
 			continue
 		}
 		if c.New == zeroGitID {

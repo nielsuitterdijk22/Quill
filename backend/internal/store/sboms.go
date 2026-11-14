@@ -49,7 +49,8 @@ func scanSBOM(row pgx.Row) (SBOM, error) {
 
 // QueueSBOM records a pending SBOM for (repo, commit). created reports whether
 // a new row was made; an existing ready/running row is left alone, a failed
-// one is reset to pending (explicit regeneration).
+// one — or a pending/running one abandoned for 15+ minutes (an instance died
+// mid-generation) — is reset to pending.
 func (s *Store) QueueSBOM(ctx context.Context, repoID, tenantID uuid.UUID, commitSHA, ref string) (SBOM, bool, error) {
 	row := s.pool.QueryRow(ctx, `
 		INSERT INTO sboms (repo_id, tenant_id, commit_sha, ref)
@@ -58,6 +59,7 @@ func (s *Store) QueueSBOM(ctx context.Context, repoID, tenantID uuid.UUID, commi
 			SET status = 'pending', error = '', started_at = NULL, finished_at = NULL,
 			    created_at = now(), ref = EXCLUDED.ref
 			WHERE sboms.status = 'failed'
+			   OR (sboms.status IN ('pending', 'running') AND sboms.created_at < now() - interval '15 minutes')
 		RETURNING `+sbomColumns+`, (xmax = 0)`, repoID, tenantID, commitSHA, ref)
 	var b SBOM
 	var inserted bool

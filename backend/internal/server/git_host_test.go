@@ -56,3 +56,25 @@ func TestMetaExposesGitPublicURL(t *testing.T) {
 		t.Fatalf("meta git.publicUrl = %q", body.Git.PublicURL)
 	}
 }
+
+// The live run feed authenticates a browser WebSocket via a "bearer.<token>"
+// subprotocol (browsers can't set headers on the handshake); only on upgrade
+// requests, and never from the URL.
+func TestWebsocketBearer(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/projects/p/repos/r/pipelines/runs/1/live", nil)
+	r.Header.Set("Sec-WebSocket-Protocol", "quill.v1, bearer.abc.def")
+	if got := bearerToken(r); got != "" {
+		t.Fatalf("non-upgrade request must not read the subprotocol, got %q", got)
+	}
+	r.Header.Set("Upgrade", "websocket")
+	if got := bearerToken(r); got != "abc.def" {
+		t.Fatalf("bearer from subprotocol = %q", got)
+	}
+	r.Header.Set("Authorization", "Bearer hdr")
+	if got := bearerToken(r); got != "hdr" {
+		t.Fatalf("Authorization header must win, got %q", got)
+	}
+	if !isLiveFeed(r) {
+		t.Fatal("live feed path not recognised")
+	}
+}

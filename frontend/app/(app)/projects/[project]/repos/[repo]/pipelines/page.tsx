@@ -10,8 +10,9 @@ import {
 } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
 import { BrowseError, RepoHeader, blobHref, fmtDate, repoBase } from "../../../../../../components/repo";
-import { RunStatusBadge, statusGlyph } from "../../../../../../components/pipelines";
+import { RunStatusBadge, durationText, statusGlyph } from "../../../../../../components/pipelines";
 import { RunWorkflowForm } from "./RunWorkflowForm";
+import { AutoRefresh } from "./AutoRefresh";
 
 // runHref links to a run's detail page, carrying the workflow path so the
 // backend can resolve the run by (pipeline, number).
@@ -91,6 +92,8 @@ export default async function PipelinesPage({
         active="pipelines"
       />
 
+      <AutoRefresh active={runs.some((r) => r.status === "pending" || r.status === "running")} />
+
       <RunWorkflowForm
         project={params.project}
         repo={params.repo}
@@ -112,9 +115,13 @@ export default async function PipelinesPage({
             const workflowPath = workflowByRunId.get(run.id) ?? run.workflowPath ?? "";
             const body = (
               <>
-                <span className={`run-glyph ${run.status}`}>
-                  {statusGlyph(run.status)}
-                </span>
+                {run.status === "running" || run.status === "pending" ? (
+                  <span className="run-glyph">
+                    <span className="run-spinner" aria-label={run.status} />
+                  </span>
+                ) : (
+                  <span className={`run-glyph ${run.status}`}>{statusGlyph(run.status)}</span>
+                )}
                 <div className="pr-main">
                   <span className="nm">
                     {workflowPath
@@ -129,6 +136,9 @@ export default async function PipelinesPage({
                       <span className="mono">{shortSha(run.commitSha)}</span>
                     )}
                     <span>{fmtDate(run.createdAt)}</span>
+                    {durationText(run.startedAt, run.finishedAt) && (
+                      <span>{durationText(run.startedAt, run.finishedAt)}</span>
+                    )}
                   </span>
                 </div>
                 <span className="spacer" />

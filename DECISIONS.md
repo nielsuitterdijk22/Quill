@@ -228,3 +228,38 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - 2026-11-13 (night) — SECURITY: clear-text pipeline secrets in stored run logs (queue mode). The pipeline showcase surfaced it: a step echoing a secret and act's debug-level expression traces (`expression '…secrets.X…' evaluated to '%!t(string=<value>)'`) were persisted unmasked. Root cause: secret masking (`secretMask`) ran only on the inline VM-dispatch path (`executeRun`). The queue path I made the production default this afternoon (Phase A cutover) persisted worker results as-is, and finished queue rows also kept the run's secrets at rest. Exposure window: queue-mode runs from the Phase A flip (2026-11-13 ~14:35 CET) until this deploy. Run logs are member-only (no public-read route), so the readers were project members (the e2e fixture account's showcase/test repos) plus database operators. Fixes: (1) `ReportQueuedJob` masks every reported log line and the error string with the secrets in that run's queue spec, and fails closed (withholds logs) if the spec can't be decoded. (2) `FinishPipelineJob` drops `Secrets` from the spec once a job finishes. (3) Repair: `quill admin remask-run-logs` masks the stored logs of every finished run whose queue row still carries secrets (with exactly those values), then scrubs the row. Idempotent; run against production right after this deploy. (4) The showcase deploy IAM key that ran through a leaking job is rotated. Tests: `TestQueueReportMasksSecrets` (reproduced the leak), `TestQueueReportScrubsSpecSecrets`, `TestRemaskStoredRunLogsAndScrubQueue`. Lesson: when a new execution path replaces an old one, port its safety properties (masking, quotas, metering) as tests before flipping the default. The Phase A live tests asserted success, never that secrets stayed masked.
 - 2026-11-13 (night) — Reusable workflows were reported as failed although act ran them. A caller job (`jobs.x.uses: ./wf.yml` or a cross-repo template) has no steps; act runs the called workflow's jobs under their OWN jobID with `job = "<caller>/<workflow>/<inner>"`. Quill's `assemble` only walked the outer plan, so the inner jobs' output was dropped. On top of that, the synthetic "setup" step read `jr.Status` before it was computed, so the caller became `failure` (its `needs:` dependents still ran, proving act saw success). Fix: `logCapture` routes entries tagged `<caller>/…/<inner>` into a per-caller bucket, and `assemble` folds them into the caller as `<inner> · <step>` steps (caller status = the called jobs' outcome). The setup step's status is now settled after the job status. Tests: `TestAssembleFoldsReusableWorkflowJobsIntoCaller` (success + failure propagation), `TestAssembleSetupStepOfSuccessfulJob`. Also confirmed act's contract: a job only sees its files after `uses: actions/checkout@v4`, which act serves natively (it copies Quill's pre-cloned workspace and fetches nothing), the same as on GitHub. The showcase workflows use it. Gated live helpers added: `TestDumpRunLog` / `TestDumpRunDetail` (operator views of a run) and `TestRevokeE2EGitTokens` (125 accumulated fixture tokens revoked).
 - 2026-11-13 (night) — Engine PR merge with no explicit method answered 400 (the Forgejo path always defaulted to `merge`, as GitHub's API does); the live merge test never caught it because it only failed on 5xx. `MergePull` now defaults the method before the backend split (`TestEngineMergeDefaultsToMergeCommit`), and the live test asserts the PR is actually merged. The showcase also now asserts the push's SBOM (ready for that SHA, CycloneDX download). Its live result: SBOM ready, the ci/secrets/deploy runs all green, the container serving the commit at the showcase URL.
+
+## 2026-11-14 — Live pipeline runs over WebSocket, buffered in Postgres
+
+- **Decision:** CI workers ship output lines every second (`POST /internal/dispatch/logs`, claim-holder only,
+  masked with the run's secrets before storage) into `pipeline_live_logs`; the run page follows
+  `GET …/pipelines/runs/{n}/live` as a WebSocket (status + lines, resumable with `after=<line id>`; on finish it
+  sends the persisted job/step tree). The buffer is deleted when the run finishes. Plain GET on the same URL
+  returns a JSON snapshot: the polling fallback through the app proxy when WebSockets are blocked.
+- **Why:** queue-mode logs only arrived with the final report, and the old SSE stream read an in-memory
+  broadcaster on one api instance (never the instance a viewer hit) — so running pipelines showed no logs,
+  stayed "pending" on screen, and a reload never reconnected. Postgres is the one place every instance shares.
+- **Auth:** browsers can't set headers on a WebSocket handshake; the bearer travels as a `bearer.<token>`
+  subprotocol (never in the URL, which lands in access logs). Origins are limited to `QUILL_CORS_ALLOWED_ORIGINS`.
+  Connections close after 270 s (under the 300 s container request timeout) and the client reconnects.
+- **Dependency:** `github.com/coder/websocket` (small, context-native, no transitive deps).
+- **Rejected:** LISTEN/NOTIFY (Serverless SQL DB connection churn, and polling at 1 s per viewer is cheap at our
+  scale); SSE through the Next.js proxy (buffering + the proxy's own timeouts); keeping logs in api memory.
+
+## 2026-11-14 — SBOMs are always there
+
+- **Decision:** the default-branch head always has an SBOM: generated on push (as before), backfilled by the
+  nightly `git-maintenance` job (`--sboms`, default on), and ensured on read (the landing page status call queues
+  one if the head has none). Stale pending/running rows (an instance died) are reset after 15 min. The landing
+  page pill links to a native viewer (`/{owner}/{repo}/sbom`: summary, licenses, ecosystem filter, searchable
+  component table, raw CycloneDX download). While a newer head generates, the last ready SBOM stays linked.
+- **Why:** owner feedback: "pre-made, not on request"; the old pill linked straight at a JSON download, which
+  read as a broken visualization.
+
+## 2026-11-14 — RequirePullRequest is enforced on pushes
+
+- **Decision:** the engine's pre-receive guard refuses direct pushes (and deletes) to a branch whose effective
+  policy has `requirePullRequest`; creating the branch in an empty repo stays allowed. PR merges update refs
+  through Quill's merge path, not receive-pack, so they are unaffected.
+- **Why:** on Forgejo this rule mapped to branch protection (`EnablePush=false`); the engine only enforced
+  force-push protection, so "require a PR" silently allowed direct pushes after the cutover.

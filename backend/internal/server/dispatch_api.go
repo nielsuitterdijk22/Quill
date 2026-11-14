@@ -181,3 +181,44 @@ func (s *Server) handleDispatchReport(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+type dispatchLogsBody struct {
+	Worker  string              `json:"worker"`
+	QueueID string              `json:"queue_id"`
+	Lines   []platform.LiveLine `json:"lines"`
+}
+
+// handleDispatchLogs stores a batch of live output lines for a claimed job
+// (POST /internal/dispatch/logs). 409 means the claim is no longer the
+// worker's.
+func (s *Server) handleDispatchLogs(w http.ResponseWriter, r *http.Request) {
+	body, ok := s.verifyDispatch(r)
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "invalid or missing dispatch signature")
+		return
+	}
+	var in dispatchLogsBody
+	if err := json.Unmarshal(body, &in); err != nil || in.Worker == "" || in.QueueID == "" {
+		httpx.Error(w, http.StatusBadRequest, "invalid_request", "worker and queue_id are required")
+		return
+	}
+	queueID, err := uuid.Parse(in.QueueID)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid_request", "queue_id is not a uuid")
+		return
+	}
+	if err := s.platform.AppendQueuedJobLogs(r.Context(), in.Worker, queueID, in.Lines); err != nil {
+		switch {
+		case errors.Is(err, platform.ErrNotFound):
+			httpx.Error(w, http.StatusNotFound, "not_found", "unknown queue job")
+		case errors.Is(err, platform.ErrConflict):
+			httpx.Error(w, http.StatusConflict, "claim_lost", "the job is no longer yours")
+		case errors.Is(err, platform.ErrInvalidInput):
+			httpx.Error(w, http.StatusBadRequest, "invalid_request", err.Error())
+		default:
+			httpx.Error(w, http.StatusInternalServerError, "logs_failed", err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

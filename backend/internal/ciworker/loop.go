@@ -99,7 +99,11 @@ func runClaimedJob(ctx context.Context, client *Client, workerID string, runner 
 		}
 	}()
 
-	result, runErr := runner.Run(hbCtx, job.Spec)
+	live := startLiveLogs(client, workerID, job.QueueID)
+	spec := job.Spec
+	spec.LogSink = live.sink
+	result, runErr := runner.Run(hbCtx, spec)
+	live.close()
 	hbStop()
 	lostWg.Wait()
 

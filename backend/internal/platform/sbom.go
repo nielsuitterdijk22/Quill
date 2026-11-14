@@ -311,3 +311,103 @@ func (s *Service) RepoSBOMDocument(ctx context.Context, actor Actor, projectSlug
 	}
 	return doc, fmt.Sprintf("%s-%s.cdx.json", be.repoSlug, short), nil
 }
+
+// SBOMStatus is what the repo landing page shows: the SBOM of the default
+// branch head (Current, possibly still generating) and, when that is not
+// ready yet, the newest ready one so there is always a document to open.
+type SBOMStatus struct {
+	Current     *SBOMView `json:"sbom"`
+	LatestReady *SBOMView `json:"latestReady,omitempty"`
+}
+
+// defaultHead returns the default branch's head commit from the referee row
+// (no hydration) — "" for an empty repo.
+func (s *Service) defaultHead(ctx context.Context, repoID uuid.UUID, defaultBranch string) (string, string, error) {
+	st, err := s.store.GetGitRepoState(ctx, repoID)
+	if err != nil {
+		return "", "", err
+	}
+	ref := "refs/heads/" + defaultBranch
+	return st.Refs[ref], ref, nil
+}
+
+// EnsureRepoSBOM is the landing page read (2026-11-14: SBOMs are always
+// there, never on request). It makes sure the default branch head has an
+// SBOM — queueing generation when a head somehow has none yet (repos older
+// than the feature, a missed push hook, an interrupted generation) — and
+// returns the head's status plus the newest ready document.
+func (s *Service) EnsureRepoSBOM(ctx context.Context, actor Actor, projectSlug, repoSlug string) (SBOMStatus, error) {
+	repo, be, err := s.resolveBrowseRepo(ctx, actor, projectSlug, repoSlug, true)
+	if err != nil {
+		return SBOMStatus{}, err
+	}
+	if !be.engine {
+		return SBOMStatus{}, fmt.Errorf("%w: SBOMs are available for engine-backed repositories", ErrUnavailable)
+	}
+	var out SBOMStatus
+	head, ref, err := s.defaultHead(ctx, be.repoID, repo.DefaultBranch)
+	if err != nil {
+		return SBOMStatus{}, err
+	}
+	var current store.SBOM
+	switch {
+	case head != "" && s.sbomGen != nil:
+		current, err = s.queueSBOM(ctx, be, head, ref)
+	default:
+		current, err = s.store.LatestSBOM(ctx, be.repoID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return out, nil
+		}
+	}
+	if err != nil {
+		return SBOMStatus{}, err
+	}
+	out.Current = sbomView(current)
+	if current.Status != store.SBOMReady {
+		if ready, err := s.store.LatestReadySBOM(ctx, be.repoID); err == nil && ready.ID != current.ID {
+			out.LatestReady = sbomView(ready)
+		}
+	}
+	return out, nil
+}
+
+// BackfillSBOMs generates, synchronously, the default-branch-head SBOM of
+// every engine repo that lacks one (or whose generation failed / was
+// interrupted). Run by the daily maintenance job so every repo has its SBOM
+// before anyone looks. Returns how many were generated and how many failed.
+func (s *Service) BackfillSBOMs(ctx context.Context) (generated, failed int, err error) {
+	if s.sbomGen == nil {
+		return 0, 0, fmt.Errorf("%w: SBOM generation is not configured", ErrUnavailable)
+	}
+	repos, err := s.store.ListEngineRepos(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, r := range repos {
+		repo, err := s.store.GetRepositoryByID(ctx, r.RepoID)
+		if err != nil {
+			failed++
+			continue
+		}
+		head, ref, err := s.defaultHead(ctx, r.RepoID, repo.DefaultBranch)
+		if err != nil || head == "" {
+			continue
+		}
+		row, created, err := s.store.QueueSBOM(ctx, r.RepoID, r.TenantID, head, ref)
+		if err != nil {
+			failed++
+			continue
+		}
+		if !created {
+			continue
+		}
+		be := gitBackend{engine: true, repoID: r.RepoID, tenantID: r.TenantID, projectSlug: r.ProjectSlug, repoSlug: r.RepoSlug}
+		s.generateSBOM(row.ID, be, head)
+		if done, err := s.store.SBOMByCommit(ctx, r.RepoID, head); err == nil && done.Status == store.SBOMReady {
+			generated++
+		} else {
+			failed++
+		}
+	}
+	return generated, failed, nil
+}

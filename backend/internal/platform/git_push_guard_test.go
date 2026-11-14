@@ -155,3 +155,35 @@ func TestGitPushGuardWithoutPolicy(t *testing.T) {
 		t.Fatalf("no policy = no restriction, got: %v", err)
 	}
 }
+
+// TestGitPushGuardRequirePullRequest: a branch whose policy requires a PR
+// refuses direct pushes (even fast-forwards) and deletes; creating it in an
+// empty repo and pushing other branches stay allowed.
+func TestGitPushGuardRequirePullRequest(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+	owner, repo := seedScopeRepo(t, svc, st, "guard-pr", "guarded")
+	if _, err := svc.SetProjectBranchPolicy(ctx, owner, "guard-pr", BranchPolicyInput{
+		Pattern: "main", RequirePullRequest: true,
+	}); err != nil {
+		t.Fatalf("set policy: %v", err)
+	}
+	dir, base, child := testGitDir(t)
+	guard := svc.GitPushGuard()
+	rcx := gitengine.ReceiveContext{ID: repo.ID.String(), Dir: dir, TenantID: "test", ProjectSlug: "guard-pr", RepoSlug: "guarded"}
+	zero := fmt.Sprintf("%040s", "0")
+
+	if err := guard.PreReceive(ctx, rcx, []gitengine.PushCommand{{Old: base, New: child, Ref: "refs/heads/main"}}, "alice"); err == nil ||
+		!strings.Contains(err.Error(), "pull request") {
+		t.Fatalf("direct fast-forward push to a PR-required branch must be refused, got %v", err)
+	}
+	if err := guard.PreReceive(ctx, rcx, []gitengine.PushCommand{{Old: child, New: zero, Ref: "refs/heads/main"}}, "alice"); err == nil {
+		t.Fatal("delete of a PR-required branch must be refused")
+	}
+	if err := guard.PreReceive(ctx, rcx, []gitengine.PushCommand{{Old: zero, New: child, Ref: "refs/heads/main"}}, "alice"); err != nil {
+		t.Fatalf("bootstrapping the branch must pass: %v", err)
+	}
+	if err := guard.PreReceive(ctx, rcx, []gitengine.PushCommand{{Old: base, New: child, Ref: "refs/heads/feature/x"}}, "alice"); err != nil {
+		t.Fatalf("other branches must pass: %v", err)
+	}
+}
