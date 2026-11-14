@@ -130,3 +130,78 @@ func TestBrokerWithoutSecretRefusesWake(t *testing.T) {
 		t.Fatalf("unconfigured broker: %d", resp.StatusCode)
 	}
 }
+
+// isoOrchestrator is a spy for the per-repository shape.
+type isoOrchestrator struct {
+	spyOrchestrator
+	needs   []int
+	retired []string
+}
+
+func (o *isoOrchestrator) EnsureWorkers(_ context.Context, need int) ([]string, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.needs = append(o.needs, need)
+	ids := make([]string, need)
+	for i := range ids {
+		ids[i] = "i-new"
+	}
+	return ids, nil
+}
+
+func (o *isoOrchestrator) Retire(_ context.Context, id string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.retired = append(o.retired, id)
+	return nil
+}
+
+func post(t *testing.T, url, secret string, body []byte) int {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if secret != "" {
+		req.Header.Set("X-Quill-Dispatch-Signature", sign(secret, body))
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// A wake that says how many repositories wait for a worker boots one
+// instance per repo; a count-less wake keeps the single-instance behaviour.
+// Retiring an instance is the api's call (HMAC) and nobody else's.
+func TestWakeNeedAndRetire(t *testing.T) {
+	orch := &isoOrchestrator{spyOrchestrator: spyOrchestrator{id: "i-1"}}
+	ts := httptest.NewServer(broker.NewServer(broker.Config{Secret: "s", Orchestrator: orch}).Handler())
+	defer ts.Close()
+
+	if code := post(t, ts.URL+"/wake", "s", []byte(`{"need":2}`)); code != http.StatusAccepted {
+		t.Fatalf("wake need=2: %d", code)
+	}
+	if code := post(t, ts.URL+"/wake", "s", []byte(`{}`)); code != http.StatusAccepted {
+		t.Fatalf("legacy wake: %d", code)
+	}
+	if len(orch.needs) != 1 || orch.needs[0] != 2 || orch.calls != 1 {
+		t.Fatalf("needs=%v legacy calls=%d", orch.needs, orch.calls)
+	}
+
+	body := []byte(`{"instance_id":"i-9"}`)
+	if code := post(t, ts.URL+"/retire", "", body); code != http.StatusUnauthorized {
+		t.Fatalf("unsigned retire: %d", code)
+	}
+	if code := post(t, ts.URL+"/retire", "wrong", body); code != http.StatusUnauthorized {
+		t.Fatalf("bad-signature retire: %d", code)
+	}
+	if len(orch.retired) != 0 {
+		t.Fatal("an unauthenticated retire reached the orchestrator")
+	}
+	if code := post(t, ts.URL+"/retire", "s", body); code != http.StatusNoContent {
+		t.Fatalf("retire: %d", code)
+	}
+	if len(orch.retired) != 1 || orch.retired[0] != "i-9" {
+		t.Fatalf("retired = %v", orch.retired)
+	}
+}

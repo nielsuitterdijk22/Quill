@@ -428,6 +428,7 @@ func (s *Server) setupRoutes() {
 		r.Route("/internal/dispatch", func(r chi.Router) {
 			r.Post("/claim", s.handleDispatchClaim)
 			r.Post("/logs", s.handleDispatchLogs)
+			r.Post("/retire", s.handleDispatchRetire)
 			r.Post("/heartbeat", s.handleDispatchHeartbeat)
 			r.Post("/report", s.handleDispatchReport)
 		})

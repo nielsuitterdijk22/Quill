@@ -56,22 +56,29 @@ func TestWakeOrchestrationSurvivesClientHangup(t *testing.T) {
 	}
 }
 
-func TestCloudInitCarriesTerminationCredsAndBlocksMetadata(t *testing.T) {
+// TestCloudInitIsolatesTheMachine (2026-11-14, replaces
+// TestCloudInitCarriesTerminationCredsAndBlocksMetadata): jobs on a CI
+// instance can become root (they get the Docker socket), so the instance
+// must carry only its own worker token — no dispatch secret, no cloud key —
+// and lose the metadata service before the worker starts.
+func TestCloudInitIsolatesTheMachine(t *testing.T) {
 	ci := broker.CloudInit(broker.CloudInitOpts{
-		APIURL: "https://api.example", DispatchSecret: "d", WorkerImage: "rg/img:1",
+		APIURL: "https://api.example", WorkerToken: "qcw1.payload.sig", WorkerImage: "rg/img:1",
 		Zone: "fr-par-1", InstanceTag: "t",
-		SCWAccessKey: "SCWAK", SCWSecretKey: "sk-123", SCWProjectID: "proj",
+		RegistryUser: "nologin", RegistryPassword: "pull-only",
 		UbuntuImage: "node:22-bookworm",
 	})
 	for _, want := range []string{
-		"SCW_ACCESS_KEY=SCWAK",
-		"SCW_SECRET_KEY=sk-123",
-		"SCW_DEFAULT_PROJECT_ID=proj",
+		"QUILL_CIW_TOKEN=qcw1.payload.sig",
+		"QUILL_CIW_SELF_TERMINATE=true",
 		"QUILL_PIPELINE_UBUNTU_IMAGE=node:22-bookworm",
-		// user workflow containers must not read user-data (secrets) off the
-		// metadata service
+		// user workflow containers must not read user-data off the metadata
+		// service: bridge-networked ones (DOCKER-USER) and host-networked
+		// ones, act's default (OUTPUT)
 		"DOCKER-USER -d 169.254.42.42", // Scaleway's metadata service
 		"DOCKER-USER -d 169.254.169.254",
+		"OUTPUT -d 169.254.42.42",
+		"OUTPUT -d 169.254.169.254",
 		// the backend image runs unprivileged; the worker needs the socket
 		"-u 0",
 		"/quill-ciworker",
@@ -80,8 +87,16 @@ func TestCloudInitCarriesTerminationCredsAndBlocksMetadata(t *testing.T) {
 			t.Errorf("cloud-init missing %q:\n%s", want, ci)
 		}
 	}
+	for _, forbidden := range []string{
+		"SCW_ACCESS_KEY", "SCW_SECRET_KEY", "QUILL_PIPELINE_DISPATCH_SECRET", "QUILL_CIW_WORKER_ID",
+	} {
+		if strings.Contains(ci, forbidden) {
+			t.Errorf("cloud-init must not carry %s:\n%s", forbidden, ci)
+		}
+	}
 	// The metadata block must be in place before the worker starts.
-	if strings.Index(ci, "169.254.42.42") > strings.Index(ci, "docker run") {
+	if strings.Index(ci, "OUTPUT -d 169.254.42.42") > strings.Index(ci, "docker run") ||
+		strings.Index(ci, "169.254.42.42") > strings.Index(ci, "docker run") {
 		t.Error("metadata block must precede the worker run")
 	}
 }

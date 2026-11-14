@@ -2,38 +2,71 @@
 #
 # The broker is a min_scale-0 Serverless Container (same backend image,
 # /quill-broker entrypoint). The api wakes it per enqueue (HMAC, dispatch
-# secret); it ensures ONE ephemeral DEV1-S instance tagged quill-ci-worker whose
-# cloud-init runs the ciworker container from the same backend image. The
-# worker drains the queue and terminates its own instance (power off + delete
-# server and volumes, server-side). The broker reaps stragglers on every wake.
+# secret) with the number of repositories waiting for a worker; it boots one
+# ephemeral DEV1-S instance (tagged quill-ci-worker) per such repo, capped.
+#
+# Isolation (2026-11-14): each instance serves ONE repository (the api binds
+# its worker on the first claim) and carries only its own worker token plus a
+# pull-only registry key — no dispatch secret, no instance-management key.
+# Jobs get the Docker socket (root on the box), so nothing on the box may
+# reach beyond that repo. When the worker is done it retires through the api,
+# which has the broker terminate exactly that instance. The broker reaps
+# stragglers (TTL, stopped instances, orphan volumes) on every wake.
 #
 # Gated by var.ci_queue_mode: while false, the api keeps the inline VM dispatch
 # path (QUILL_PIPELINE_DISPATCH_URL) and the broker sits idle at zero cost.
 
 resource "scaleway_iam_application" "ci_broker" {
   name        = "quill-ci-broker"
-  description = "Ephemeral CI instance orchestration (broker) + worker self-termination."
+  description = "Ephemeral CI instance orchestration (broker)."
 }
 
 resource "scaleway_iam_policy" "ci_broker" {
   name           = "quill-ci-broker-policy"
-  description    = "Instances + their block volumes + registry pull, scoped to the Quill project."
+  description    = "Instances + their block volumes, scoped to the Quill project."
   application_id = scaleway_iam_application.ci_broker.id
 
   rule {
     project_ids = [scaleway_account_project.quill.id]
-    # Scaleway IAM cannot narrow to tagged servers; the key never leaves the
-    # broker env + the CI instance's root-only env file, and workflow
-    # containers are firewalled off the metadata service (cloud-init).
+    # Scaleway IAM cannot narrow to tagged servers, so this key never leaves
+    # the broker (since 2026-11-14 not even onto the CI instances).
     # BlockStorageFullAccess: DEV1-S root volumes are SBS block volumes
     # ("insufficient permissions: write volume" without it, 2026-11-13).
-    permission_set_names = ["InstancesFullAccess", "BlockStorageFullAccess", "ContainerRegistryReadOnly"]
+    permission_set_names = ["InstancesFullAccess", "BlockStorageFullAccess"]
   }
 }
 
 resource "scaleway_iam_api_key" "ci_broker" {
   application_id     = scaleway_iam_application.ci_broker.id
-  description        = "Broker: create/terminate ephemeral CI instances; worker image pull"
+  description        = "Broker: create/terminate ephemeral CI instances"
+  default_project_id = scaleway_account_project.quill.id
+
+  lifecycle {
+    ignore_changes = [expires_at]
+  }
+}
+
+# Pull-only identity for the CI instances' worker image: readable by any job
+# on the box, so it can do nothing but pull images.
+resource "scaleway_iam_application" "ci_pull" {
+  name        = "quill-ci-pull"
+  description = "CI instances: pull the worker image from the Container Registry (read-only)."
+}
+
+resource "scaleway_iam_policy" "ci_pull" {
+  name           = "quill-ci-pull-policy"
+  description    = "Container Registry read-only, scoped to the Quill project."
+  application_id = scaleway_iam_application.ci_pull.id
+
+  rule {
+    project_ids          = [scaleway_account_project.quill.id]
+    permission_set_names = ["ContainerRegistryReadOnly"]
+  }
+}
+
+resource "scaleway_iam_api_key" "ci_pull" {
+  application_id     = scaleway_iam_application.ci_pull.id
+  description        = "CI instances: worker image pull (read-only)"
   default_project_id = scaleway_account_project.quill.id
 
   lifecycle {
@@ -57,7 +90,7 @@ resource "scaleway_container" "broker" {
   cpu_limit    = 140
   memory_limit = 256
   min_scale    = 0
-  max_scale    = 1 # EnsureWorker is single-flighted in-process
+  max_scale    = 1 # EnsureWorker(s) is single-flighted in-process
 
   privacy                = "public" # every route but /healthz is HMAC-gated
   protocol               = "http1"
@@ -72,6 +105,7 @@ resource "scaleway_container" "broker" {
     QUILL_CIB_API_URL           = "https://${local.api_host}"
     QUILL_CIB_WORKER_IMAGE      = "${local.registry}/quill-backend:${var.image_tag}"
     QUILL_CIB_REGISTRY_USER     = "nologin"
+    QUILL_CIB_MAX_INSTANCES     = "3"
     QUILL_PIPELINE_UBUNTU_IMAGE = "node:22-bookworm"
   }
   secret_environment_variables = {
@@ -79,7 +113,7 @@ resource "scaleway_container" "broker" {
     SCW_ACCESS_KEY                 = scaleway_iam_api_key.ci_broker.access_key
     SCW_SECRET_KEY                 = scaleway_iam_api_key.ci_broker.secret_key
     SCW_DEFAULT_PROJECT_ID         = scaleway_account_project.quill.id
-    QUILL_CIB_REGISTRY_PASSWORD    = scaleway_iam_api_key.ci_broker.secret_key
+    QUILL_CIB_REGISTRY_PASSWORD    = scaleway_iam_api_key.ci_pull.secret_key
   }
 
   liveness_probe {

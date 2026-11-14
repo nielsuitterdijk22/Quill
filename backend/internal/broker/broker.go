@@ -27,6 +27,20 @@ type Orchestrator interface {
 	EnsureWorker(ctx context.Context) (instanceID string, created bool, err error)
 }
 
+// IsolatingOrchestrator is the per-repository CI shape (2026-11-14): one
+// instance per repository waiting for work, each with its own worker token,
+// terminated on the api's request when its worker retires.
+type IsolatingOrchestrator interface {
+	Orchestrator
+	// EnsureWorkers boots instances so that `need` repositories (the api's
+	// count of repos with queued work and no live worker) get one each,
+	// counting instances still booting (not yet bound). Returns the ids of
+	// instances it created.
+	EnsureWorkers(ctx context.Context, need int) ([]string, error)
+	// Retire terminates one CI instance (only instances carrying the CI tag).
+	Retire(ctx context.Context, instanceID string) error
+}
+
 // Config wires the broker.
 type Config struct {
 	// Secret is QUILL_PIPELINE_DISPATCH_SECRET: the same shared secret the
@@ -62,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/wake", s.handleWake)
+	mux.HandleFunc("/retire", s.handleRetire)
 	return mux
 }
 
@@ -90,8 +105,28 @@ func (s *Server) handleWake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var in struct {
+		Need int `json:"need"`
+	}
+	_ = json.Unmarshal(body, &in)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if iso, ok := s.cfg.Orchestrator.(IsolatingOrchestrator); ok && in.Need > 0 {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Minute)
+		defer cancel()
+		ids, err := iso.EnsureWorkers(ctx, in.Need)
+		if err != nil {
+			s.cfg.Logger.Error("ensure workers failed", "error", err)
+			http.Error(w, "ensure workers failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.cfg.Logger.Info("wake", "need", in.Need, "created", ids)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{"created_ids": ids, "created": len(ids) > 0})
+		return
+	}
 	// Detached from the request: the api's wake is fire-and-forget with a
 	// short timeout, and a hang-up must never abort create → user-data →
 	// power-on halfway (that strands a powered-off instance).
@@ -121,4 +156,48 @@ func dispatchSignature(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// handleRetire terminates one CI instance at the api's request (HMAC): the
+// worker on it has retired. Workers hold no cloud credentials, so this is
+// the only way an instance goes away besides the TTL and the stopped-reaper.
+func (s *Server) handleRetire(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.cfg.Secret == "" {
+		http.Error(w, "broker unconfigured (no dispatch secret)", http.StatusServiceUnavailable)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	if err != nil {
+		http.Error(w, "read body", http.StatusBadRequest)
+		return
+	}
+	if got := r.Header.Get("X-Quill-Dispatch-Signature"); got == "" || !hmac.Equal([]byte(dispatchSignature(s.cfg.Secret, body)), []byte(got)) {
+		http.Error(w, "invalid or missing dispatch signature", http.StatusUnauthorized)
+		return
+	}
+	var in struct {
+		InstanceID string `json:"instance_id"`
+	}
+	if err := json.Unmarshal(body, &in); err != nil || in.InstanceID == "" {
+		http.Error(w, "instance_id required", http.StatusBadRequest)
+		return
+	}
+	iso, ok := s.cfg.Orchestrator.(IsolatingOrchestrator)
+	if !ok {
+		http.Error(w, "retire unsupported", http.StatusNotImplemented)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), time.Minute)
+	defer cancel()
+	if err := iso.Retire(ctx, in.InstanceID); err != nil {
+		s.cfg.Logger.Warn("retire failed", "instance", in.InstanceID, "error", err)
+		http.Error(w, "retire failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	s.cfg.Logger.Info("retired CI instance", "instance", in.InstanceID)
+	w.WriteHeader(http.StatusNoContent)
 }

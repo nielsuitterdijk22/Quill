@@ -7,7 +7,11 @@
 // Environment:
 //
 //	QUILL_API_URL                     api base URL (https://api.<host>)
-//	QUILL_PIPELINE_DISPATCH_SECRET    shared HMAC secret for the dispatch endpoints
+//	QUILL_CIW_TOKEN                   this instance's worker token (isolated CI,
+//	                                  2026-11-14): worker id comes from it, the api
+//	                                  binds the worker to one repo, retire goes
+//	                                  through the api — no secret or cloud key here
+//	QUILL_PIPELINE_DISPATCH_SECRET    legacy: shared HMAC secret (local/dev workers)
 //	QUILL_CIW_ZONE                    Scaleway zone of the ephemeral instance
 //	QUILL_CIW_WORKER_ID               worker identity (default: ciworker-<hostname>)
 //	QUILL_CIW_IDLE_EXIT               dry-queue time before retiring (default 2m)
@@ -29,6 +33,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/ciworker"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
+	"github.com/nielsuitterdijk22/quill/internal/workertoken"
 )
 
 func getenv(key, def string) string {
@@ -48,12 +53,22 @@ func getboolEnv(key string) bool {
 
 func main() {
 	apiURL := getenv("QUILL_API_URL", "")
+	token := os.Getenv("QUILL_CIW_TOKEN")
 	secret := os.Getenv("QUILL_PIPELINE_DISPATCH_SECRET")
-	if apiURL == "" || secret == "" {
-		fatal("QUILL_API_URL and QUILL_PIPELINE_DISPATCH_SECRET are required")
+	if apiURL == "" || (token == "" && secret == "") {
+		fatal("QUILL_API_URL and QUILL_CIW_TOKEN (or legacy QUILL_PIPELINE_DISPATCH_SECRET) are required")
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	workerID := getenv("QUILL_CIW_WORKER_ID", "ciworker-"+mustHostname())
+	client := ciworker.NewClient(apiURL, secret)
+	if token != "" {
+		claims, err := workertoken.Peek(token)
+		if err != nil {
+			fatal("QUILL_CIW_TOKEN is not a worker token")
+		}
+		workerID = claims.Worker // the api ignores any other id for a token
+		client = ciworker.NewTokenClient(apiURL, token)
+	}
 	idleExit, err := time.ParseDuration(getenv("QUILL_CIW_IDLE_EXIT", "2m"))
 	if err != nil {
 		fatal("invalid QUILL_CIW_IDLE_EXIT: %v", err)
@@ -61,10 +76,13 @@ func main() {
 
 	var terminate ciworker.Terminator
 	if getboolEnv("QUILL_CIW_SELF_TERMINATE") {
-		terminate = ciworker.ScalewayTerminator(getenv("QUILL_CIW_ZONE", "fr-par-1"))
+		if token != "" {
+			terminate = ciworker.APIRetirer(client)
+		} else {
+			terminate = ciworker.ScalewayTerminator(getenv("QUILL_CIW_ZONE", "fr-par-1"))
+		}
 	}
 
-	client := ciworker.NewClient(apiURL, secret)
 	runner := pipeline.NewActRunner()
 	logger.Info("ciworker draining queue", "worker", workerID, "idle_exit", idleExit)
 	processed, err := ciworker.Drain(context.Background(), client, workerID, runner, idleExit, terminate,

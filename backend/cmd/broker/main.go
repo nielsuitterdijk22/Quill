@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,22 +54,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	cloudInit := broker.CloudInit(broker.CloudInitOpts{
-		APIURL:           strings.TrimRight(apiURL, "/"),
-		DispatchSecret:   secret,
-		WorkerImage:      workerImage,
-		Zone:             zone,
-		InstanceTag:      tag,
+	base := broker.CloudInitOpts{
+		APIURL:      strings.TrimRight(apiURL, "/"),
+		WorkerImage: workerImage,
+		Zone:        zone,
+		InstanceTag: tag,
+		// Pull-only key: everything on a CI machine is readable by its jobs.
 		RegistryUser:     os.Getenv("QUILL_CIB_REGISTRY_USER"),
 		RegistryPassword: os.Getenv("QUILL_CIB_REGISTRY_PASSWORD"),
-		// The worker self-terminates with the broker's own instance key
-		// (Scaleway IAM cannot scope a key to tagged servers, so a separate
-		// worker key would carry the same rights).
-		SCWAccessKey: os.Getenv("SCW_ACCESS_KEY"),
-		SCWSecretKey: os.Getenv("SCW_SECRET_KEY"),
-		SCWProjectID: projectID,
-		UbuntuImage:  os.Getenv("QUILL_PIPELINE_UBUNTU_IMAGE"),
-	})
+		UbuntuImage:      os.Getenv("QUILL_PIPELINE_UBUNTU_IMAGE"),
+	}
+	maxInstances, _ := strconv.Atoi(getenv("QUILL_CIB_MAX_INSTANCES", "3"))
 
 	orch, err := broker.NewScalewayOrchestrator(broker.ScalewayConfig{
 		Zone:           zone,
@@ -76,7 +72,13 @@ func main() {
 		InstanceTag:    tag,
 		CommercialType: getenv("QUILL_CIB_INSTANCE_TYPE", "DEV1-S"),
 		TTL:            ttl,
-		CloudInit:      cloudInit,
+		TokenSecret:    secret,
+		MaxInstances:   maxInstances,
+		CloudInitFor: func(token string) string {
+			o := base
+			o.WorkerToken = token
+			return broker.CloudInit(o)
+		},
 	}, logger)
 	if err != nil {
 		logger.Error("orchestrator init failed", "error", err)

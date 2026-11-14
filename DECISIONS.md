@@ -354,3 +354,35 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   stays because a broken release can take Quill CI down with it.
 - **Leftover:** the policy also carries an unneeded ObjectStorageFullAccess rule on the default project (scw CLI
   can't delete single rules); harmless, remove in the console.
+
+## 2026-11-14 — CI isolation: one secret scope per CI instance, nothing platform-wide on the box (owner: "go ahead")
+
+- **Problem:** one ephemeral instance drained every tenant's queue; job containers get the host Docker socket
+  (root on the box) and the box carried the platform-wide dispatch secret (claims any tenant's jobs, secrets
+  included) and the broker's instance-management key. Blocking the metadata service alone would not help: a job
+  could read the worker's env file through the socket.
+- **Decision:** treat the instance as the sandbox and make it single-scope.
+  - The broker mints a **per-instance worker token** (`internal/workertoken`: worker id + instance id + expiry,
+    HMAC with the dispatch secret) and puts it in user-data instead of the dispatch secret. The api accepts the
+    token on `/internal/dispatch/*`; the worker id always comes from the token (body ignored).
+  - The api **binds a token worker to the secret scope of its first claim** (repository + deployment environment,
+    `pipeline_queue.ci_scope`, `ci_worker_bindings`); later claims only return that scope; unbound workers skip
+    scopes a live worker serves; a retired worker never claims again. A pull-request run that breaks out cannot
+    claim its repo's production-environment deploy, nor anything of another repo/tenant.
+  - Wakes carry `need` (scopes with queued work and no live worker); the broker boots one instance per scope,
+    counting instances still booting, capped at 3.
+  - **No cloud key on the box:** the worker retires via `POST /internal/dispatch/retire`; the api ends the binding
+    and asks the broker (HMAC) to terminate exactly that tagged instance. Image pulls use a new pull-only IAM key
+    (`quill-ci-pull`); the broker key lost its registry permission.
+  - The metadata service is blocked for the whole machine (OUTPUT as well as DOCKER-USER) before the worker
+    starts — defence in depth only, since a root-equivalent job could lift it.
+- **Tests:** `TestCIWorkerRepoIsolation` (scope binding incl. environments), `TestDispatchWorkerToken` (forged/
+  expired tokens, impersonation), broker wake/retire, and the live `TestCIBreakout` (a hostile workflow reads the
+  host through the socket and must find no secret, no metadata, and no further work for the stolen token).
+  `TestCloudInitCarriesTerminationCredsAndBlocksMetadata` asserted the cloud key WAS on the box — the property this
+  change removes — so it became `TestCloudInitIsolatesTheMachine` (all other assertions kept, plus "no key, no
+  dispatch secret").
+- **Rejected:** a per-run Docker-in-Docker daemon (a privileged DinD container is not a boundary against a
+  root-equivalent job, and adds per-run cost); dropping the socket (the platform's own deploy builds images).
+- **Remaining:** jobs of the same scope share an instance (same secrets, by design); the legacy HMAC path stays
+  for trusted infrastructure.

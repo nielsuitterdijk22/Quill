@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -289,8 +290,15 @@ type PipelineQueueJob struct {
 // JobSpec for runID. The tenant is stamped here (nullable like audit_log) so
 // metering never depends on a join surviving tenant deletion.
 func (s *Store) EnqueuePipelineJob(ctx context.Context, runID uuid.UUID, tenantID uuid.NullUUID, spec []byte) error {
-	const q = `INSERT INTO pipeline_queue (run_id, tenant_id, spec) VALUES ($1, $2, $3)`
-	_, err := s.pool.Exec(ctx, q, runID, tenantID, spec)
+	return s.EnqueuePipelineJobScoped(ctx, runID, tenantID, spec, "")
+}
+
+// EnqueuePipelineJobScoped is EnqueuePipelineJob with the job's CI secret
+// scope (repository + environment): isolated CI instances only ever serve
+// one scope. An empty scope falls back to the repository.
+func (s *Store) EnqueuePipelineJobScoped(ctx context.Context, runID uuid.UUID, tenantID uuid.NullUUID, spec []byte, scope string) error {
+	const q = `INSERT INTO pipeline_queue (run_id, tenant_id, spec, ci_scope) VALUES ($1, $2, $3, $4)`
+	_, err := s.pool.Exec(ctx, q, runID, tenantID, spec, scope)
 	return err
 }
 
@@ -315,6 +323,111 @@ func (s *Store) ClaimPipelineJob(ctx context.Context, worker string, staleAfter 
 		&j.ID, &j.RunID, &j.TenantID, &j.Spec, &j.Status, &j.Attempts, &j.ClaimedBy, &j.ClaimedAt, &j.CreatedAt, &j.UpdatedAt,
 	)
 	return j, err
+}
+
+// ciWorkerLive is how recently a bound worker must have been seen to keep
+// its scope to itself.
+const ciWorkerLive = "5 minutes"
+
+// ciScopeExpr is a queue row's CI scope (rows enqueued before scopes existed
+// fall back to their repository).
+const ciScopeExpr = "COALESCE(NULLIF(q.ci_scope, ''), p.repo_id::text)"
+
+// ClaimPipelineJobScoped is ClaimPipelineJob for an isolated CI instance
+// (token-authenticated worker): a worker bound to a repo only gets that
+// repo's jobs; an unbound worker gets the oldest job of a repo no live
+// worker serves, and is bound to it in the same transaction. repoID is the
+// claimed job's repository.
+func (s *Store) ClaimPipelineJobScoped(ctx context.Context, worker string, staleAfter time.Duration) (PipelineQueueJob, uuid.UUID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return PipelineQueueJob{}, uuid.Nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var bound *string
+	var retired bool
+	err = tx.QueryRow(ctx, `
+		UPDATE ci_worker_bindings SET last_seen = CASE WHEN retired_at IS NULL THEN now() ELSE last_seen END
+		WHERE worker_id = $1 RETURNING scope, retired_at IS NOT NULL`, worker).Scan(&bound, &retired)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return PipelineQueueJob{}, uuid.Nil, err
+	}
+	if retired {
+		// A retired worker never claims again.
+		return PipelineQueueJob{}, uuid.Nil, pgx.ErrNoRows
+	}
+	q := `
+		UPDATE pipeline_queue
+		SET status = 'claimed', claimed_by = $1, claimed_at = now(), attempts = attempts + 1, updated_at = now()
+		WHERE id = (
+			SELECT q.id FROM pipeline_queue q
+			JOIN pipeline_runs r ON r.id = q.run_id
+			JOIN pipelines p ON p.id = r.pipeline_id
+			WHERE (q.status = 'pending'
+			       OR (q.status = 'claimed' AND q.claimed_at < now() - make_interval(secs => $2::double precision)))
+			  AND (($3::text IS NOT NULL AND ` + ciScopeExpr + ` = $3)
+			       OR ($3::text IS NULL AND NOT EXISTS (
+			           SELECT 1 FROM ci_worker_bindings b
+			           WHERE b.scope = ` + ciScopeExpr + ` AND b.worker_id <> $1 AND b.retired_at IS NULL
+			             AND b.last_seen > now() - interval '` + ciWorkerLive + `')))
+			ORDER BY q.created_at
+			LIMIT 1
+			FOR UPDATE OF q SKIP LOCKED
+		)
+		RETURNING id, run_id, tenant_id, spec, status, attempts, claimed_by, claimed_at, created_at, updated_at, ci_scope`
+	var j PipelineQueueJob
+	var rowScope string
+	if err := tx.QueryRow(ctx, q, worker, staleAfter.Seconds(), bound).Scan(
+		&j.ID, &j.RunID, &j.TenantID, &j.Spec, &j.Status, &j.Attempts, &j.ClaimedBy, &j.ClaimedAt, &j.CreatedAt, &j.UpdatedAt, &rowScope,
+	); err != nil {
+		return PipelineQueueJob{}, uuid.Nil, err
+	}
+	var repoID uuid.UUID
+	if err := tx.QueryRow(ctx, `
+		SELECT p.repo_id FROM pipeline_runs r JOIN pipelines p ON p.id = r.pipeline_id WHERE r.id = $1`, j.RunID).Scan(&repoID); err != nil {
+		return PipelineQueueJob{}, uuid.Nil, err
+	}
+	if bound == nil {
+		scope := rowScope
+		if scope == "" {
+			scope = repoID.String()
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO ci_worker_bindings (worker_id, repo_id, scope) VALUES ($1, $2, $3)
+			ON CONFLICT (worker_id) DO NOTHING`, worker, repoID, scope); err != nil {
+			return PipelineQueueJob{}, uuid.Nil, err
+		}
+	}
+	return j, repoID, tx.Commit(ctx)
+}
+
+// TouchCIWorker marks a bound worker as alive.
+func (s *Store) TouchCIWorker(ctx context.Context, worker string) {
+	_, _ = s.pool.Exec(ctx, `UPDATE ci_worker_bindings SET last_seen = now() WHERE worker_id = $1 AND retired_at IS NULL`, worker)
+}
+
+// RetireCIWorker ends a worker's binding (its instance is going away).
+func (s *Store) RetireCIWorker(ctx context.Context, worker string) error {
+	// An unbound worker never ran a job: nothing to retire.
+	_, err := s.pool.Exec(ctx, `UPDATE ci_worker_bindings SET retired_at = now() WHERE worker_id = $1`, worker)
+	return err
+}
+
+// CIReposNeedingWorker counts repositories with claimable queue rows that
+// no live worker serves — how many fresh CI instances the queue wants.
+func (s *Store) CIReposNeedingWorker(ctx context.Context, staleAfter time.Duration) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(DISTINCT `+ciScopeExpr+`) FROM pipeline_queue q
+		JOIN pipeline_runs r ON r.id = q.run_id
+		JOIN pipelines p ON p.id = r.pipeline_id
+		WHERE (q.status = 'pending'
+		       OR (q.status = 'claimed' AND q.claimed_at < now() - make_interval(secs => $1::double precision)))
+		  AND NOT EXISTS (
+		      SELECT 1 FROM ci_worker_bindings b
+		      WHERE b.scope = `+ciScopeExpr+` AND b.retired_at IS NULL
+		        AND b.last_seen > now() - interval '`+ciWorkerLive+`')`, staleAfter.Seconds()).Scan(&n)
+	return n, err
 }
 
 // HeartbeatPipelineJob refreshes a claim's liveness. It only succeeds while

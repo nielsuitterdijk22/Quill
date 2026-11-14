@@ -10,6 +10,8 @@ import (
 	block "github.com/scaleway/scaleway-sdk-go/api/block/v1"
 	instance "github.com/scaleway/scaleway-sdk-go/api/instance/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
+
+	"github.com/nielsuitterdijk22/quill/internal/workertoken"
 )
 
 // ScalewayConfig for the ephemeral CI instance.
@@ -27,9 +29,16 @@ type ScalewayConfig struct {
 	// TTL bounds a worker's life even if ciworker's self-termination fails —
 	// the wedge lesson: a wedged CI box must not cost money forever.
 	TTL time.Duration
-	// CloudInit is the rendered user-data script that installs Docker and
-	// runs the ciworker container (built by Config.CloudInitFor).
-	CloudInit string
+	// CloudInitFor renders an instance's user-data around its own worker
+	// token (minted per instance with TokenSecret).
+	CloudInitFor func(workerToken string) string
+	// TokenSecret signs worker tokens (the dispatch secret: the api verifies).
+	TokenSecret string
+	// MaxInstances caps concurrently alive CI instances (default 3).
+	MaxInstances int
+	// BootGrace: an instance younger than this has probably not claimed (and
+	// bound) yet, so it still counts toward the repos that need a worker.
+	BootGrace time.Duration
 }
 
 // ScalewayOrchestrator manages the ephemeral CI instance through the Scaleway
@@ -61,8 +70,14 @@ func NewScalewayOrchestrator(cfg ScalewayConfig, logger *slog.Logger) (*Scaleway
 	if cfg.InstanceTag == "" {
 		return nil, fmt.Errorf("instance tag is required")
 	}
-	if cfg.CloudInit == "" {
-		return nil, fmt.Errorf("cloud-init is required")
+	if cfg.CloudInitFor == nil || cfg.TokenSecret == "" {
+		return nil, fmt.Errorf("cloud-init renderer and token secret are required")
+	}
+	if cfg.MaxInstances <= 0 {
+		cfg.MaxInstances = 3
+	}
+	if cfg.BootGrace == 0 {
+		cfg.BootGrace = 6 * time.Minute
 	}
 	client, err := scw.NewClient(scw.WithEnv())
 	if err != nil {
@@ -78,34 +93,27 @@ func NewScalewayOrchestrator(cfg ScalewayConfig, logger *slog.Logger) (*Scaleway
 	}, nil
 }
 
-// EnsureWorker implements Orchestrator: with no running/starting CI instance
-// it boots one; it also TTL-kills strays created by a previous broker run
-// whose ciworker never self-terminated.
-func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, error) {
+// scan lists CI instances, TTL-kills stuck ones and reaps stopped ones; it
+// returns the instances that are running or starting.
+func (o *ScalewayOrchestrator) scan(ctx context.Context) ([]*instance.Server, error) {
 	o.reapOrphanVolumes(ctx)
 	resp, err := o.api.ListServers(&instance.ListServersRequest{
 		Zone: o.zone, Tags: []string{o.cfg.InstanceTag},
 	}, scw.WithContext(ctx))
 	if err != nil {
-		return "", false, fmt.Errorf("list ci instances: %w", err)
+		return nil, fmt.Errorf("list ci instances: %w", err)
 	}
-
-	var alive *instance.Server
+	var alive []*instance.Server
 	for i := range resp.Servers {
 		srv := resp.Servers[i]
 		switch srv.State {
 		case instance.ServerStateRunning, instance.ServerStateStarting:
 			// TTL kill: a worker alive past its TTL is stuck (wedged act job,
-			// lost self-termination) — power it off and let the create below
-			// replace it. Cost safety beats job safety for a CI box.
-			created := time.Time{}
-			if srv.CreationDate != nil {
-				created = *srv.CreationDate
-			}
-			if time.Since(created) > o.cfg.TTL {
-				o.logger.Warn("TTL-killing stuck CI instance", "id", srv.ID, "age", time.Since(created).Round(time.Minute))
-				// terminate = power off + delete server + delete its volumes,
-				// server-side; a bare poweroff would leave a billed volume.
+			// lost retire) — terminate it. Cost safety beats job safety.
+			if time.Since(created(srv)) > o.cfg.TTL {
+				o.logger.Warn("TTL-killing stuck CI instance", "id", srv.ID, "age", time.Since(created(srv)).Round(time.Minute))
+				// terminate = power off + delete server, server-side; a bare
+				// poweroff would leave a billed volume.
 				if _, err := o.api.ServerAction(&instance.ServerActionRequest{
 					Zone: o.zone, ServerID: srv.ID, Action: instance.ServerActionTerminate,
 				}, scw.WithContext(ctx)); err != nil {
@@ -113,24 +121,95 @@ func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, 
 				}
 				continue
 			}
-			if alive == nil {
-				alive = srv
-			}
+			alive = append(alive, srv)
 		case instance.ServerStateStopped, instance.ServerStateStoppedInPlace:
-			// A worker that halted without deleting itself (self-termination
-			// failed): reap it with its volumes so nothing keeps billing.
+			// A worker that halted without being retired: reap it with its
+			// volumes so nothing keeps billing.
 			o.reapStopped(ctx, srv)
 		}
 	}
-	if alive != nil {
-		return alive.ID, false, nil
-	}
+	return alive, nil
+}
 
-	imageID, err := o.marketplaceImage(ctx)
+func created(srv *instance.Server) time.Time {
+	if srv.CreationDate != nil {
+		return *srv.CreationDate
+	}
+	return time.Time{}
+}
+
+// EnsureWorker implements Orchestrator (count-less wake from an older api):
+// with no running/starting CI instance it boots one.
+func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, error) {
+	alive, err := o.scan(ctx)
 	if err != nil {
 		return "", false, err
 	}
-	created, err := o.api.CreateServer(&instance.CreateServerRequest{
+	if len(alive) > 0 {
+		return alive[0].ID, false, nil
+	}
+	id, err := o.createInstance(ctx)
+	return id, err == nil, err
+}
+
+// EnsureWorkers implements IsolatingOrchestrator: one instance per repo that
+// waits for a worker, minus instances still booting (they will bind to one
+// of those repos), capped at MaxInstances alive.
+func (o *ScalewayOrchestrator) EnsureWorkers(ctx context.Context, need int) ([]string, error) {
+	alive, err := o.scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	booting := 0
+	for _, srv := range alive {
+		if time.Since(created(srv)) < o.cfg.BootGrace {
+			booting++
+		}
+	}
+	n := need - booting
+	if room := o.cfg.MaxInstances - len(alive); n > room {
+		n = room
+	}
+	var ids []string
+	for i := 0; i < n; i++ {
+		id, err := o.createInstance(ctx)
+		if err != nil {
+			return ids, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// Retire implements IsolatingOrchestrator: terminates one CI instance —
+// refusing anything that does not carry the CI tag.
+func (o *ScalewayOrchestrator) Retire(ctx context.Context, instanceID string) error {
+	got, err := o.api.GetServer(&instance.GetServerRequest{Zone: o.zone, ServerID: instanceID}, scw.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("get instance: %w", err)
+	}
+	tagged := false
+	for _, t := range got.Server.Tags {
+		tagged = tagged || t == o.cfg.InstanceTag
+	}
+	if !tagged {
+		return fmt.Errorf("instance %s is not a CI instance", instanceID)
+	}
+	if _, err := o.api.ServerAction(&instance.ServerActionRequest{
+		Zone: o.zone, ServerID: instanceID, Action: instance.ServerActionTerminate,
+	}, scw.WithContext(ctx)); err != nil {
+		return fmt.Errorf("terminate: %w", err)
+	}
+	return nil
+}
+
+// createInstance boots one CI instance with its own worker token.
+func (o *ScalewayOrchestrator) createInstance(ctx context.Context) (string, error) {
+	imageID, err := o.marketplaceImage(ctx)
+	if err != nil {
+		return "", err
+	}
+	createdSrv, err := o.api.CreateServer(&instance.CreateServerRequest{
 		Zone:              o.zone,
 		Name:              fmt.Sprintf("%s-%x", o.cfg.InstanceTag, time.Now().UnixNano()>>25),
 		CommercialType:    o.cfg.CommercialType,
@@ -140,11 +219,12 @@ func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, 
 		DynamicIPRequired: scw.BoolPtr(true),
 	}, scw.WithContext(ctx))
 	if err != nil {
-		return "", false, fmt.Errorf("create ci instance: %w", err)
+		return "", fmt.Errorf("create ci instance: %w", err)
 	}
+	id := createdSrv.Server.ID
 	// Tag the SBS root volume: the server-side terminate action deletes the
 	// server but NOT its SBS volumes, so the reaper finds orphans by this tag.
-	for _, v := range created.Server.Volumes {
+	for _, v := range createdSrv.Server.Volumes {
 		if v != nil && v.VolumeType == instance.VolumeServerVolumeTypeSbsVolume {
 			tags := []string{o.cfg.InstanceTag}
 			if _, err := o.block.UpdateVolume(&block.UpdateVolumeRequest{
@@ -154,25 +234,32 @@ func (o *ScalewayOrchestrator) EnsureWorker(ctx context.Context) (string, bool, 
 			}
 		}
 	}
+	token, err := workertoken.Mint(o.cfg.TokenSecret, workertoken.Claims{
+		Worker:   "ciw-" + id,
+		Instance: id,
+		Expires:  time.Now().Add(o.cfg.TTL + 30*time.Minute).Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
 	// cloud-init travels as user data (this SDK generation dropped the
 	// CreateServerRequest.CloudInit field): set before power-on, key is
 	// literally "cloud-init".
 	if err := o.api.SetServerUserData(&instance.SetServerUserDataRequest{
 		Zone:     o.zone,
-		ServerID: created.Server.ID,
+		ServerID: id,
 		Key:      "cloud-init",
-		Content:  strings.NewReader(o.cfg.CloudInit),
+		Content:  strings.NewReader(o.cfg.CloudInitFor(token)),
 	}, scw.WithContext(ctx)); err != nil {
-		return "", false, fmt.Errorf("set cloud-init: %w", err)
+		return "", fmt.Errorf("set cloud-init: %w", err)
 	}
-	_, err = o.api.ServerAction(&instance.ServerActionRequest{
-		Zone: o.zone, ServerID: created.Server.ID, Action: instance.ServerActionPoweron,
-	}, scw.WithContext(ctx))
-	if err != nil {
-		return "", false, fmt.Errorf("power on ci instance: %w", err)
+	if _, err := o.api.ServerAction(&instance.ServerActionRequest{
+		Zone: o.zone, ServerID: id, Action: instance.ServerActionPoweron,
+	}, scw.WithContext(ctx)); err != nil {
+		return "", fmt.Errorf("power on ci instance: %w", err)
 	}
-	o.logger.Info("booted ephemeral CI instance", "id", created.Server.ID, "type", o.cfg.CommercialType)
-	return created.Server.ID, true, nil
+	o.logger.Info("booted ephemeral CI instance", "id", id, "type", o.cfg.CommercialType)
+	return id, nil
 }
 
 // marketplaceImage resolves the configured image label through the public

@@ -29,7 +29,15 @@ import (
 type Client struct {
 	base   string
 	secret string
+	token  string // per-instance worker token (preferred over secret)
 	http   *http.Client
+}
+
+// NewTokenClient builds a queue client that authenticates with this
+// instance's worker token (Authorization: Bearer qcw1…) — the isolated CI
+// shape, where the machine never holds the dispatch secret.
+func NewTokenClient(baseURL, token string) *Client {
+	return &Client{base: baseURL, token: token, http: &http.Client{Timeout: 30 * time.Second}}
 }
 
 // NewClient builds a queue client against baseURL (scheme://host[:port]).
@@ -59,9 +67,13 @@ func (c *Client) do(ctx context.Context, path string, in, out any) (int, error) 
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	mac := hmac.New(sha256.New, []byte(c.secret))
-	mac.Write(raw)
-	req.Header.Set("X-Quill-Dispatch-Signature", hex.EncodeToString(mac.Sum(nil)))
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	} else {
+		mac := hmac.New(sha256.New, []byte(c.secret))
+		mac.Write(raw)
+		req.Header.Set("X-Quill-Dispatch-Signature", hex.EncodeToString(mac.Sum(nil)))
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return 0, err
@@ -149,4 +161,17 @@ func (c *Client) Logs(ctx context.Context, workerID string, queueID uuid.UUID, l
 		"worker": workerID, "queue_id": queueID.String(), "lines": lines,
 	}, nil)
 	return err
+}
+
+// Retire tells the api this instance is done; the api ends the worker's
+// repo binding and has the broker terminate the instance (token clients
+// only — the machine holds no cloud credentials).
+func (c *Client) Retire(ctx context.Context) error {
+	_, err := c.do(ctx, "/api/v1/internal/dispatch/retire", map[string]string{}, nil)
+	return err
+}
+
+// APIRetirer is the Terminator for token clients.
+func APIRetirer(c *Client) Terminator {
+	return func(ctx context.Context) error { return c.Retire(ctx) }
 }

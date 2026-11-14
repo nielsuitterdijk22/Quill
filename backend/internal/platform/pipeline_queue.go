@@ -145,19 +145,25 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 		RepoFullName:    fullName,
 		Secrets:         secrets,
 	}
-	return run, s.enqueueSpec(ctx, run, tenantID, spec)
+	// CI secret scope: an isolated CI instance only ever serves runs that
+	// draw the same secrets (repository + environment).
+	scope := repo.ID.String() + "/-"
+	if envID.Valid {
+		scope = repo.ID.String() + "/" + envID.UUID.String()
+	}
+	return run, s.enqueueSpec(ctx, run, tenantID, spec, scope)
 }
 
 // enqueueSpec serialises spec and inserts the queue row. The JobSpec dict
 // carries resolved secrets: the trust domain is unchanged from the inline
 // path (the same JSON already travels to the dispatcher over HMAC) — the
 // queue row must never be exposed through client-facing endpoints.
-func (s *Service) enqueueSpec(ctx context.Context, run db.PipelineRun, tenantID uuid.NullUUID, spec pipeline.JobSpec) error {
+func (s *Service) enqueueSpec(ctx context.Context, run db.PipelineRun, tenantID uuid.NullUUID, spec pipeline.JobSpec, scope string) error {
 	raw, err := json.Marshal(spec)
 	if err != nil {
 		return fmt.Errorf("encode job spec: %w", err)
 	}
-	if err := s.store.EnqueuePipelineJob(ctx, run.ID, tenantID, raw); err != nil {
+	if err := s.store.EnqueuePipelineJobScoped(ctx, run.ID, tenantID, raw, scope); err != nil {
 		return fmt.Errorf("enqueue job: %w", err)
 	}
 	s.wakeBroker()
@@ -177,7 +183,7 @@ func (s *Service) wakeBroker() {
 		// instance before answering (it no longer aborts on hang-up either).
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		wakeOnce(ctx, url, secret, s.logger)
+		s.wakeOnceNeed(ctx, url, secret)
 	}()
 }
 
@@ -192,6 +198,45 @@ func (s *Service) WithBroker(url, dispatchSecret string) *Service {
 }
 
 // wakeOnce signs and POSTs a wake-up. Same HMAC scheme as every dispatch leg.
+// The body carries how many repositories wait for a CI instance (isolated
+// workers serve one repo each), so the broker can boot one per repo.
+func (s *Service) wakeOnceNeed(ctx context.Context, url, secret string) {
+	need, err := s.store.CIReposNeedingWorker(ctx, queueVisibilityTimeout)
+	if err != nil {
+		s.logger.Warn("broker wake: count repos needing a worker", "error", err)
+		need = 1
+	}
+	if need == 0 {
+		return
+	}
+	signedPost(ctx, url+"/wake", secret, map[string]any{"need": need}, s.logger)
+}
+
+// signedPost POSTs a JSON body to the broker with the dispatch HMAC.
+func signedPost(ctx context.Context, url, secret string, payload any, logger *slog.Logger) int {
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		logger.Warn("broker call: build request", "error", err)
+		return 0
+	}
+	req.Header.Set("Content-Type", "application/json")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	req.Header.Set("X-Quill-Dispatch-Signature", hex.EncodeToString(mac.Sum(nil)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.Info("broker call failed", "url", url, "error", err)
+		return 0
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		logger.Info("broker call refused", "url", url, "status", resp.StatusCode)
+	}
+	return resp.StatusCode
+}
+
+// wakeOnce is the legacy count-less wake (kept for callers without a store).
 func wakeOnce(ctx context.Context, url, secret string, logger *slog.Logger) {
 	body := []byte("{}")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+"/wake", bytes.NewReader(body))
@@ -238,6 +283,51 @@ func (s *Service) ClaimQueuedJob(ctx context.Context, workerID string) (*QueuedJ
 		Attempts: row.Attempts,
 		Spec:     spec,
 	}, nil
+}
+
+// ClaimQueuedJobScoped is ClaimQueuedJob for an isolated CI instance (a
+// token-authenticated worker): it only ever receives jobs of the one
+// repository it is bound to (bound by its first claim), so a job that breaks
+// out of its container on that instance can reach nothing beyond that repo.
+func (s *Service) ClaimQueuedJobScoped(ctx context.Context, workerID string) (*QueuedJob, error) {
+	row, _, err := s.store.ClaimPipelineJobScoped(ctx, workerID, queueVisibilityTimeout)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("claim job: %w", err)
+	}
+	if err := s.store.SetPipelineRunRunning(ctx, row.RunID); err != nil {
+		return nil, fmt.Errorf("mark run running: %w", err)
+	}
+	var spec pipeline.JobSpec
+	if err := json.Unmarshal(row.Spec, &spec); err != nil {
+		return nil, fmt.Errorf("decode job spec: %w", err)
+	}
+	return &QueuedJob{QueueID: row.ID, RunID: row.RunID, TenantID: row.TenantID, Attempts: row.Attempts, Spec: spec}, nil
+}
+
+// TouchCIWorker records that a bound worker is alive (heartbeats, logs).
+func (s *Service) TouchCIWorker(ctx context.Context, workerID string) {
+	s.store.TouchCIWorker(ctx, workerID)
+}
+
+// RetireCIWorker ends a worker's binding and asks the broker to terminate
+// its instance — the worker holds no cloud credentials of its own.
+func (s *Service) RetireCIWorker(ctx context.Context, workerID, instanceID string) error {
+	if err := s.store.RetireCIWorker(ctx, workerID); err != nil {
+		return err
+	}
+	url, secret := s.brokerURL, s.dispatchSecret()
+	if url == "" || secret == "" || instanceID == "" {
+		return nil
+	}
+	if code := signedPost(ctx, url+"/retire", secret, map[string]string{"instance_id": instanceID}, s.logger); code != 0 && code >= 300 {
+		return fmt.Errorf("%w: broker refused to retire the instance (%d)", ErrUnavailable, code)
+	}
+	// Other repositories may be waiting for an instance of their own.
+	s.wakeBroker()
+	return nil
 }
 
 // HeartbeatQueuedJob refreshes a claim's liveness. It returns false when the
