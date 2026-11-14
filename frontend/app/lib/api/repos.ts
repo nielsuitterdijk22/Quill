@@ -10,6 +10,9 @@ import type {
   DataResult,
   MutationResult,
   SBOMStatus,
+  SBOMView,
+  SBOMHistory,
+  SBOMSearchResult,
   CycloneDXDocument,
 } from "./types";
 
@@ -150,4 +153,35 @@ export function getRepoSBOMDocument(
 ): Promise<Result<CycloneDXDocument>> {
   const q = sha ? `?sha=${encodeURIComponent(sha)}` : "";
   return authGet<CycloneDXDocument>(token, `/api/v1/projects/${project}/repos/${repo}/sbom/download${q}`);
+}
+
+// The SBOM of one commit ({sbom: null} when it has none; nothing is queued).
+export function getCommitSBOM(
+  token: string | null | undefined,
+  project: string,
+  repo: string,
+  sha: string,
+): Promise<Result<{ sbom: SBOMView | null }>> {
+  return authGet<{ sbom: SBOMView | null }>(
+    token,
+    `/api/v1/projects/${project}/repos/${repo}/sbom?sha=${encodeURIComponent(sha)}`,
+  );
+}
+
+export function getSBOMHistory(
+  token: string | null | undefined,
+  project: string,
+  repo: string,
+): Promise<Result<SBOMHistory>> {
+  return authGet<SBOMHistory>(token, `/api/v1/projects/${project}/repos/${repo}/sbom/history`);
+}
+
+export function searchSBOMs(
+  token: string | null | undefined,
+  query: string,
+  project?: string,
+): Promise<Result<SBOMSearchResult>> {
+  const qs = new URLSearchParams({ q: query });
+  if (project) qs.set("project", project);
+  return authGet<SBOMSearchResult>(token, `/api/v1/sbom/search?${qs.toString()}`);
 }

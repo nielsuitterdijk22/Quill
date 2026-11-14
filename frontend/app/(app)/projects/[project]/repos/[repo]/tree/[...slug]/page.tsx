@@ -16,6 +16,7 @@ import {
   PathBreadcrumb,
   ReadmeView,
   RepoHeader,
+  CommitRefBanner,
   blobHref,
   splitRef,
 } from "../../../../../../../components/repo";
@@ -120,6 +121,13 @@ export default async function TreePage({
         <span className="spacer" />
         <CloneButton httpUrl={httpUrl} />
       </div>
+      <CommitRefBanner
+        project={params.project}
+        repo={params.repo}
+        refName={ref}
+        defaultBranch={repo.defaultBranch}
+        path={path}
+      />
       {path && (
         <PathBreadcrumb
           project={params.project}

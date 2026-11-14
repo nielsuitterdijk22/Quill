@@ -303,3 +303,18 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   on the last 30 lines (with "show all"), the rest folded, and the view follows the next step. Any open/fold
   by the reader pins that item. Job/step status in the live tree comes from act's own markers
   (`🏁 Job succeeded/failed`, `❌ Failure -`). Owner feedback.
+
+## 2026-11-14 — Dependencies: SBOM per commit, charts, cross-repo search
+
+- **Decision:** the repo "Dependencies" tab (`/{owner}/{repo}/sbom[?sha=]`) shows any commit's SBOM: a commit
+  picker over the stored SBOMs (retention raised 10 → 30), "browse code at this commit", composition bars
+  (ecosystem, license risk) that filter the table, the manifests components come from (linked at that
+  commit), the diff against the previous default-branch SBOM, and expandable rows. Older commits can be
+  scanned on request (members; stored with an empty `ref` so they never stand in for the branch head).
+  `/sbom` searches components across every repository in the caller's projects (the PR overview's scope) via
+  a `sbom_components` index extracted in SQL from the stored documents (migration 000033 backfills).
+  The commit page and the code browser at a commit link to both. `sbom` became a reserved slug.
+- **Why:** owner: "I want a visualisation… to be able to search, across repos even… go to a specific commit on
+  main, browse code, and get that sbom."
+- **Rejected:** parsing documents per search request (cost grows with every repo); a dependency graph (syft
+  emits no dependency edges for directory scans, so it would be empty).

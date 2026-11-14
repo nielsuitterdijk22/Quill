@@ -8,6 +8,7 @@ import {
   fmtDate,
   PathBreadcrumb,
   RepoHeader,
+  CommitRefBanner,
   humanBytes,
   splitRef,
   treeHref,
@@ -88,6 +89,13 @@ export default async function BlobPage({
         refName={ref}
         path={path}
         active="code"
+      />
+      <CommitRefBanner
+        project={params.project}
+        repo={params.repo}
+        refName={ref}
+        defaultBranch={repo.defaultBranch}
+        path={path}
       />
       <PathBreadcrumb
         project={params.project}

@@ -66,6 +66,7 @@ var reservedSlugs = map[string]bool{
 	"repositories": true,
 	"pulls":        true,
 	"pipelines":    true,
+	"sbom":         true,
 	"admin":        true,
 	"sign-in":      true,
 	"sign-up":      true,

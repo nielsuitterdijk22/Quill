@@ -123,6 +123,7 @@ export type RepoTab =
   | "issues"
   | "pulls"
   | "pipelines"
+  | "sbom"
   | "settings";
 
 // RepoHeader renders the repo title, visibility, and the code/commits/branches/
@@ -154,6 +155,7 @@ export function RepoHeader({
     { key: "issues", label: "Issues", href: `${base}/issues` },
     { key: "pulls", label: "Pull requests", href: `${base}/pulls` },
     { key: "pipelines", label: "Pipelines", href: `${base}/pipelines` },
+    { key: "sbom", label: "Dependencies", href: `${base}/sbom` },
     { key: "settings", label: "Settings", href: `${base}/settings` },
   ];
   return (
@@ -425,5 +427,38 @@ export function DirView({
         )}
       </div>
     </>
+  );
+}
+
+// CommitRefBanner: shown in the code browser when the ref is a commit id
+// rather than a branch — names the commit and links to it, to its SBOM, and
+// back to the default branch.
+export function CommitRefBanner({
+  project,
+  repo,
+  refName,
+  defaultBranch,
+  path = "",
+}: {
+  project: string;
+  repo: string;
+  refName: string;
+  defaultBranch: string;
+  path?: string;
+}) {
+  if (!/^[0-9a-f]{40}$/.test(refName)) return null;
+  const base = repoBase(project, repo);
+  return (
+    <div className="commit-ref-banner">
+      <span>
+        Browsing the code at commit{" "}
+        <Link className="mono" href={`${base}/commit/${refName}`}>
+          {shortSha(refName)}
+        </Link>
+      </span>
+      <span className="spacer" />
+      <Link href={`${base}/sbom?sha=${refName}`}>Dependencies at this commit</Link>
+      <Link href={treeHref(project, repo, defaultBranch, path)}>Back to {defaultBranch}</Link>
+    </div>
   );
 }

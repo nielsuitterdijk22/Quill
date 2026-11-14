@@ -1,13 +1,16 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getCommit } from "../../../../../../../lib/api";
+import { getCommit, getCommitSBOM } from "../../../../../../../lib/api";
 import { getToken } from "../../../../../../../lib/session";
 import {
   BrowseError,
   RepoHeader,
   fmtDate,
   firstLine,
+  repoBase,
   shortSha,
+  treeHref,
 } from "../../../../../../../components/repo";
 import { DiffStat, DiffView } from "../../../../../../../components/pulls";
 
@@ -26,7 +29,13 @@ export default async function CommitPage({
   const sha = (params.ref ?? []).map(decodeURIComponent).join("/");
   if (!sha) notFound();
 
-  const result = await getCommit(token, params.project, params.repo, sha);
+  const [result, sbomRes] = await Promise.all([
+    getCommit(token, params.project, params.repo, sha),
+    token && /^[0-9a-f]{40}$/.test(sha)
+      ? getCommitSBOM(token, params.project, params.repo, sha)
+      : Promise.resolve(null),
+  ]);
+  const sbom = sbomRes && sbomRes.ok ? sbomRes.data.sbom : null;
   if (!result.ok) {
     if (result.status === 404) notFound();
     return (
@@ -66,6 +75,31 @@ export default async function CommitPage({
         <span className="spacer" />
         <span className="mono">{shortSha(commit.sha)}</span>
         <DiffStat additions={additions} deletions={deletions} />
+      </div>
+      <div className="commit-actions">
+        <Link className="btn ghost small" href={treeHref(params.project, params.repo, commit.sha)}>
+          Browse files at {shortSha(commit.sha)}
+        </Link>
+        {token && (
+          <Link
+            className={`pill sbom-btn ${sbom?.status === "ready" ? "sbom-ready" : sbom?.status === "failed" ? "sbom-failed" : "sbom-pending"}`}
+            href={`${repoBase(params.project, params.repo)}/sbom?sha=${commit.sha}`}
+            title="Software bill of materials at this commit"
+          >
+            <span className="sbom-dot" aria-hidden />{" "}
+            {sbom?.status === "ready" ? (
+              <>
+                SBOM <b>{sbom.componentCount}</b> components
+              </>
+            ) : sbom?.status === "pending" || sbom?.status === "running" ? (
+              "SBOM generating…"
+            ) : sbom?.status === "failed" ? (
+              "SBOM failed"
+            ) : (
+              "No SBOM yet"
+            )}
+          </Link>
+        )}
       </div>
 
       {body && (

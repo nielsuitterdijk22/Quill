@@ -36,6 +36,7 @@ const NAV: NavItem[] = [
   { href: "/repositories", label: "Repositories", icon: "repos" },
   { href: "/pulls", label: "Pull requests", icon: "pulls" },
   { href: "/pipelines", label: "Pipelines", icon: "pipelines" },
+  { href: "/sbom", label: "Dependencies", icon: "package" },
 ];
 
 // SETTINGS_NAV is appended after the scope-aware Policies entry (see below) so
@@ -67,7 +68,7 @@ const ORG_ADMIN_NAV: NavItem[] = [
 
 // Top-level paths that are app routes, not owner namespaces.
 const RESERVED_TOP_LEVEL = new Set([
-  "projects", "settings", "admin", "repositories", "pulls", "pipelines",
+  "projects", "settings", "admin", "repositories", "pulls", "pipelines", "sbom",
   "sign-in", "sign-up", "login", "register", "api",
 ]);
 
@@ -155,6 +156,7 @@ const REPO_TABS = [
   { key: "issues", label: "Issues", icon: "○" },
   { key: "pulls", label: "Pull requests", icon: "⤭" },
   { key: "pipelines", label: "Pipelines", icon: "▷" },
+  { key: "sbom", label: "Dependencies", icon: "◫" },
   { key: "settings", label: "Settings", icon: "⚙" },
 ] as const;
 
@@ -175,6 +177,8 @@ function repoTabHref(ctx: RepoCtx, key: RepoTabKey): string {
       return `${b}/pulls`;
     case "pipelines":
       return `${b}/pipelines`;
+    case "sbom":
+      return `${b}/sbom`;
     case "settings":
       return `${b}/settings`;
   }
@@ -206,6 +210,8 @@ function repoTabActive(
         return pathname.startsWith(`${b}/pulls`);
       case "pipelines":
         return pathname.startsWith(`${b}/pipelines`);
+      case "sbom":
+        return pathname.startsWith(`${b}/sbom`);
       case "settings":
         return pathname === `${b}/settings`;
     }

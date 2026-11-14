@@ -507,6 +507,18 @@ export type SBOMView = {
   finishedAt?: string;
 };
 export type SBOMStatus = { sbom: SBOMView | null; latestReady?: SBOMView };
+export type SBOMHistory = { sboms: SBOMView[] };
+
+// Cross-repo component search (GET /api/v1/sbom/search).
+export type SBOMRepoRef = { project: string; repo: string; commitSha: string };
+export type SBOMPackageVersion = { version: string; license: string; purl: string; repos: SBOMRepoRef[] };
+export type SBOMPackage = { name: string; ecosystem: string; repoCount: number; versions: SBOMPackageVersion[] };
+export type SBOMSearchResult = {
+  query: string;
+  reposSearched: number;
+  truncated: boolean;
+  packages: SBOMPackage[];
+};
 
 export type CycloneDXLicense = {
   license?: { id?: string; name?: string };
