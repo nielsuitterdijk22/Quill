@@ -74,7 +74,7 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket, remask-run-logs)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, migrate-forgejo-to-bucket, remask-run-logs)")
 	}
 	switch args[0] {
 	case "create-repo":
@@ -83,6 +83,10 @@ func runAdmin(args []string) error {
 		return runSeedFile(args[1:])
 	case "purge-e2e":
 		return runPurgeE2e(args[1:])
+	case "issue-git-token":
+		return runIssueGitToken(args[1:])
+	case "set-repo-secret":
+		return runSetRepoSecret(args[1:])
 	case "git-relocate":
 		return runGitRelocate(args[1:])
 	case "git-maintenance":
@@ -92,7 +96,7 @@ func runAdmin(args []string) error {
 	case "remask-run-logs":
 		return runRemaskRunLogs(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, migrate-forgejo-to-bucket, remask-run-logs)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, migrate-forgejo-to-bucket, remask-run-logs)", args[0])
 	}
 }
 

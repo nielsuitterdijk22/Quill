@@ -54,6 +54,9 @@ func CloudInit(o CloudInitOpts) string {
 		{"QUILL_CIW_WORKER_ID", "ciworker-on-host"},
 		{"QUILL_CIW_SELF_TERMINATE", "true"},
 		{"QUILL_PIPELINE_ACTION_CACHE", "/mnt/quill-act-cache"},
+		// A run builds and pushes images on a 2-vCPU instance (the platform's
+		// own deploy: four images + terraform); 30m was too tight.
+		{"QUILL_PIPELINE_TIMEOUT", "60m"},
 		{"QUILL_PIPELINE_UBUNTU_IMAGE", o.UbuntuImage},
 		{"SCW_ACCESS_KEY", o.SCWAccessKey},
 		{"SCW_SECRET_KEY", o.SCWSecretKey},

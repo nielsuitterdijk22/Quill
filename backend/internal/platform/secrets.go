@@ -486,3 +486,22 @@ func enforceSecretCap(rows []db.PipelineSecret, listErr error) error {
 func normalizeSecretName(name string) string {
 	return strings.ToUpper(strings.TrimSpace(name))
 }
+
+// ProjectOwner returns the user id of a project's (first) owner — the actor
+// operator tooling acts as.
+func (s *Service) ProjectOwner(ctx context.Context, projectSlug string) (uuid.UUID, error) {
+	project, err := s.getProject(ctx, projectSlug)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	members, err := s.store.ListProjectMembers(ctx, project.ID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	for _, m := range members {
+		if m.MemberRole == "owner" {
+			return m.ID, nil
+		}
+	}
+	return uuid.Nil, fmt.Errorf("%w: project %s has no owner", ErrNotFound, projectSlug)
+}

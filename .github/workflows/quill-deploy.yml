@@ -1,0 +1,169 @@
+name: Deploy to Scaleway
+
+# Production deploy, run by Quill CI on nuitterdijk/quill (2026-11-14: Quill
+# hosts and deploys itself). GitHub skips this file (server_url gate); the
+# GitHub copy of the deploy, deploy-scaleway.yml, is a manual break-glass.
+#
+# Quill holds exactly two repo secrets: SCW_ACCESS_KEY / SCW_SECRET_KEY of the
+# `quill-deploy-ci` IAM application. Every other secret input is read from
+# Scaleway Secret Manager (/quill/deploy/*) into a terraform var-file by
+# deploy/scaleway/scripts/deploy-tfvars.py — never echoed: values fetched at
+# runtime are not covered by Quill's log masking.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SCW_DEFAULT_REGION: fr-par
+  SCW_DEFAULT_PROJECT_ID: e2e72d28-8d7b-43ab-b45e-d1de0b4956ac
+  SCW_DEFAULT_ORGANIZATION_ID: 9cff4b9a-b029-400f-a1c6-f6501ddec026
+  REGISTRY: rg.fr-par.scw.cloud/quill
+  TF_IN_AUTOMATION: "1"
+  TF_VERSION: 1.9.8
+  DOCKER_VERSION: 27.3.1
+  BUILDX_VERSION: 0.17.1
+  SCW_CLI_VERSION: 2.65.2
+
+jobs:
+  deploy:
+    name: Build, push, apply
+    if: ${{ github.server_url != 'https://github.com' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide whether this push deploys
+        id: changes
+        run: |
+          set -eu
+          deploy=true
+          if [ "${{ github.event_name }}" = "push" ] && git rev-parse -q --verify HEAD~1 >/dev/null 2>&1; then
+            if ! git diff --name-only HEAD~1 HEAD | grep -qE '^(backend/|frontend/|deploy/scaleway/|\.github/workflows/quill-deploy\.yml$)'; then
+              deploy=false
+            fi
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "deploy: $deploy"
+
+      - name: Install docker CLI, terraform, scw
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          set -eu
+          mkdir -p "$HOME/bin" "$HOME/.docker/cli-plugins"
+          curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" | tar -xz -C /tmp
+          mv /tmp/docker/docker "$HOME/bin/docker"
+          curl -fsSL -o "$HOME/.docker/cli-plugins/docker-buildx" \
+            "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-amd64"
+          chmod +x "$HOME/.docker/cli-plugins/docker-buildx"
+          curl -fsSL -o /tmp/tf.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+          python3 -c "import zipfile; zipfile.ZipFile('/tmp/tf.zip').extract('terraform', '$HOME/bin')"
+          chmod +x "$HOME/bin/terraform"
+          curl -fsSL -o "$HOME/bin/scw" "https://github.com/scaleway/scaleway-cli/releases/download/v${SCW_CLI_VERSION}/scaleway-cli_${SCW_CLI_VERSION}_linux_amd64"
+          chmod +x "$HOME/bin/scw"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          "$HOME/bin/docker" version --format 'docker client {{.Client.Version}} / engine {{.Server.Version}}'
+          "$HOME/bin/terraform" version | head -1
+
+      - name: Log in to the container registry
+        if: steps.changes.outputs.deploy == 'true'
+        env:
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+        run: echo "$SCW_SECRET_KEY" | docker login "$REGISTRY" -u nologin --password-stdin
+
+      - name: Build and push images
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          set -eu
+          SHA="${{ github.sha }}"
+          build() {
+            name="$1"; shift
+            docker buildx build --load -t "$REGISTRY/$name:$SHA" "$@"
+            docker push "$REGISTRY/$name:$SHA"
+            docker tag "$REGISTRY/$name:$SHA" "$REGISTRY/$name:latest"
+            docker push "$REGISTRY/$name:latest"
+          }
+          build quill-backend backend/
+          build quill-web frontend/ \
+            --build-arg NEXT_PUBLIC_AUTH_PROVIDER=zitadel \
+            --build-arg NEXT_PUBLIC_ZITADEL_ISSUER=https://auth.black-tulip.nl \
+            --build-arg NEXT_PUBLIC_ZITADEL_CLIENT_ID=398314473032581123 \
+            --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=398314472394981379 \
+            --build-arg QUILL_API_BASE_URL=https://api.black-tulip.nl \
+            --build-arg NEXT_PUBLIC_API_WS_URL=wss://api.black-tulip.nl \
+            --build-arg NEXT_PUBLIC_GIT_SHA="$SHA"
+          build quill-backup -f deploy/scaleway/docker/backup.Dockerfile deploy/scaleway/docker/
+          build quill-zitadel -f deploy/scaleway/docker/zitadel.Dockerfile deploy/scaleway/docker/
+
+      - name: Terraform apply
+        if: steps.changes.outputs.deploy == 'true'
+        working-directory: deploy/scaleway/terraform
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+        run: |
+          set -eu
+          VARS="$RUNNER_TEMP/deploy.tfvars.json"
+          python3 -I ../scripts/deploy-tfvars.py "$VARS"
+          trap 'rm -f "$VARS"' EXIT
+          terraform init -input=false \
+            -backend-config="endpoint=https://s3.fr-par.scw.cloud" \
+            -backend-config="bucket=quill-mvp-backups-x7f2k9-tfstate" \
+            -backend-config="key=quill.tfstate" \
+            -backend-config="region=fr-par" \
+            -backend-config="access_key=$SCW_ACCESS_KEY" \
+            -backend-config="secret_key=$SCW_SECRET_KEY" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_metadata_api_check=true" \
+            -backend-config="skip_requesting_account_id=true"
+          terraform apply -auto-approve -input=false -no-color \
+            -var-file="$VARS" \
+            -var "image_tag=${{ github.sha }}" \
+            -var "domain=black-tulip.nl" \
+            -var "backup_bucket_name=quill-mvp-backups-x7f2k9" \
+            -var "repos_bucket_name=quill-mvp-repos-x7f2k9" \
+            -var "letsencrypt_email=info@black-tulip.nl" \
+            -var "create_dns_zone=false" \
+            -var "brevo_smtp_from=info@black-tulip.nl" \
+            -var "creem_pro_product_id=prod_1DLhjZE8dsNwtheT4wHD8H" \
+            -var "creem_team_product_id=prod_7lBOuo7Sq1fahYN6DpQvP"
+
+      - name: Run the zitadel setup job
+        if: steps.changes.outputs.deploy == 'true'
+        working-directory: deploy/scaleway/terraform
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DISABLE_CHECK_VERSION: "true"
+        run: |
+          set -eu
+          mkdir -p ~/.config/scw
+          echo '{"default_zone":"fr-par-1"}' > ~/.config/scw/config.yaml
+          JOB_DEF_ID="$(terraform output -raw zitadel_setup_job_id)"
+          JOB_DEF_ID="${JOB_DEF_ID##*/}"
+          START_OUT="$(scw -o json jobs definition start "$JOB_DEF_ID")"
+          RUN_ID="$(echo "$START_OUT" | python3 -c 'import sys,json; s=sys.stdin.read(); s=s[s.index("{"):]; print(json.loads(s)["job_runs"][0]["id"])')"
+          echo "zitadel setup job run: $RUN_ID"
+          STATE=""
+          for _ in $(seq 1 120); do
+            STATE="$(scw -o json jobs run get "$RUN_ID" | python3 -c 'import sys,json; s=sys.stdin.read(); s=s[s.index("{"):]; print(json.loads(s).get("state",""))' 2>/dev/null || true)"
+            case "$STATE" in succeeded|failed|error) break ;; esac
+            sleep 5
+          done
+          echo "job state: $STATE"
+          [ "$STATE" = "succeeded" ]
+
+      - name: Health check
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          for i in $(seq 1 40); do
+            if curl -fsS -o /dev/null "https://app.black-tulip.nl/login" \
+               && curl -fsS -o /dev/null "https://api.black-tulip.nl/healthz"; then
+              echo "app + api are serving"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "app/api not reachable after 10 min" >&2
+          exit 1

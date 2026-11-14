@@ -333,3 +333,24 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - **Accepted risk:** a push landing between the copy and the database update goes to the old prefix and is
   lost from the new one; at today's scale renames are rare and manual.
 - **Rejected:** keying bucket objects by repo id (the right long-term shape, but a migration of every key).
+
+## 2026-11-14 — Quill hosts and deploys itself (owner: "start using quill for this repo and for the scaleway deployments")
+
+- **Decision:** `nuitterdijk/quill` on Quill is the primary repo (GitHub `origin` stays as a mirror). Production
+  deploys run on Quill CI: `.github/workflows/quill-deploy.yml` (builds the four images with a static docker CLI +
+  buildx against the worker's docker daemon, `terraform apply`, zitadel setup job, health check). GitHub's
+  `deploy-scaleway.yml` becomes manual break-glass (no push trigger; both workflow files gate on
+  `github.server_url`, since Quill and GitHub both read `.github/workflows`).
+- **Credentials:** a dedicated IAM application `quill-deploy-ci` (AllProductsFullAccess on `quill-mvp`, IAMManager
+  on the org — terraform manages IAM apps/keys) whose key is the only Quill repo secret pair. The GitHub-only
+  secrets were exported once to Secret Manager `/quill/deploy/*` by a throwaway workflow (removed) and are read at
+  deploy time into a 0600 var-file — Quill masks only its own stored secrets, so runtime-fetched values are never
+  echoed. A read-only `terraform plan` with the new key and the exported values showed **no changes** before
+  the switch. The state bucket lives in the default "Quill" project: an S3 key only reaches its default project,
+  so the bucket got a policy allowing the owner user and `quill-deploy-ci`.
+- **Also:** CI workers run with `QUILL_PIPELINE_TIMEOUT=60m`; operator commands `admin set-repo-secret` (value on
+  stdin, acts as the project owner) and `admin issue-git-token` (secret to a 0600 file).
+- **Why not keep GitHub as the deployer:** the owner wants the platform to carry its own production. Break-glass
+  stays because a broken release can take Quill CI down with it.
+- **Leftover:** the policy also carries an unneeded ObjectStorageFullAccess rule on the default project (scw CLI
+  can't delete single rules); harmless, remove in the console.

@@ -76,9 +76,14 @@ ones marked **(enforced)**: breaking them throws the work away.
 - Record non-obvious design decisions in `DECISIONS.md`: date, decision, why, and the alternatives you rejected.
 - Prefer the standard library and existing dependencies. Add a dependency only if it saves real work,
   and note it in `DECISIONS.md`.
-- Git: the owner authorized agents to commit and push directly to `main` (2026-11-08);
-  CI (`.github/workflows/deploy-scaleway.yml`) deploys from main. This overrides the old
-  "the loop commits" rule above.
+- Git: the owner authorized agents to commit and push directly to `main` (2026-11-08).
+  Since 2026-11-14 **Quill hosts and deploys itself**: the primary remote is
+  `quill` = `https://api.black-tulip.nl/git/nuitterdijk/quill` (Quill CI runs
+  `.github/workflows/quill-deploy.yml` on every push to main); GitHub (`origin`) is a
+  mirror — push `main` to both (`git push quill main && git push origin main`).
+  Agent git credentials: `quill admin issue-git-token --username nuitterdijk --out <file>`
+  (0600; use via a credential helper, delete the file and revoke the token after).
+  This overrides the old "the loop commits" rule above.
 - When something is ambiguous, pick the option most consistent with MISSION.md and
   write the question in your summary instead of stalling.
 
@@ -114,7 +119,15 @@ rules (tenant isolation, no credential leaks) remain hard constraints regardless
 
 ### Deploy / redeploy gotchas (learned the hard way)
 
-- Push to `main` → CI builds images (`<sha>` + `latest` tags) and runs `terraform apply`.
+- Push to `main` on Quill → Quill CI (`quill-deploy.yml`, an ephemeral DEV1-S worker)
+  builds images (`<sha>` + `latest` tags) and runs `terraform apply` with the
+  `quill-deploy-ci` IAM key (Quill repo secrets SCW_ACCESS_KEY/SCW_SECRET_KEY); every
+  other secret input comes from Secret Manager `/quill/deploy/*`
+  (`deploy/scaleway/scripts/deploy-tfvars.py`). The terraform state bucket (default
+  "Quill" project) has a bucket policy allowing the owner user + that application —
+  add any new deploy identity there. GitHub's `deploy-scaleway.yml` is manual
+  break-glass only (`gh workflow run deploy-scaleway.yml`); never run both at once
+  (the state has no lock). Watch Quill deploys on the repo's Pipelines page.
 - Deploys pin `image_tag` to the git SHA (see the workflow apply step): every apply changes
   `registry_image`, forcing a new container revision — changes always land. Do NOT revert to
   a pinned `latest`: apply becomes a no-op and nothing redeploys (agents kept finding

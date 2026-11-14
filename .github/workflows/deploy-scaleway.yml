@@ -1,4 +1,4 @@
-name: Deploy to Scaleway (serverless)
+name: Deploy to Scaleway (break-glass, GitHub)
 
 # Serverless deploy: build + push images to the Scaleway Container Registry,
 # terraform apply (serverless containers/jobs get the new image tag),
@@ -20,14 +20,13 @@ name: Deploy to Scaleway (serverless)
 # Pinned deployment domain: the Scaleway stack serves *.black-tulip.nl (apex).
 # vars.QUILL_DOMAIN is intentionally not used for hosts anymore — the migration to
 # the apex is done; set the records at the registrar accordingly.
+#
+# BREAK-GLASS ONLY since 2026-11-14: production deploys run on Quill CI
+# (.github/workflows/quill-deploy.yml on nuitterdijk/quill). Run this by hand
+# (`gh workflow run deploy-scaleway.yml`) only when Quill itself cannot deploy
+# — e.g. a broken release took the platform down. Never run both at once:
+# the terraform state has no lock.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - "deploy/scaleway/**"
-      - ".github/workflows/deploy-scaleway.yml"
   workflow_dispatch:
     inputs:
       provision:
@@ -50,7 +49,7 @@ jobs:
   # then the workflow is skipped so main stays green; workflow_dispatch always runs.
   build:
     name: Build & push images
-    if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +99,7 @@ jobs:
   apply:
     name: Terraform apply (serverless)
     needs: build
-    if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -260,7 +259,7 @@ jobs:
   post:
     name: Health check
     needs: [build, apply]
-    if: ${{ github.event_name == 'workflow_dispatch' || (vars.SCW_REGION != '' && vars.QUILL_DOMAIN != '' && vars.REGISTRY != '') }}
+    if: ${{ github.server_url == 'https://github.com' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
