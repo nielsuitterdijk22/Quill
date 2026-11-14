@@ -30,6 +30,7 @@ func runGitMaintenance(args []string) error {
 	fs.SetOutput(os.Stderr)
 	repackThreshold := fs.Int("repack-threshold", 0, "consolidate into one pack when a repo lists more than N packs (0 = never)")
 	sboms := fs.Bool("sboms", true, "backfill missing default-branch SBOMs after the walk")
+	activity := fs.Bool("activity", true, "index the contribution graph's commit history of repos not indexed yet")
 	repoFilter := fs.String("repo", "", "restrict to one repo as project/repo (default: all engine repos)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -121,6 +122,12 @@ func runGitMaintenance(args []string) error {
 			gen, bad, err := svc.WithSBOMGenerator(platform.SyftGenerator{Bin: cfg.SBOMSyftBin}).BackfillSBOMs(ctx)
 			fmt.Printf("sbom backfill: %d generated, %d failed, err=%v\n", gen, bad, err)
 		}
+	}
+	// Contribution graph backfill (2026-11-14): repos not indexed yet get
+	// their last year of default-branch commits; pushes keep them current.
+	if *activity {
+		n, bad, err := svc.BackfillCommitActivity(ctx)
+		fmt.Printf("commit activity backfill: %d indexed, %d failed, err=%v\n", n, bad, err)
 	}
 	if failed > 0 {
 		return fmt.Errorf("git-maintenance: %d repo(s) failed", failed)

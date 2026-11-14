@@ -49,6 +49,14 @@ func (s *Service) HandleEnginePush(ctx context.Context, repoID uuid.UUID, update
 			}
 		}
 	}
+	// Contribution graph: index the commits the default branch gained.
+	for _, u := range updates {
+		if u.Ref == "refs/heads/"+repo.DefaultBranch && !isZeroSHA(u.New) {
+			if _, err := s.indexCommitActivity(ctx, src.be, u.New, u.Old); err != nil {
+				s.logger.Warn("commit activity index failed", "repo", src.label(), "error", err)
+			}
+		}
+	}
 	var runs []db.PipelineRun
 	for _, u := range updates {
 		if isZeroSHA(u.New) {

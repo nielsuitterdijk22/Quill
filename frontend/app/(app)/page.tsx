@@ -121,6 +121,11 @@ export default async function DashboardPage() {
       {/* Contribution graph */}
       <div className="panel">
         <ContributionGraph data={contributions} />
+        <p className="contrib-note">
+          Default-branch commits authored with your{" "}
+          <Link href="/settings#commit-emails">commit emails</Link>, plus the pull requests and issues
+          you opened and the reviews you gave.
+        </p>
       </div>
 
       <div className="profile-cols">

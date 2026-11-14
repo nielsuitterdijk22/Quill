@@ -15,6 +15,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -244,35 +245,60 @@ func (s *Server) handleGetUserAvatar(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(avatar.Data)
 }
 
-// handleMyContributions proxies the signed-in user's Forgejo contribution
-// heatmap (the GitHub-style commit calendar). Returns an empty series rather
-// than an error when Forgejo is disabled or the user isn't linked yet, so the
-// profile renders an empty graph instead of failing.
+// handleMyContributions returns the signed-in user's contribution calendar:
+// default-branch commits authored with their emails plus pull requests,
+// reviews and issues, over repositories they can read (platform.MyContributions;
+// replaced the Forgejo heatmap proxy on 2026-11-14). Failures degrade to an
+// empty series so the profile still renders.
 func (s *Server) handleMyContributions(w http.ResponseWriter, r *http.Request) {
-	id, ok := identityFrom(r.Context())
+	actor, ok := actorFrom(r.Context())
 	if !ok {
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-
-	empty := map[string]any{"contributions": []any{}}
-	if s.forgejo == nil || !s.forgejo.Enabled() {
-		httpx.JSON(w, http.StatusOK, empty)
-		return
-	}
-	user, err := s.store.GetUserByID(r.Context(), id.UserID)
-	if err != nil || !user.ForgejoUsername.Valid || user.ForgejoUsername.String == "" {
-		httpx.JSON(w, http.StatusOK, empty)
-		return
-	}
-
-	entries, err := s.forgejo.UserHeatmap(r.Context(), user.ForgejoUsername.String)
+	days, err := s.platform.MyContributions(r.Context(), actor)
 	if err != nil {
-		s.logger.Warn("fetch contribution heatmap failed", "user", user.ForgejoUsername.String, "error", err)
-		httpx.JSON(w, http.StatusOK, empty)
+		s.logger.Warn("contributions failed", "user", actor.UserID, "error", err)
+		days = []platform.ContributionDay{}
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"contributions": days})
+}
+
+// handleGetCommitEmails returns the emails the user's commits count under.
+func (s *Server) handleGetCommitEmails(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"contributions": entries})
+	out, err := s.platform.MyCommitEmails(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not load commit emails")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+// handlePutCommitEmails replaces the user's extra commit emails.
+func (s *Server) handlePutCommitEmails(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req struct {
+		Emails []string `json:"emails"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		return
+	}
+	out, err := s.platform.SetMyCommitEmails(r.Context(), actor, req.Emails)
+	if err != nil {
+		s.writePlatformError(w, err, "could not save commit emails")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 type updateProfileRequest struct {

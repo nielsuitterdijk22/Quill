@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Icon } from "@/components/Icon";
 
-import { getMyProjects, listGitTokens } from "../../lib/api";
+import { getCommitEmails, getMyProjects, listGitTokens } from "../../lib/api";
 import type { User } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
 import {
@@ -13,6 +13,7 @@ import {
 import { AccountDangerZone } from "./AccountDangerZone";
 import { AvatarUploadPanel } from "./AvatarUploadPanel";
 import { ChangePasswordForm } from "./ChangePasswordForm";
+import { CommitEmailsForm } from "./CommitEmailsForm";
 import { EmailForm } from "./EmailForm";
 import { ExportDataButton } from "./ExportDataButton";
 import { GitTokenPanel } from "./GitTokenPanel";
@@ -110,6 +111,7 @@ async function AccountTab({
   const tokensRes = token
     ? await listGitTokens(token)
     : { ok: false as const, status: 401, message: "Not signed in." };
+  const commitEmails = token ? await getCommitEmails(token) : null;
 
   return (
     <>
@@ -133,6 +135,11 @@ async function AccountTab({
         <ProfileForm displayName={user.displayName} username={user.username} />
 
         <EmailForm email={user.email} />
+
+        <CommitEmailsForm
+          primary={commitEmails?.primary ?? user.email}
+          emails={commitEmails?.emails ?? []}
+        />
       </div>
 
       <div id="settings-security">

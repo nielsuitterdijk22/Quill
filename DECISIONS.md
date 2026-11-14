@@ -386,3 +386,25 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   root-equivalent job, and adds per-run cost); dropping the socket (the platform's own deploy builds images).
 - **Remaining:** jobs of the same scope share an instance (same secrets, by design); the legacy HMAC path stays
   for trusted infrastructure.
+
+## 2026-11-14 — Contribution graph from the engine; solid menus; ink & gold app marks (owner: "the contributor chart doesn't show contributions yet", "top left tool menu … transparent, and lacks the new quill & tempo logos")
+
+- **Contributions.** The calendar proxied Forgejo's user heatmap and went blank when Forgejo was switched
+  off. The engine now indexes default-branch commits (sha, author email, author date) into
+  `commit_activity`: the last year once per repo (push hook or the nightly `git-maintenance --activity`
+  backfill, tracked in `commit_activity_state`), then each push's `old..new` range. A force-push whose old
+  head is gone re-walks the year (inserts skip known shas). The graph counts a user's commits (each sha once
+  across forks) plus the pull requests and issues they opened and the reviews they gave.
+- **Commit emails.** The account email rarely matches git author emails (the owner's account is on
+  proton.me, their commits on gmail/das.nl), so users list extra commit emails in Settings, as on
+  GitHub and GitLab. They are **unverified**, so every count is restricted to repositories in the
+  viewer's visible projects. Otherwise claiming someone's email would reveal when they commit to private
+  repos of other tenants, which is a tenant-isolation leak (`TestContributionsFromEngineCommits` covers the stranger
+  case). Rejected: email verification (mail round-trip for a self-only view); pusher-based attribution
+  (credits an importer with everyone's history).
+- **Menus.** `--panel` became translucent in the ink & gold redesign, and the app switcher, project switcher, merge
+  menu and clone popover used it, so the page showed through them. They now use a new solid `--popover` token (both themes).
+- **App marks.** Every suite tile is the favicon's ink tile with the app's glyph in its own gradient.
+  Quill's glyph is the favicon's gold feather, so the tab, sidebar and switcher show one mark. No newer
+  Tempo design exists in any repo, so Tempo keeps its amber bars in the new tile. Gradients use
+  `userSpaceOnUse`, because objectBoundingBox paints nothing on zero-width strokes (Tempo's bars).

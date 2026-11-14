@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import {
   changePassword,
   deleteMyAccount,
+  setCommitEmails,
   updateEmail,
   updateProfile,
   updateUsername,
@@ -13,6 +14,7 @@ import { getToken } from "../../lib/session";
 
 export type ProfileFormState = { error?: string; ok?: boolean };
 export type EmailFormState = { error?: string; ok?: boolean };
+export type CommitEmailsFormState = { error?: string; ok?: boolean };
 export type PasswordFormState = { error?: string; ok?: boolean };
 
 // updateProfileAction saves the signed-in user's display name, then refreshes the
@@ -118,5 +120,26 @@ export async function deleteAccountAction(
   // new Quill user (account "resurrection") and bounce between /sign-in and
   // /onboarding forever. Return success so the client can sign out of the IdP
   // first, which clears the session before navigating away.
+  return { ok: true };
+}
+
+// saveCommitEmailsAction replaces the extra emails the user's commits count
+// under on the contribution graph (one per line).
+export async function saveCommitEmailsAction(
+  _prev: CommitEmailsFormState,
+  formData: FormData,
+): Promise<CommitEmailsFormState> {
+  const token = await getToken();
+  if (!token) return { error: "Your session has expired. Sign in again." };
+
+  const emails = String(formData.get("emails") ?? "")
+    .split(/[\s,]+/)
+    .map((e) => e.trim())
+    .filter(Boolean);
+  const res = await setCommitEmails(token, emails);
+  if (!res.ok) return { error: res.error };
+
+  revalidatePath("/settings");
+  revalidatePath("/");
   return { ok: true };
 }

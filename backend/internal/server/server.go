@@ -509,6 +509,8 @@ func (s *Server) setupRoutes() {
 			r.Get("/me/billing", s.handleMyBilling)
 			r.Post("/me/billing/checkout", s.handleMyBillingCheckout)
 			r.Get("/me/contributions", s.handleMyContributions)
+			r.Get("/me/commit-emails", s.handleGetCommitEmails)
+			r.Put("/me/commit-emails", s.handlePutCommitEmails)
 			r.Put("/me/avatar", s.handleUpdateAvatar)
 			r.Delete("/me/avatar", s.handleDeleteAvatar)
 			r.Route("/tenants", func(r chi.Router) {
