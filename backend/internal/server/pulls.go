@@ -370,6 +370,39 @@ func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type editPullRequest struct {
+	Title *string `json:"title"`
+	Body  *string `json:"body"`
+}
+
+// handleEditPull changes a pull request's title and/or description.
+func (s *Server) handleEditPull(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	number, ok := pullNumber(w, r)
+	if !ok {
+		return
+	}
+	var req editPullRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	repo, pr, err := s.platform.EditPull(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number, req.Title, req.Body)
+	if err != nil {
+		s.writePlatformError(w, err, "could not update pull request")
+		return
+	}
+	resp := newPullResponse(pr)
+	resp.ViewerIsAuthor = s.viewerIsAuthor(r.Context(), actor, pr)
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"repository": newRepoResponse(repo),
+		"pull":       resp,
+	})
+}
+
 // handleGetPullDiff returns a pull request's parsed diff.
 func (s *Server) handleGetPullDiff(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())

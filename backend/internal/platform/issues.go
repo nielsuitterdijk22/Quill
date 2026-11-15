@@ -170,7 +170,29 @@ func (s *Service) EditIssue(ctx context.Context, actor Actor, projectSlug, repoS
 	if err != nil {
 		return forgejo.Issue{}, err
 	}
-	is, err = s.store.UpdateIssue(ctx, is.ID, title, state)
+	is, err = s.store.UpdateIssue(ctx, is.ID, title, state, nil)
+	if err != nil {
+		return forgejo.Issue{}, err
+	}
+	return issueDTO(is), nil
+}
+
+// EditIssueBody replaces an issue's description (empty clears it). Members
+// only, like the other issue edits.
+func (s *Service) EditIssueBody(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, body string) (forgejo.Issue, error) {
+	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return forgejo.Issue{}, err
+	}
+	if !be.engine {
+		return forgejo.Issue{}, fmt.Errorf("%w: editing descriptions needs a Quill-hosted repository", ErrInvalidInput)
+	}
+	is, err := s.engineIssue(ctx, be, number)
+	if err != nil {
+		return forgejo.Issue{}, err
+	}
+	body = strings.TrimRight(body, " \t\r\n")
+	is, err = s.store.UpdateIssue(ctx, is.ID, nil, nil, &body)
 	if err != nil {
 		return forgejo.Issue{}, err
 	}

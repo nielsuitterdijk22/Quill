@@ -57,6 +57,10 @@
   --ease: cubic-bezier(0.25, 0.8, 0.5, 1);
   /* Serif display (H5 blueprint): headlines, panel titles, stat numbers. */
   --font-serif: "Source Serif 4", Georgia, serif;
+  /* Text faces. Geist is self-hosted via next/font (layout.tsx). */
+  --font-sans: var(--font-geist-sans, ui-sans-serif), system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
 }
 
 * {
@@ -803,14 +807,39 @@ select {
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 9px 10px;
-  font: 13px/1.45 inherit;
+  padding: 9px 12px;
+  /* Not the `font:` shorthand — `font: 13px/1.45 inherit` is invalid CSS, so
+     browsers dropped it and inputs fell back to the UA font. */
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.003em;
   box-shadow: var(--input-shadow);
-  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease),
+    background 150ms var(--ease);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+}
+input:hover:not(:focus):not(:disabled),
+textarea:hover:not(:focus):not(:disabled),
+select:hover:not(:focus):not(:disabled) {
+  border-color: color-mix(in oklab, var(--text) 18%, transparent);
 }
 textarea {
   resize: vertical;
-  font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
+  min-height: 88px;
+  padding: 11px 13px;
+  line-height: 1.6;
+}
+/* Code-ish values (secrets, host lists, YAML) keep the mono face. */
+input.mono,
+textarea.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0;
 }
 input:focus,
 textarea:focus,
@@ -1601,16 +1630,16 @@ select:focus {
   text-decoration: underline;
 }
 .markdown-body code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
-  background: #10131a;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--input);
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 1px 5px;
 }
 .markdown-body pre {
   margin: 0 0 14px;
-  background: #10131a;
+  background: var(--input);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px 14px;
@@ -1624,7 +1653,7 @@ select:focus {
   line-height: 1.6;
 }
 .markdown-body blockquote {
-  border-left: 3px solid var(--line);
+  border-left: 3px solid color-mix(in oklab, var(--accent) 45%, var(--line));
   padding: 2px 0 2px 14px;
   color: var(--muted);
 }
@@ -1905,14 +1934,57 @@ h2.section {
   font-weight: 600;
 }
 .pr-comment-body {
-  padding: 12px 14px;
+  padding: 16px 18px;
 }
 .pr-comment-body pre {
   margin: 0;
-  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 14px/1.65 var(--font-sans);
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.pr-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pr-comment-head .btn.small {
+  margin: -4px 0;
+}
+
+/* User-written text (descriptions, comments, reviews): markdown rendered,
+   or plain text with its line breaks when rendering is unavailable. */
+.text-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  max-width: 78ch;
+}
+.text-body.plain {
+  white-space: pre-wrap;
+}
+.text-body.markdown-body h1 {
+  font-size: 20px;
+}
+.text-body.markdown-body h2 {
+  font-size: 17px;
+}
+.text-body.markdown-body h3 {
+  font-size: 15px;
+}
+.text-body.markdown-body input[type="checkbox"] {
+  width: auto;
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+  accent-color: var(--accent);
+}
+.text-body.markdown-body li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -20px;
+}
+.edit-text-form .field:last-of-type {
+  margin-bottom: 10px;
 }
 .comment-form {
   border: 1px solid var(--line);
@@ -2546,7 +2618,7 @@ h2.section {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 13px/1.6 var(--font-sans);
 }
 .line-comment-form {
   display: grid;

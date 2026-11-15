@@ -30,6 +30,9 @@ import {
   RunStatusBadge,
   statusGlyph,
 } from "../../../../../../../components/pipelines";
+import { Markdown } from "../../../../../../../components/Markdown";
+import { EditableDescription } from "../../../../../../../components/EditableDescription";
+import { editPullAction } from "./actions";
 import { CommentForm } from "./CommentForm";
 import { DiffWithComments } from "./DiffWithComments";
 import { MergeBox } from "./MergeBox";
@@ -209,22 +212,26 @@ export default async function PullDetailPage({
 
       {tab === "conversation" && (
         <div className="convo">
-          <div className="pr-comment">
-            <div className="pr-comment-head">
-              <b>{pull.author?.login ?? "unknown"}</b>
-              <span className="subtle">
-                {" "}
-                opened · {fmtDate(pull.createdAt)}
-              </span>
-            </div>
-            <div className="pr-comment-body">
-              {pull.body ? (
-                <pre>{pull.body}</pre>
-              ) : (
-                <span className="subtle">No description provided.</span>
-              )}
-            </div>
-          </div>
+          <EditableDescription
+            action={editPullAction.bind(null, params.project, params.repo, number)}
+            title={pull.title}
+            body={pull.body ?? ""}
+            head={
+              <>
+                <b>{pull.author?.login ?? "unknown"}</b>
+                <span className="subtle">
+                  {" "}
+                  opened · {fmtDate(pull.createdAt)}
+                </span>
+              </>
+            }
+          >
+            {pull.body ? (
+              <Markdown token={token} project={params.project} repo={params.repo} text={pull.body} />
+            ) : (
+              <span className="subtle">No description provided.</span>
+            )}
+          </EditableDescription>
 
           {headRuns.length > 0 && (
             <div className="pr-comment review">
@@ -277,7 +284,7 @@ export default async function PullDetailPage({
                 </span>
               </div>
               <div className="pr-comment-body">
-                <pre>{c.body}</pre>
+                <Markdown token={token} project={params.project} repo={params.repo} text={c.body} />
               </div>
             </div>
           ))}
@@ -300,7 +307,7 @@ export default async function PullDetailPage({
               </div>
               {rv.body && (
                 <div className="pr-comment-body">
-                  <pre>{rv.body}</pre>
+                  <Markdown token={token} project={params.project} repo={params.repo} text={rv.body} />
                 </div>
               )}
             </div>

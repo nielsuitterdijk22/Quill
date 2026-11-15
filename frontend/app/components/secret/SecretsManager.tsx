@@ -231,6 +231,7 @@ export function SecretsManager({
             <span>Value</span>
             <textarea
               name="value"
+              className="mono"
               defaultValue=""
               placeholder="Paste the secret value"
               autoComplete="off"

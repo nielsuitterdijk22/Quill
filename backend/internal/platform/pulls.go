@@ -364,6 +364,43 @@ func (s *Service) GetPull(ctx context.Context, actor Actor, projectSlug, repoSlu
 	return repo, pr, nil
 }
 
+// EditPull changes a pull request's title and/or description (nil leaves a
+// field as is; an empty description clears it). Repository members may edit,
+// like GitHub's collaborators; merged and closed pulls stay editable.
+func (s *Service) EditPull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, title, body *string) (db.Repository, forgejo.PullRequest, error) {
+	if title != nil {
+		t := strings.TrimSpace(*title)
+		if t == "" {
+			return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: a title is required", ErrInvalidInput)
+		}
+		title = &t
+	}
+	if body != nil {
+		b := strings.TrimRight(*body, " \t\r\n")
+		body = &b
+	}
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	if !be.engine {
+		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: editing pull requests needs a Quill-hosted repository", ErrInvalidInput)
+	}
+	pr, _, err := s.engineGetPull(ctx, repo, be, number)
+	if err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	if title == nil && body == nil {
+		_, dto, err := s.engineGetPull(ctx, repo, be, number)
+		return repo, dto, err
+	}
+	if _, err := s.store.UpdatePull(ctx, pr.ID, title, body); err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("update pull: %w", err)
+	}
+	_, dto, err := s.engineGetPull(ctx, repo, be, number)
+	return repo, dto, err
+}
+
 // GetPullDiff returns a pull request's changes as parsed diff files.
 func (s *Service) GetPullDiff(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.DiffFile, error) {
 	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)

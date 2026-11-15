@@ -166,11 +166,12 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 type editIssueRequest struct {
-	State string `json:"state"` // "open" | "closed"
-	Title string `json:"title"`
+	State string  `json:"state"` // "open" | "closed"
+	Title string  `json:"title"`
+	Body  *string `json:"body"` // nil = unchanged; "" clears the description
 }
 
-// handleEditIssue closes, reopens, or renames an issue.
+// handleEditIssue closes, reopens, renames, or re-describes an issue.
 func (s *Server) handleEditIssue(w http.ResponseWriter, r *http.Request) {
 	actor, slug, repo, ok := issueTarget(w, r)
 	if !ok {
@@ -190,6 +191,12 @@ func (s *Server) handleEditIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Title != "" {
 		title = &req.Title
+	}
+	if req.Body != nil {
+		if _, err := s.platform.EditIssueBody(r.Context(), actor, slug, repo, number, *req.Body); err != nil {
+			s.writePlatformError(w, err, "could not update issue")
+			return
+		}
 	}
 	issue, err := s.platform.EditIssue(r.Context(), actor, slug, repo, number, state, title)
 	if err != nil {

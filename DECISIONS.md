@@ -493,3 +493,25 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - **Egress UI:** the account-level policy moved to Settings → Policies; on repo settings it sits with
   the branch/environment policies. Scaleway endpoints were not added to the defaults (`*.scw.cloud`
   admits any bucket); repos deploying to Scaleway add them, as quill and tempo do.
+
+## 2026-11-15 — PR #1 merged by an operator push; editable descriptions; markdown text; input font
+
+- **Operator merge of PR #1 (owner's explicit request and approval):** agents have no API token, so
+  the PR was landed by fast-forwarding `main` to its head (`e058c77`, same result as a Rebase merge).
+  `requirePullRequest` on quill's `main` policy was set false only for that one push and restored at
+  once; the PR row was marked merged (method rebase). Found on the way: the guard's per-scope
+  listing ignores `policies.enabled`, so a disabled branch policy is still enforced (follow-up).
+  Rejected: forging a user session for the API (impersonation); adding an admin merge command
+  (it would itself need a merge first).
+- **Editing:** `PATCH /pulls/{n}` edits a PR's title/description (members; merged/closed PRs stay
+  editable, as on GitHub); `PATCH /issues/{n}` accepts `body`. An empty description clears it;
+  a title can't be blanked. Issue body edits are member-only for now (authors of public-repo issues
+  can't edit theirs yet).
+- **Text display:** descriptions, comments and reviews render as GFM through the existing markup
+  endpoint (goldmark, raw HTML escaped) instead of raw monospace `<pre>`; plain-text fallback keeps
+  line breaks in the sans face. One request per body (parallel, server-cached); a `bodyHtml` field
+  on the API responses was rejected for now (touches every DTO) and stays an option if pages slow.
+- **Inputs:** `font: 13px/1.45 inherit` was invalid CSS (no `inherit` inside the shorthand), so
+  browsers dropped it and every input used the UA default font; textareas were forced monospace.
+  Now Geist Sans 14px for all fields; `.mono` keeps the code face for secrets and host lists.
+  `--font-sans`/`--font-mono` tokens defined (several rules referenced them undefined).

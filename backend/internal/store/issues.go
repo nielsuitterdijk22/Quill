@@ -130,17 +130,18 @@ func (s *Store) ListIssuesByRepo(ctx context.Context, repoID uuid.UUID, state st
 }
 
 // UpdateIssue patches title and/or state (nil = unchanged).
-func (s *Store) UpdateIssue(ctx context.Context, id uuid.UUID, title, state *string) (Issue, error) {
+func (s *Store) UpdateIssue(ctx context.Context, id uuid.UUID, title, state, body *string) (Issue, error) {
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE issues SET
 			title = COALESCE($2, title),
+			body = COALESCE($4, body),
 			state = COALESCE($3, state),
 			closed_at = CASE
 				WHEN $3::text = 'closed' AND state <> 'closed' THEN now()
 				WHEN $3::text = 'open' THEN NULL
 				ELSE closed_at END,
 			updated_at = now()
-		WHERE id = $1`, id, title, state); err != nil {
+		WHERE id = $1`, id, title, state, body); err != nil {
 		return Issue{}, err
 	}
 	return s.getIssue(ctx, "i.id = $1", id)

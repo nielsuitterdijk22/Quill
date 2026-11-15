@@ -9,6 +9,9 @@ import {
   fmtDate,
   repoBase,
 } from "../../../../../../../components/repo";
+import { Markdown } from "../../../../../../../components/Markdown";
+import { EditableDescription } from "../../../../../../../components/EditableDescription";
+import { editIssueAction } from "./actions";
 import { IssueActions } from "./IssueActions";
 import { IssueCommentForm } from "./IssueCommentForm";
 
@@ -97,29 +100,37 @@ export default async function IssueDetailPage({
         </div>
       </div>
 
-      {issue.body && (
-        <div className="panel">
-          <div className="pr-author-row">
-            <strong>{issue.author?.login ?? "unknown"}</strong>
-            <span className="muted">{fmtDate(issue.createdAt)}</span>
-          </div>
-          <div className="readme-body">
-            <pre style={{ whiteSpace: "pre-wrap" }}>{issue.body}</pre>
-          </div>
-        </div>
-      )}
+      <div className="convo">
+        <EditableDescription
+          action={editIssueAction.bind(null, params.project, params.repo, issue.number)}
+          title={issue.title}
+          body={issue.body ?? ""}
+          head={
+            <>
+              <b>{issue.author?.login ?? "unknown"}</b>
+              <span className="subtle"> opened · {fmtDate(issue.createdAt)}</span>
+            </>
+          }
+        >
+          {issue.body ? (
+            <Markdown token={token} project={params.project} repo={params.repo} text={issue.body} />
+          ) : (
+            <span className="subtle">No description provided.</span>
+          )}
+        </EditableDescription>
 
-      {comments.map((c) => (
-        <div className="panel" key={c.id}>
-          <div className="pr-author-row">
-            <strong>{c.author?.login ?? "unknown"}</strong>
-            <span className="muted">{fmtDate(c.createdAt)}</span>
+        {comments.map((c) => (
+          <div className="pr-comment" key={c.id}>
+            <div className="pr-comment-head">
+              <b>{c.author?.login ?? "unknown"}</b>
+              <span className="subtle"> commented · {fmtDate(c.createdAt)}</span>
+            </div>
+            <div className="pr-comment-body">
+              <Markdown token={token} project={params.project} repo={params.repo} text={c.body} />
+            </div>
           </div>
-          <div className="readme-body">
-            <pre style={{ whiteSpace: "pre-wrap" }}>{c.body}</pre>
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
 
       <IssueCommentForm
         project={params.project}

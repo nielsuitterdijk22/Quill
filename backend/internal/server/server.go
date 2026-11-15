@@ -656,6 +656,7 @@ func (s *Server) setupRoutes() {
 								r.Post("/", s.handleCreatePull)
 								r.Route("/{number}", func(r chi.Router) {
 									r.Get("/", s.handleGetPull)
+									r.Patch("/", s.handleEditPull)
 									r.Get("/diff", s.handleGetPullDiff)
 									r.Get("/commits", s.handleListPullCommits)
 									r.Get("/comments", s.handleListPullComments)

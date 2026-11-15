@@ -6,10 +6,12 @@ import {
   createLineComment,
   createPullComment,
   createPullReview,
+  editPull,
   mergePull,
   type ReviewState,
 } from "../../../../../../../lib/api";
 import { getToken } from "../../../../../../../lib/session";
+import type { EditTextState } from "../../../../../../../components/EditableDescription";
 
 export type CommentState = { error?: string; ok?: boolean };
 
@@ -122,4 +124,23 @@ export async function reviewAction(
 
   revalidatePath(`/projects/${project}/repos/${repo}/pulls/${number}`);
   return { ok: true };
+}
+
+// editPullAction saves a pull request's edited title and description.
+export async function editPullAction(
+  project: string,
+  repo: string,
+  number: number,
+  _prev: EditTextState,
+  formData: FormData,
+): Promise<EditTextState> {
+  const token = await getToken();
+  if (!token) return { error: "Your session has expired. Sign in again." };
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return { error: "A title is required." };
+  const body = String(formData.get("body") ?? "");
+  const res = await editPull(token, project, repo, number, { title, body });
+  if (!res.ok) return { error: res.error };
+  revalidatePath(`/projects/${project}/repos/${repo}/pulls/${number}`);
+  return { ok: true, at: Date.now() };
 }

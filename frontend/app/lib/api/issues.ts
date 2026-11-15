@@ -40,7 +40,7 @@ export function editIssue(
   project: string,
   repo: string,
   number: number,
-  input: { state?: string; title?: string },
+  input: { state?: string; title?: string; body?: string },
 ): Promise<DataResult<{ issue: Issue }>> {
   return sendData(
     token,

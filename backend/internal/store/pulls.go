@@ -348,3 +348,15 @@ func (s *Store) TouchPull(ctx context.Context, pullID uuid.UUID) error {
 		"UPDATE pull_requests SET updated_at = now() WHERE id = $1", pullID)
 	return err
 }
+
+// UpdatePull edits a pull's title and/or description (nil leaves a field
+// unchanged) and returns the updated row.
+func (s *Store) UpdatePull(ctx context.Context, pullID uuid.UUID, title, body *string) (PullRequest, error) {
+	return scanPull(s.pool.QueryRow(ctx, `
+		UPDATE pull_requests SET
+			title = COALESCE($2, title),
+			body = COALESCE($3, body),
+			updated_at = now()
+		WHERE id = $1
+		RETURNING `+pullColumns, pullID, title, body))
+}

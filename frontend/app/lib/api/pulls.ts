@@ -1,4 +1,4 @@
-import { authGet, postData } from "./client";
+import { authGet, postData, sendData } from "./client";
 import type {
   PullRequest,
   PullComment,
@@ -163,6 +163,22 @@ export function createLineComment(
   return postData(
     token,
     `/api/v1/projects/${project}/repos/${repo}/pulls/${number}/line-comments`,
+    input,
+  );
+}
+
+// editPull changes a pull request's title and/or description.
+export function editPull(
+  token: string,
+  project: string,
+  repo: string,
+  number: number,
+  input: { title?: string; body?: string },
+): Promise<DataResult<{ pull: PullRequest }>> {
+  return sendData(
+    token,
+    "PATCH",
+    `/api/v1/projects/${project}/repos/${repo}/pulls/${number}`,
     input,
   );
 }
