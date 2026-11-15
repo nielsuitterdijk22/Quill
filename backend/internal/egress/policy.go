@@ -50,11 +50,12 @@ var DefaultGroups = []Group{
 	{"npm / Node.js", []string{"registry.npmjs.org", "registry.yarnpkg.com", "repo.yarnpkg.com", "nodejs.org", "fonts.googleapis.com", "fonts.gstatic.com"}},
 	{"Python", []string{"pypi.org", "files.pythonhosted.org", "*.python.org"}},
 	{"Maven / Gradle", []string{"repo.maven.apache.org", "repo1.maven.org", "plugins.gradle.org", "services.gradle.org", "downloads.gradle.org"}},
-	{"Go", []string{"proxy.golang.org", "sum.golang.org", "go.dev", "dl.google.com"}},
+	// proxy.golang.org serves module zips by redirecting to storage.googleapis.com.
+	{"Go", []string{"proxy.golang.org", "sum.golang.org", "go.dev", "dl.google.com", "storage.googleapis.com"}},
 	{"Rust", []string{"crates.io", "*.crates.io", "static.rust-lang.org", "sh.rustup.rs"}},
 	{"Ruby / PHP / .NET", []string{"rubygems.org", "*.rubygems.org", "packagist.org", "repo.packagist.org", "api.nuget.org", "*.nuget.org", "dot.net", "builds.dotnet.microsoft.com"}},
 	{"OS packages", []string{"deb.debian.org", "security.debian.org", "archive.ubuntu.com", "security.ubuntu.com", "ports.ubuntu.com", "dl-cdn.alpinelinux.org"}},
-	{"Terraform", []string{"registry.terraform.io", "releases.hashicorp.com"}},
+	{"Terraform", []string{"registry.terraform.io", "releases.hashicorp.com", "checkpoint-api.hashicorp.com"}},
 }
 
 // DefaultHosts is DefaultGroups flattened.

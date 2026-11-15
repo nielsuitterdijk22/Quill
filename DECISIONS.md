@@ -433,7 +433,9 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   deliberately starts a privileged container can flush the rules: this stops compromised dependencies
   and stray tooling, not a hostile workflow author (same root-equivalence as the isolation entry). DNS
   stays open (tunnelling possible); CDN domain fronting through an allowed host is possible; SSH/other
-  ports are blocked outright.
+  ports are blocked outright. `storage.googleapis.com` is in the Go defaults because proxy.golang.org
+  redirects module downloads there; it is broad (any public GCS bucket). Orgs that care can drop it and
+  run a Go module mirror instead (found by the first enforced self-deploy, whose refusal summary named it).
 - **Rejected:** a squid forward proxy like Forge (needs HTTP_PROXY support in every tool — Maven,
   dockerd and many scripts ignore it); DNS-answer filtering + ipsets (shared CDN IPs make it porous);
   TLS interception (breaks pinning, needs a CA in every image); per-repo allow-all (lets a repo admin

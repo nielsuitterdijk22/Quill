@@ -51,7 +51,7 @@ func TestDefaultsAreValid(t *testing.T) {
 		}
 	}
 	m := NewMatcher(DefaultHosts())
-	for _, h := range []string{"registry-1.docker.io", "registry.npmjs.org", "files.pythonhosted.org", "repo1.maven.org", "proxy.golang.org", "ghcr.io", "objects.githubusercontent.com"} {
+	for _, h := range []string{"registry-1.docker.io", "registry.npmjs.org", "files.pythonhosted.org", "repo1.maven.org", "proxy.golang.org", "storage.googleapis.com", "ghcr.io", "objects.githubusercontent.com"} {
 		if !m.Allowed(h) {
 			t.Errorf("defaults should allow %s", h)
 		}
