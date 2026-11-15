@@ -350,6 +350,13 @@ func SyncRepoToBucket(ctx context.Context, eng *Engine, referee Referee, rcx Rec
 		return nil
 	}
 
+	// Writers that create objects locally (a PR merge's commit, small
+	// unpacked pushes) leave LOOSE objects; only packs reach the bucket, so
+	// fold them into a pack first. Without this the referee moved a branch
+	// to a commit only this instance's cache held (2026-11-15, tempo).
+	if err := packLooseObjects(rcx.Dir); err != nil {
+		return err
+	}
 	known := map[string]bool{}
 	for _, p := range m.Packs {
 		known[strings.TrimSuffix(filepath.Base(p.Object), ".pack")] = true
@@ -610,4 +617,20 @@ func dropLooseRefs(dir string) {
 	for _, sub := range []string{"heads", "tags"} {
 		_ = os.MkdirAll(filepath.Join(refs, sub), 0o755)
 	}
+}
+
+// packLooseObjects packs any loose objects of dir into one new pack (existing
+// packs are left alone; the packed loose files are pruned).
+func packLooseObjects(dir string) error {
+	out, err := exec.Command("git", "-C", dir, "count-objects").Output()
+	if err != nil {
+		return fmt.Errorf("count loose objects: %w", err)
+	}
+	if strings.HasPrefix(strings.TrimSpace(string(out)), "0 objects") {
+		return nil
+	}
+	if out, err := exec.Command("git", "-C", dir, "repack", "-q", "-d").CombinedOutput(); err != nil {
+		return fmt.Errorf("pack loose objects: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
@@ -30,6 +31,13 @@ import (
 // for the PR surface (public-read bypass does not apply here, matching the
 // forgejo path's resolveRepo semantics).
 func (s *Service) resolvePullRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, gitBackend, error) {
+	return s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, false)
+}
+
+// resolveCollabRepo is resolvePullRepo; publicOK additionally admits any
+// signed-in user to a PUBLIC repository (issue reading/filing/commenting,
+// GitHub-style — Quill's support link points at its own public tracker).
+func (s *Service) resolveCollabRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string, publicOK bool) (db.Repository, gitBackend, error) {
 	project, err := s.getProject(ctx, projectSlug)
 	if err != nil {
 		return db.Repository{}, gitBackend{}, err
@@ -44,7 +52,9 @@ func (s *Service) resolvePullRepo(ctx context.Context, actor Actor, projectSlug,
 		return db.Repository{}, gitBackend{}, fmt.Errorf("lookup repo: %w", err)
 	}
 	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
-		return db.Repository{}, gitBackend{}, err
+		if !(publicOK && errors.Is(err, ErrForbidden) && repo.Visibility == "public" && actor.UserID != uuid.Nil) {
+			return db.Repository{}, gitBackend{}, err
+		}
 	}
 	_, stErr := s.store.GetGitRepoState(ctx, repo.ID)
 	switch {

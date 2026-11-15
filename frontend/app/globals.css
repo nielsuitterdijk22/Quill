@@ -4842,3 +4842,24 @@ button.sbom-chip:hover {
 .banner.danger b {
   color: var(--red);
 }
+
+/* Sidebar foot: link to Quill's public issue tracker. */
+.support-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+.support-link:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.support-link .nav-icon {
+  width: 14px;
+  height: 14px;
+}

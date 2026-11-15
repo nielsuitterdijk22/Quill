@@ -66,3 +66,60 @@ func TestCancelPendingRunScopedToWorkflow(t *testing.T) {
 		t.Fatalf("second cancel: %v", err)
 	}
 }
+
+// With a `concurrency:` group, a newer push supersedes older waiting runs of
+// the same workflow and ref
+// (2026-11-15: merging four PRs queued four deploys); other refs, other
+// workflows and manual runs are untouched.
+func TestPushSupersedesPendingRuns(t *testing.T) {
+	svc, st := newService(t)
+	svc = svc.WithQueueMode()
+	ctx := context.Background()
+	repo := makeProjectWithRepo(t, st, "supersede")
+	project, err := st.GetProjectByID(ctx, repo.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := platform.Actor{UserID: makeUser(t, st, "supersede-admin"), IsAdmin: true}
+	grouped := "concurrency: deploy\n" + queueWorkflowYAML
+	run := func(path, ref, event, sha string) db.PipelineRun {
+		y := grouped
+		if path == ".github/workflows/ci.yml" {
+			y = queueWorkflowYAML // no concurrency group: never superseded
+		}
+		r, err := svc.EnqueuePipelineRun(ctx, repo, platform.TriggerInput{WorkflowPath: path, Ref: ref, Event: event}, y, sha, uuid.NullUUID{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	status := func(r db.PipelineRun, path string) string {
+		_, d, err := svc.GetRun(ctx, admin, project.Slug, repo.Slug, path, int(r.RunNumber))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Run.Status
+	}
+	const deploy, ci = ".github/workflows/deploy.yml", ".github/workflows/ci.yml"
+	d1 := run(deploy, "refs/heads/main", "push", "a")
+	manual := run(deploy, "refs/heads/main", "manual", "a")
+	other := run(deploy, "refs/heads/feature", "push", "b")
+	c1 := run(ci, "refs/heads/main", "push", "a")
+	d2 := run(deploy, "refs/heads/main", "push", "c")
+	c2 := run(ci, "refs/heads/main", "push", "c")
+	for _, tc := range []struct {
+		r          db.PipelineRun
+		path, want string
+	}{
+		{d1, deploy, pipeline.StatusCancelled},
+		{manual, deploy, pipeline.StatusPending}, // someone asked for it: never superseded
+		{other, deploy, pipeline.StatusPending},
+		{c1, ci, pipeline.StatusPending},
+		{d2, deploy, pipeline.StatusPending},
+		{c2, ci, pipeline.StatusPending},
+	} {
+		if got := status(tc.r, tc.path); got != tc.want {
+			t.Errorf("%s run %d (%s) = %s, want %s", tc.path, tc.r.RunNumber, tc.r.Ref, got, tc.want)
+		}
+	}
+}

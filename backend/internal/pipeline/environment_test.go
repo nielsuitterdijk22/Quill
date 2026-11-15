@@ -22,3 +22,16 @@ func TestWorkflowEnvironment(t *testing.T) {
 		}
 	}
 }
+
+func TestHasConcurrency(t *testing.T) {
+	for y, want := range map[string]bool{
+		"concurrency: deploy\njobs: {}\n":                      true,
+		"concurrency:\n  group: ${{ github.ref }}\njobs: {}\n": true,
+		"jobs:\n  a:\n    concurrency: x\n":                    false, // job-level only
+		"jobs: {}\n":                                           false,
+	} {
+		if HasConcurrency(y) != want {
+			t.Errorf("HasConcurrency(%q) != %v", y, want)
+		}
+	}
+}

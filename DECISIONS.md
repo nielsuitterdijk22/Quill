@@ -473,3 +473,23 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   now applies GitHub's push filters (`paths` still not evaluated); Cancel ignored queue-mode `pending`
   runs and cancelled run #N of *every* workflow — it now covers pending runs (withdrawing the queue row)
   and is scoped by `?workflow=`.
+
+## 2026-11-15 — Merge commits reach the bucket; pending push runs are superseded; public-repo issues; support link
+
+- **Engine bug (broke tempo's main in prod):** a PR merge writes its merge commit as loose objects and
+  `SyncRepoToBucket` uploaded only packs, so the referee moved `main` to a commit only the merging
+  instance's cache held; every other instance answered "not a tree object" (contents page, clone → 502).
+  Sync now packs loose objects first (`git repack -d`, existing packs untouched). Tempo was repaired by
+  packing the five merge commits from the one cache that held them and adding the pack to the manifest.
+  Only tempo had merged PRs. Regression test hydrates from the bucket into a fresh cache after a merge.
+- **Superseding (opt-in via a top-level `concurrency:` key, as on GitHub):** a new push run cancels
+  older push runs of the same workflow on the same ref that are still waiting (unclaimed); manual runs are
+  never superseded; the group is approximated as workflow + ref. Unconditional superseding was rejected —
+  it changes semantics for every workflow (an existing queue test caught it). quill-deploy.yml opts in. A burst of merges deploys only the newest
+  commit. (Runs of one repo+environment already execute serially on one CI instance.)
+- **Public-repo issues:** any signed-in user may read, file and comment on issues of a **public** repo
+  (GitHub semantics); editing stays with project members; private repos unchanged. Needed for the new
+  sidebar **Support** link to Quill's own public tracker (`/projects/nuitterdijk/repos/quill/issues`).
+- **Egress UI:** the account-level policy moved to Settings → Policies; on repo settings it sits with
+  the branch/environment policies. Scaleway endpoints were not added to the defaults (`*.scw.cloud`
+  admits any bucket); repos deploying to Scaleway add them, as quill and tempo do.

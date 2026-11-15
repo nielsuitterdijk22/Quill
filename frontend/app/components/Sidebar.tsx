@@ -39,6 +39,9 @@ const NAV: NavItem[] = [
   { href: "/sbom", label: "Dependencies", icon: "package" },
 ];
 
+// SUPPORT_HREF is the issue tracker of Quill's own public repository.
+const SUPPORT_HREF = "/projects/nuitterdijk/repos/quill/issues";
+
 // SETTINGS_NAV is appended after the scope-aware Policies entry (see below) so
 // the two sit together at the foot of the primary nav.
 const SETTINGS_NAV: NavItem[] = [
@@ -449,6 +452,12 @@ export function Sidebar({
       )}
 
       <div className="foot">
+        {/* Support: Quill's own public repository (Quill hosts itself), so
+            bug reports and questions land in its issue tracker. */}
+        <Link className="support-link" href={SUPPORT_HREF}>
+          <Icon name="issues" className="nav-icon" />
+          Support · report an issue
+        </Link>
         <ThemeToggle />
         <button
           className="logout-btn"

@@ -65,3 +65,18 @@ func WorkflowEnvironment(workflowYAML string) (string, error) {
 	sort.Strings(all)
 	return "", fmt.Errorf("jobs target different environments (%s); one workflow deploys to one environment", strings.Join(all, ", "))
 }
+
+// HasConcurrency reports whether a workflow declares a top-level
+// `concurrency:` group. Quill honours it the way GitHub treats a group's
+// waiting runs: only the newest pending push run of the workflow on a ref is
+// kept (the group is approximated as workflow + ref; expressions are not
+// evaluated).
+func HasConcurrency(workflowYAML string) bool {
+	var wf struct {
+		Concurrency yaml.Node `yaml:"concurrency"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowYAML), &wf); err != nil {
+		return false
+	}
+	return wf.Concurrency.Kind != 0 && !(wf.Concurrency.Kind == yaml.ScalarNode && wf.Concurrency.Value == "")
+}

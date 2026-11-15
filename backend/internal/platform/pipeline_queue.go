@@ -166,7 +166,20 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	if envID.Valid {
 		scope = repo.ID.String() + "/" + envID.UUID.String()
 	}
-	return run, s.enqueueSpec(ctx, run, tenantID, spec, scope)
+	if err := s.enqueueSpec(ctx, run, tenantID, spec, scope); err != nil {
+		return run, err
+	}
+	// With a `concurrency:` group, a newer push supersedes older runs of this
+	// workflow on the same ref that are still waiting: a burst of merges
+	// deploys only the newest.
+	if event == "push" && pipeline.HasConcurrency(yaml) {
+		if gone, err := s.store.SupersedePendingRuns(ctx, pl.ID, ref, run.ID); err != nil {
+			s.logger.Warn("supersede pending runs failed", "run", run.ID, "error", err)
+		} else if len(gone) > 0 {
+			s.logger.Info("superseded pending runs", "workflow", path, "ref", ref, "runs", gone)
+		}
+	}
+	return run, nil
 }
 
 // enqueueSpec serialises spec and inserts the queue row. The JobSpec dict

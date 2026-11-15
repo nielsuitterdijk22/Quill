@@ -15,7 +15,9 @@ import (
 // Issue tracker (D2 cutover). Engine-backed repos keep issues in Postgres
 // (store/issues.go); Forgejo repos still proxy to Forgejo until migrated. Both
 // paths return the forgejo DTOs the server already maps, so the frontend is
-// unchanged. Authorization is project membership (resolvePullRepo), as before.
+// unchanged. Authorization is project membership (resolvePullRepo); on a
+// public repository any signed-in user may also read, file and comment on
+// issues (2026-11-15) — editing stays with members.
 
 // issuePageSize mirrors Forgejo's default page.
 const issuePageSize = 30
@@ -58,7 +60,7 @@ func (s *Service) engineIssue(ctx context.Context, be gitBackend, number int) (s
 
 // ListIssues pages a repository's issues by state ("open" | "closed" | "all").
 func (s *Service) ListIssues(ctx context.Context, actor Actor, projectSlug, repoSlug, state string, page int) ([]forgejo.Issue, error) {
-	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	_, be, err := s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +84,7 @@ func (s *Service) ListIssues(ctx context.Context, actor Actor, projectSlug, repo
 
 // GetIssue returns one issue with its comments.
 func (s *Service) GetIssue(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (forgejo.Issue, []forgejo.IssueComment, error) {
-	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	_, be, err := s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return forgejo.Issue{}, nil, err
 	}
@@ -118,7 +120,7 @@ func (s *Service) CreateIssue(ctx context.Context, actor Actor, projectSlug, rep
 	if title == "" {
 		return forgejo.Issue{}, fmt.Errorf("%w: a title is required", ErrInvalidInput)
 	}
-	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	_, be, err := s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return forgejo.Issue{}, err
 	}
@@ -181,7 +183,7 @@ func (s *Service) CreateIssueComment(ctx context.Context, actor Actor, projectSl
 	if body == "" {
 		return forgejo.IssueComment{}, fmt.Errorf("%w: a comment body is required", ErrInvalidInput)
 	}
-	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	_, be, err := s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return forgejo.IssueComment{}, err
 	}

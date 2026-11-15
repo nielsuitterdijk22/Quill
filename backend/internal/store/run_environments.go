@@ -65,3 +65,36 @@ func (s *Store) CommitDeployFacts(ctx context.Context, repoID uuid.UUID, sha str
 	}
 	return f, err
 }
+
+// SupersedePendingRuns cancels the older push runs of a pipeline on ref that
+// are still waiting for a worker (queue row unclaimed), keeping keep. A burst of
+// pushes/merges to one branch then runs only its newest commit, instead of
+// queueing one deploy per merge. Returns the cancelled run numbers.
+func (s *Store) SupersedePendingRuns(ctx context.Context, pipelineID uuid.UUID, ref string, keep uuid.UUID) ([]int64, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH old AS (
+			SELECT r.id FROM pipeline_runs r
+			JOIN pipeline_queue q ON q.run_id = r.id AND q.status = 'pending'
+			WHERE r.pipeline_id = $1 AND r.ref = $2 AND r.id <> $3 AND r.status = 'pending' AND r.event = 'push'
+			  AND r.created_at <= (SELECT created_at FROM pipeline_runs WHERE id = $3)
+		), withdrawn AS (
+			UPDATE pipeline_queue SET status = 'done', updated_at = now()
+			WHERE run_id IN (SELECT id FROM old) AND status = 'pending'
+		)
+		UPDATE pipeline_runs SET status = 'cancelled', finished_at = now()
+		WHERE id IN (SELECT id FROM old)
+		RETURNING run_number`, pipelineID, ref, keep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var n int64
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}

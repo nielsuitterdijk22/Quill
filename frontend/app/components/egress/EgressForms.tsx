@@ -127,7 +127,7 @@ export function RepoEgressForm({ policy, project, repo }: { policy: RepoEgress; 
   const inh = policy.inherited;
   // Link to where the inherited policy is edited (org or account settings).
   const where = inh.canEdit ? (
-    <a href={inh.tenant.personal ? "/settings#egress" : `/orgs/${inh.tenant.slug}/settings#egress`}>{inh.tenant.name || inh.tenant.slug}</a>
+    <a href={inh.tenant.personal ? "/settings?tab=policies#egress" : `/orgs/${inh.tenant.slug}/settings#egress`}>{inh.tenant.name || inh.tenant.slug}</a>
   ) : (
     <b>{inh.tenant.name || inh.tenant.slug}</b>
   );

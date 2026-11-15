@@ -130,6 +130,19 @@ export default async function RepoSettingsPage({
         />
       </section>
 
+      {egress && (
+        <section className="settings-section settings-card" id="egress">
+          <div className="settings-head">
+            <h2 className="settings-title">Pipeline egress</h2>
+            <p className="subtle">
+              Pipelines reach only allowed hosts. This repository inherits its organization&apos;s policy and can
+              add hosts it needs, such as a private registry.
+            </p>
+          </div>
+          <RepoEgressForm policy={egress} project={params.project} repo={params.repo} />
+        </section>
+      )}
+
       <section className="settings-section settings-card">
         <div className="settings-head">
           <h2 className="settings-title">Secrets</h2>
@@ -146,18 +159,6 @@ export default async function RepoSettingsPage({
         />
       </section>
 
-      {egress && (
-        <section className="settings-section settings-card" id="egress">
-          <div className="settings-head">
-            <h2 className="settings-title">Pipeline egress</h2>
-            <p className="subtle">
-              Pipelines reach only allowed hosts. This repository inherits its organization&apos;s policy and can
-              add hosts it needs, such as a private registry.
-            </p>
-          </div>
-          <RepoEgressForm policy={egress} project={params.project} repo={params.repo} />
-        </section>
-      )}
 
       <section className="settings-section">
         <div className="settings-head">

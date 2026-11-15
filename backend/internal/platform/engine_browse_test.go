@@ -55,6 +55,14 @@ func browseGitAvailable(t *testing.T) {
 // base to push into.
 func browseFixture(t *testing.T) (*platform.Service, *store.Store, string) {
 	t.Helper()
+	svc, st, url, _ := browseFixtureMem(t)
+	return svc, st, url
+}
+
+// browseFixtureMem is browseFixture plus the in-memory bucket, so a test can
+// hydrate a repo into a fresh cache (another instance's view of the bucket).
+func browseFixtureMem(t *testing.T) (*platform.Service, *store.Store, string, *objectstore.MemStore) {
+	t.Helper()
 	mem := objectstore.NewMemStore()
 	engine := gitengine.New(mem)
 	cache := &gitengine.RepoCache{Root: t.TempDir(), Engine: engine, Packs: gitengine.NewBucketPackSource(mem)}
@@ -95,7 +103,7 @@ func browseFixture(t *testing.T) (*platform.Service, *store.Store, string) {
 	}
 	srv := httptest.NewServer(http.StripPrefix("/git", http.Handler(h)))
 	t.Cleanup(srv.Close)
-	return svc, st, srv.URL + "/git"
+	return svc, st, srv.URL + "/git", mem
 }
 
 // browseGitPush runs git push in dir and returns output + error.

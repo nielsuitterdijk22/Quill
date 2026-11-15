@@ -14,6 +14,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Only the newest waiting deploy runs (Quill and GitHub supersede older
+# pending runs of a concurrency group).
+concurrency: deploy-production
+
 env:
   SCW_DEFAULT_REGION: fr-par
   SCW_DEFAULT_PROJECT_ID: e2e72d28-8d7b-43ab-b45e-d1de0b4956ac
