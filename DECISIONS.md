@@ -408,3 +408,36 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   Quill's glyph is the favicon's gold feather, so the tab, sidebar and switcher show one mark. No newer
   Tempo design exists in any repo, so Tempo keeps its amber bars in the new tile. Gradients use
   `userSpaceOnUse`, because objectBoundingBox paints nothing on zero-width strokes (Tempo's bars).
+
+## 2026-11-15 — Pipeline egress controls built into Quill; git.black-tulip.nl on Quill (owner: "egress controls for pipelines … make it a built-in in quill", "I think we can safely switch over everything")
+
+- **Model.** An organization (tenant) policy is either **allow all** or an **allowlist** of hostnames;
+  every repository inherits it and can only **add** hosts (allow-all stays an org decision, so a repo
+  admin can't drop the org's boundary). Unset = allowlist with `egress.DefaultGroups` (GitHub/ghcr,
+  Docker Hub, quay/gcr/k8s/mcr/ecr, npm/yarn/nodejs, PyPI, Maven/Gradle, Go, Rust, RubyGems/Packagist/
+  NuGet, Debian/Ubuntu/Alpine mirrors, Terraform, Google Fonts). Personal accounts edit theirs under
+  Settings. `*.x` matches subdomains only; IPs and ports are rejected (hostname matching, 80/443 only).
+  Always allowed: the git/api host, github.com + `*.githubusercontent.com` (actions resolve there), the
+  runner image's registry. Tables `tenant_egress_policies`, `repo_egress_hosts` (migration 000036); the
+  resolved policy travels in the queued JobSpec like secrets.
+- **Enforcement on the CI instance.** The worker (now `--cap-add NET_ADMIN`) runs a transparent proxy;
+  iptables (nft or legacy, whichever holds Docker's DOCKER-USER) redirect outbound TCP 80/443 from the
+  host, dockerd and host-network jobs (nat OUTPUT) and bridge containers (nat PREROUTING) to it. The
+  proxy reads TLS SNI / HTTP Host (no decryption), checks the list, and dials **the name** itself — so a
+  client can't present an allowed name while connecting elsewhere — refusing non-public addresses.
+  Its upstream sockets carry fwmark 0x5155 (needs NET_ADMIN, which jobs lack); everything else that
+  isn't DNS, DHCP/NTP, loopback or Docker's private ranges is rejected. Refused hosts are logged live in
+  the running step and summarised in the failed step. A job whose policy can't be applied doesn't start
+  (fail closed); queue rows without a policy (pre-deploy) run unrestricted.
+- **Known limits.** Job containers keep the Docker socket (the deploy needs it), so a workflow that
+  deliberately starts a privileged container can flush the rules: this stops compromised dependencies
+  and stray tooling, not a hostile workflow author (same root-equivalence as the isolation entry). DNS
+  stays open (tunnelling possible); CDN domain fronting through an allowed host is possible; SSH/other
+  ports are blocked outright.
+- **Rejected:** a squid forward proxy like Forge (needs HTTP_PROXY support in every tool — Maven,
+  dockerd and many scripts ignore it); DNS-answer filtering + ipsets (shared CDN IPs make it porous);
+  TLS interception (breaks pinning, needs a CA in every image); per-repo allow-all (lets a repo admin
+  undo the org's boundary); a separate egress gateway VM (the €20/month budget).
+- **git host.** The Cloudflare `git` record is DNS-only now, so `git_host_on_api` defaults to true:
+  `git.black-tulip.nl` binds to the api container and becomes the public clone base. Forgejo on the VM
+  is stopped after the cutover is verified (reversible); deleting its data waits for an explicit yes.

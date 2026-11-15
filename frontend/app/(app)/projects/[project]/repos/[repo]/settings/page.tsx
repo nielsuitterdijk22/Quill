@@ -5,6 +5,7 @@ import {
   getBranches,
   getEnvironmentPolicies,
   getEnvironments,
+  getRepoEgress,
   getRepoSecrets,
 } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
@@ -12,6 +13,7 @@ import { BrowseError, RepoHeader } from "../../../../../../components/repo";
 import { EnvironmentPolicyManager } from "../../../../../../components/policy/EnvironmentPolicyManager";
 import { PolicyManager } from "../../../../../../components/policy/PolicyManager";
 import { SecretsManager } from "../../../../../../components/secret/SecretsManager";
+import { RepoEgressForm } from "../../../../../../components/egress/EgressForms";
 import { DangerZone } from "./DangerZone";
 import { RepoSettingsForm } from "./RepoSettingsForm";
 
@@ -57,6 +59,7 @@ export default async function RepoSettingsPage({
   const secretsRes = await getRepoSecrets(token, params.project, params.repo);
   const secrets = secretsRes.ok ? secretsRes.data.secrets : [];
   const inheritedSecrets = secretsRes.ok ? secretsRes.data.inherited ?? [] : [];
+  const egress = await getRepoEgress(token, params.project, params.repo);
 
   return (
     <>
@@ -142,6 +145,19 @@ export default async function RepoSettingsPage({
           inherited={inheritedSecrets}
         />
       </section>
+
+      {egress && (
+        <section className="settings-section settings-card" id="egress">
+          <div className="settings-head">
+            <h2 className="settings-title">Pipeline egress</h2>
+            <p className="subtle">
+              Pipelines reach only allowed hosts. This repository inherits its organization&apos;s policy and can
+              add hosts it needs, such as a private registry.
+            </p>
+          </div>
+          <RepoEgressForm policy={egress} project={params.project} repo={params.repo} />
+        </section>
+      )}
 
       <section className="settings-section">
         <div className="settings-head">

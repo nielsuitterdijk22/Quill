@@ -8,6 +8,7 @@ import {
   getOrgMembers,
   getOrgSSO,
   getTenantEnvironmentPolicies,
+  getTenantEgress,
   getTenantPolicies,
   listOrgs,
 } from "../../../../lib/api";
@@ -19,6 +20,7 @@ import { OrgMembers } from "../../../../components/organization/OrgMembers";
 import { OrgSSO } from "../../../../components/organization/OrgSSO";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
 import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
+import { TenantEgressForm } from "../../../../components/egress/EgressForms";
 
 // OrgSettingsPage is the management surface for an organization (an org-kind
 // tenant): org-wide branch and environment policies today, with members (PR C)
@@ -38,7 +40,7 @@ export default async function OrgSettingsPage({
   if (!org) notFound();
   const canEdit = org.role === "admin";
 
-  const [branchRes, envRes, membersRes, invitesRes, groupsRes, billingRes] = await Promise.all([
+  const [branchRes, envRes, membersRes, invitesRes, groupsRes, billingRes, egress] = await Promise.all([
     getTenantPolicies(token, params.org),
     getTenantEnvironmentPolicies(token, params.org),
     getOrgMembers(token, params.org),
@@ -47,6 +49,7 @@ export default async function OrgSettingsPage({
     getOrgGroups(token, params.org),
     // Billing is admin-only; a plain member's 403 degrades to undefined.
     canEdit ? getOrgBilling(token, params.org) : Promise.resolve({ ok: false as const }),
+    getTenantEgress(token, params.org),
   ]);
   const branchPolicies = branchRes.ok ? branchRes.data.policies : [];
   const envPolicies = envRes.ok ? envRes.data.policies : [];
@@ -181,6 +184,19 @@ export default async function OrgSettingsPage({
           canEdit={canEdit}
         />
       </section>
+
+      {egress && (
+        <section className="settings-section settings-card" id="egress">
+          <div className="settings-head">
+            <h2 className="settings-title">Pipeline egress</h2>
+            <p className="subtle">
+              Which hosts pipelines may reach. Every repository in this organization inherits this policy and can
+              add hosts of its own.
+            </p>
+          </div>
+          <TenantEgressForm policy={egress} tenant={org.slug} path={`/orgs/${org.slug}/settings`} />
+        </section>
+      )}
     </>
   );
 }

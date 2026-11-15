@@ -18,6 +18,8 @@
 //	QUILL_CIW_SELF_TERMINATE          "true"/"1": delete own Scaleway instance on exit
 //	SCW_ACCESS_KEY / SCW_SECRET_KEY   (when self-terminating) scoped worker IAM key
 //	SCW_INSTANCE_ID                   instance id override when metadata is unreachable
+//	QUILL_CIW_EGRESS                  "enforce": run the egress proxy + firewall and apply
+//	                                  each job's egress policy (needs NET_ADMIN, host network)
 //
 // The act runner reads its own env as before: QUILL_PIPELINE_UBUNTU_IMAGE,
 // QUILL_PIPELINE_TIMEOUT, QUILL_PIPELINE_ACTION_CACHE (pin under /mnt — that
@@ -32,6 +34,7 @@ import (
 	"time"
 
 	"github.com/nielsuitterdijk22/quill/internal/ciworker"
+	"github.com/nielsuitterdijk22/quill/internal/egress"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/workertoken"
 )
@@ -83,7 +86,18 @@ func main() {
 		}
 	}
 
-	runner := pipeline.NewActRunner()
+	var runner pipeline.Runner = pipeline.NewActRunner()
+	if getenv("QUILL_CIW_EGRESS", "") == "enforce" {
+		// Fail closed: an instance that should enforce egress but cannot
+		// runs nothing (its queued jobs go to the next instance after the
+		// visibility timeout, and the error is in the instance log).
+		ctl, err := egress.Start(egress.RequiredHosts(apiURL, getenv("QUILL_PIPELINE_UBUNTU_IMAGE", "catthehacker/ubuntu:act-latest")))
+		if err != nil {
+			fatal("egress controls: %v", err)
+		}
+		runner = ciworker.EgressRunner{Inner: runner, Ctl: ctl}
+		logger.Info("egress controls active")
+	}
 	logger.Info("ciworker draining queue", "worker", workerID, "idle_exit", idleExit)
 	processed, err := ciworker.Drain(context.Background(), client, workerID, runner, idleExit, terminate,
 		func(msg string, kv ...any) { logger.Info(msg, kv...) })

@@ -58,6 +58,9 @@ func CloudInit(o CloudInitOpts) string {
 		// own deploy: four images + terraform); 30m was too tight.
 		{"QUILL_PIPELINE_TIMEOUT", "60m"},
 		{"QUILL_PIPELINE_UBUNTU_IMAGE", o.UbuntuImage},
+		// Pipeline egress controls (2026-11-15): the worker runs the
+		// transparent proxy and applies each job's allowlist.
+		{"QUILL_CIW_EGRESS", "enforce"},
 	} {
 		if kv[1] == "" {
 			continue
@@ -78,7 +81,7 @@ func CloudInit(o CloudInitOpts) string {
 	if o.RegistryUser != "" {
 		fmt.Fprintf(&b, "  - docker login rg.fr-par.scw.cloud -u %s -p %s\n", o.RegistryUser, o.RegistryPassword)
 	}
-	fmt.Fprintf(&b, "  - docker run --rm --name ciworker -u 0 --network host --env-file /etc/quill-ci.env -v /mnt:/mnt -v /var/run/docker.sock:/var/run/docker.sock %s /quill-ciworker\n", o.WorkerImage)
+	fmt.Fprintf(&b, "  - docker run --rm --name ciworker -u 0 --network host --cap-add NET_ADMIN --cap-add NET_RAW --env-file /etc/quill-ci.env -v /mnt:/mnt -v /var/run/docker.sock:/var/run/docker.sock %s /quill-ciworker\n", o.WorkerImage)
 	b.WriteString("  - shutdown -h now\n")
 	return b.String()
 }

@@ -13,6 +13,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/nielsuitterdijk22/quill/internal/egress"
 )
 
 // Status values for runs, jobs, and steps. They mirror the strings stored in
@@ -82,6 +84,10 @@ type JobSpec struct {
 	// environment) before dispatch. They travel to the dispatcher in the JobSpec
 	// JSON, so the dispatcher process must be trusted; they must never be logged.
 	Secrets map[string]string
+	// Egress is the run's resolved network policy (organization policy +
+	// repository extras), enforced by the CI worker. Nil = no restriction
+	// (runs enqueued before egress controls existed).
+	Egress *egress.Policy `json:",omitempty"`
 	// LogSink is called for each raw output line during execution. It is omitted
 	// from JSON serialisation so it survives only in the dispatching process.
 	LogSink LogSink `json:"-"`

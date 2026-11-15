@@ -511,10 +511,14 @@ func (s *Server) setupRoutes() {
 			r.Get("/me/contributions", s.handleMyContributions)
 			r.Get("/me/commit-emails", s.handleGetCommitEmails)
 			r.Put("/me/commit-emails", s.handlePutCommitEmails)
+			r.Get("/me/egress", s.handleGetMyEgress)
+			r.Put("/me/egress", s.handleSetMyEgress)
 			r.Put("/me/avatar", s.handleUpdateAvatar)
 			r.Delete("/me/avatar", s.handleDeleteAvatar)
 			r.Route("/tenants", func(r chi.Router) {
 				r.Route("/{tenant}", func(r chi.Router) {
+					r.Get("/egress", s.handleGetTenantEgress)
+					r.Put("/egress", s.handleSetTenantEgress)
 					r.Route("/policies", func(r chi.Router) {
 						r.Get("/", s.handleListTenantPolicies)
 						r.Put("/", s.handleSetTenantPolicy)
@@ -631,6 +635,8 @@ func (s *Server) setupRoutes() {
 									r.Post("/comments", s.handleCreateIssueComment)
 								})
 							})
+							r.Get("/egress", s.handleGetRepoEgress)
+							r.Put("/egress", s.handleSetRepoEgress)
 							r.Route("/secrets", func(r chi.Router) {
 								r.Get("/", s.handleListRepoSecrets)
 								r.Put("/{name}", s.handleSetRepoSecret)

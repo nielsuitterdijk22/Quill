@@ -104,6 +104,11 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("resolve secrets: %w", err)
 	}
+	// Egress policy: resolved now, like secrets (the worker enforces it).
+	egressPolicy, err := s.resolveRunEgress(ctx, repo)
+	if err != nil {
+		return db.PipelineRun{}, fmt.Errorf("resolve egress policy: %w", err)
+	}
 	cloneAuth := s.cloneAuth(src)
 	fullName := src.fullName()
 
@@ -144,6 +149,7 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 		Token:           cloneAuth.Token,
 		RepoFullName:    fullName,
 		Secrets:         secrets,
+		Egress:          egressPolicy,
 	}
 	// CI secret scope: an isolated CI instance only ever serves runs that
 	// draw the same secrets (repository + environment).

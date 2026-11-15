@@ -2,7 +2,8 @@ import Link from "next/link";
 
 import { Icon } from "@/components/Icon";
 
-import { getCommitEmails, getMyProjects, listGitTokens } from "../../lib/api";
+import { getCommitEmails, getMyProjects, getTenantEgress, listGitTokens } from "../../lib/api";
+import { TenantEgressForm } from "../../components/egress/EgressForms";
 import type { User } from "../../lib/api";
 import { getToken, requireSession } from "../../lib/session";
 import {
@@ -112,6 +113,7 @@ async function AccountTab({
     ? await listGitTokens(token)
     : { ok: false as const, status: 401, message: "Not signed in." };
   const commitEmails = token ? await getCommitEmails(token) : null;
+  const egress = token ? await getTenantEgress(token, null) : null;
 
   return (
     <>
@@ -149,6 +151,19 @@ async function AccountTab({
           tokens={tokensRes.ok ? tokensRes.data : []}
           loadError={tokensRes.ok ? undefined : tokensRes.message}
         />
+
+        {egress && (
+          <div className="panel form-narrow" id="egress">
+            <h2>Pipeline egress</h2>
+            <div className="readme-body">
+              <p className="hint">
+                Which hosts pipelines in your personal repositories may reach. Each repository inherits this and
+                can add hosts under its own settings.
+              </p>
+              <TenantEgressForm policy={egress} tenant={null} path="/settings" />
+            </div>
+          </div>
+        )}
       </div>
 
       <div id="settings-billing">

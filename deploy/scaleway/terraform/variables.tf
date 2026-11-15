@@ -308,7 +308,7 @@ variable "git_engine_mode" {
 }
 
 variable "git_host_on_api" {
-  description = "true once the Cloudflare git record is a CNAME to the api container: binds git.<domain> to the api and makes it the public clone base."
+  description = "true once the Cloudflare git record is a CNAME to the api container: binds git.<domain> to the api and makes it the public clone base. On since 2026-11-15 (the record is DNS-only)."
   type        = bool
-  default     = false
+  default     = true
 }

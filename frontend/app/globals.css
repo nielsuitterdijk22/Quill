@@ -4757,3 +4757,78 @@ button.sbom-chip:hover {
   .sbom-global-search { flex-wrap: wrap; }
   .sbom-picker select { max-width: 100%; }
 }
+
+/* ---- Pipeline egress settings (org / account / repo) ---- */
+.egress-form {
+  display: grid;
+  gap: 12px;
+}
+.egress-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.egress-mode {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--well);
+  cursor: pointer;
+}
+.egress-mode.on {
+  border-color: var(--accent);
+  background: var(--row-selected);
+}
+.egress-mode input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.egress-mode > span {
+  display: grid;
+  gap: 2px;
+}
+.egress-mode .subtle {
+  font-size: 12px;
+}
+.egress-form textarea.mono {
+  color: var(--text);
+  line-height: 1.6;
+}
+.egress-required code,
+.egress-form .hint code {
+  font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 0 4px;
+  margin-right: 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.egress-defaults summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.egress-defaults dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.egress-defaults dt {
+  font-weight: 600;
+  color: var(--text);
+}
+.egress-defaults dd {
+  margin: 0;
+  color: var(--muted);
+  word-break: break-word;
+}
+.egress-inherited {
+  margin: 8px 0 0;
+  word-spacing: 6px;
+  line-height: 1.7;
+  word-break: break-word;
+}

@@ -20,7 +20,8 @@ FROM anchore/syft:v1.18.1 AS syft
 
 # ---- run ----
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates git
+# iptables/ip6tables (nft + legacy backends): the CI worker's egress firewall.
+RUN apk add --no-cache ca-certificates git iptables ip6tables iptables-legacy
 # No -H: create the home directory. The pipeline dispatcher runs act from this
 # image, and act resolves caches/tooling under HOME; a missing home made every
 # `uses:` step fail silently (run aborted with all steps "skipped").

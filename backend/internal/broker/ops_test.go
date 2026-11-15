@@ -82,6 +82,9 @@ func TestCloudInitIsolatesTheMachine(t *testing.T) {
 		// the backend image runs unprivileged; the worker needs the socket
 		"-u 0",
 		"/quill-ciworker",
+		// pipeline egress controls: the worker runs the proxy and firewall
+		"QUILL_CIW_EGRESS=enforce",
+		"--cap-add NET_ADMIN",
 	} {
 		if !strings.Contains(ci, want) {
 			t.Errorf("cloud-init missing %q:\n%s", want, ci)
