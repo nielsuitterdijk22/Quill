@@ -78,7 +78,7 @@ ones marked **(enforced)**: breaking them throws the work away.
   and note it in `DECISIONS.md`.
 - Git: the owner authorized agents to commit and push directly to `main` (2026-11-08).
   Since 2026-11-14 **Quill hosts and deploys itself**: the primary remote is
-  `quill` = `https://api.black-tulip.nl/git/nuitterdijk/quill` (Quill CI runs
+  `quill` = `https://git.black-tulip.nl/nuitterdijk/quill` (since 2026-11-15; `https://api.black-tulip.nl/git/...` still works) (Quill CI runs
   `.github/workflows/quill-deploy.yml` on every push to main); GitHub (`origin`) is a
   mirror — push `main` to both (`git push quill main && git push origin main`).
   Agent git credentials: `quill admin issue-git-token --username nuitterdijk --out <file>`
@@ -105,9 +105,10 @@ rules (tenant isolation, no credential leaks) remain hard constraints regardless
 - `source .envrc` in the repo root (direnv; gitignored) for `SCW_*` credentials.
   scw CLI v2.65 is installed; region comes from `SCW_DEFAULT_REGION=fr-par` (v2.65 dropped
   the per-command `region=` arg).
-- Hosts: `app.black-tulip.nl` / `api.black-tulip.nl` are Serverless Containers (custom
-  domains, TLS at the Scaleway edge); `git`/`ssh`/`auth.black-tulip.nl` are A records to
-  the Forgejo VM `163.172.7.225` (Caddy terminates TLS, proxies to forgejo/zitadel).
+- Hosts: `app`, `api` and (since 2026-11-15) `git.black-tulip.nl` are Serverless Containers
+  (custom domains, TLS at the Scaleway edge; `git` routes to the api's git engine). The Forgejo
+  VM is **gone** — its old IP `163.172.7.225` now belongs to other instances (CI workers): do not
+  SSH there or trust old host keys. The VM SSH/compose notes below are historical.
   DNS records live at the Cloudflare registrar (apex `black-tulip.nl`), NOT in a
   Scaleway zone.
 - VM SSH: `cd deploy/scaleway/terraform && terraform output -raw vm_ssh_private_key` —

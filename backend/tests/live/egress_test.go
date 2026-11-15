@@ -38,7 +38,7 @@ jobs:
     steps:
       - name: egress probes
         run: |
-          p() { code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$2"); echo "probe:$1=$code"; }
+          p() { code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$2" || true); echo "probe:$1=$code"; }
           p npm https://registry.npmjs.org/
           p repo_extra https://example.org/
           p other_https https://example.com/
@@ -107,7 +107,8 @@ jobs:
 			t.Errorf("probe %s = %q, want %q", k, probes[k], v)
 		}
 	}
-	if !strings.Contains(string(logs), "quill egress: blocked example.com:443") {
+	// The stored log carries the worker's summary of refused hosts.
+	if !strings.Contains(string(logs), "refused by the egress policy") || !strings.Contains(string(logs), "example.com:443") {
 		t.Error("run log does not name the refused host")
 	}
 }
