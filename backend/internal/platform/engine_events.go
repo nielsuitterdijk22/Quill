@@ -60,6 +60,8 @@ func (s *Service) HandleEnginePush(ctx context.Context, repoID uuid.UUID, update
 	var runs []db.PipelineRun
 	for _, u := range updates {
 		if isZeroSHA(u.New) {
+			// A deleted branch: its waiting runs have nothing left to check.
+			s.withdrawRefRuns(ctx, repo.ID, u.Ref, "branch deleted")
 			continue
 		}
 		if !strings.HasPrefix(u.Ref, "refs/heads/") && !strings.HasPrefix(u.Ref, "refs/tags/") {
@@ -73,4 +75,16 @@ func (s *Service) HandleEnginePush(ctx context.Context, repoID uuid.UUID, update
 		runs = append(runs, rs...)
 	}
 	return runs, nil
+}
+
+// withdrawRefRuns cancels the waiting push runs on ref (logged, best-effort).
+func (s *Service) withdrawRefRuns(ctx context.Context, repoID uuid.UUID, ref, why string) {
+	gone, err := s.store.WithdrawPendingRunsForRef(ctx, repoID, ref)
+	if err != nil {
+		s.logger.Warn("withdraw pending runs failed", "ref", ref, "error", err)
+		return
+	}
+	if len(gone) > 0 {
+		s.logger.Info("withdrew pending runs", "ref", ref, "reason", why, "runs", gone)
+	}
 }

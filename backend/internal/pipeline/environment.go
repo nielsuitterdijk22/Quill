@@ -80,3 +80,26 @@ func HasConcurrency(workflowYAML string) bool {
 	}
 	return wf.Concurrency.Kind != 0 && !(wf.Concurrency.Kind == yaml.ScalarNode && wf.Concurrency.Value == "")
 }
+
+// KeepsSupersededRuns reports whether a workflow opts out of default
+// superseding with a top-level `env: QUILL_KEEP_SUPERSEDED_RUNS: "true"`
+// (a plain env entry, so the file stays valid for GitHub Actions too).
+func KeepsSupersededRuns(workflowYAML string) bool {
+	var wf struct {
+		Env map[string]any `yaml:"env"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowYAML), &wf); err != nil {
+		return false
+	}
+	v, ok := wf.Env["QUILL_KEEP_SUPERSEDED_RUNS"]
+	if !ok {
+		return false
+	}
+	switch b := v.(type) {
+	case bool:
+		return b
+	case string:
+		return b == "true" || b == "1" || b == "yes"
+	}
+	return false
+}

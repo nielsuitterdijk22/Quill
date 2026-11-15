@@ -85,7 +85,8 @@ func TestPushSupersedesPendingRuns(t *testing.T) {
 	run := func(path, ref, event, sha string) db.PipelineRun {
 		y := grouped
 		if path == ".github/workflows/ci.yml" {
-			y = queueWorkflowYAML // no concurrency group: never superseded
+			// Opted out of default superseding (2026-11-15): never superseded.
+			y = "env:\n  QUILL_KEEP_SUPERSEDED_RUNS: \"true\"\n" + queueWorkflowYAML
 		}
 		r, err := svc.EnqueuePipelineRun(ctx, repo, platform.TriggerInput{WorkflowPath: path, Ref: ref, Event: event}, y, sha, uuid.NullUUID{})
 		if err != nil {
@@ -121,5 +122,55 @@ func TestPushSupersedesPendingRuns(t *testing.T) {
 		if got := status(tc.r, tc.path); got != tc.want {
 			t.Errorf("%s run %d (%s) = %s, want %s", tc.path, tc.r.RunNumber, tc.r.Ref, got, tc.want)
 		}
+	}
+}
+
+// Default superseding (2026-11-15): without any opt-in, a push of a newer
+// commit cancels the workflow's waiting runs of older commits on that branch;
+// a waiting run of the same commit stays (a deliberate re-run), as do other
+// branches. Deleting a branch withdraws its waiting runs.
+func TestDefaultSupersedingAndBranchDeletion(t *testing.T) {
+	svc, st := newService(t)
+	svc = svc.WithQueueMode()
+	ctx := context.Background()
+	repo := makeProjectWithRepo(t, st, "supersede-default")
+	project, err := st.GetProjectByID(ctx, repo.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := platform.Actor{UserID: makeUser(t, st, "supersede-default-admin"), IsAdmin: true}
+	const ci = ".github/workflows/ci.yml"
+	run := func(ref, sha string) db.PipelineRun {
+		r, err := svc.EnqueuePipelineRun(ctx, repo, platform.TriggerInput{WorkflowPath: ci, Ref: ref, Event: "push"}, queueWorkflowYAML, sha, uuid.NullUUID{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	status := func(r db.PipelineRun) string {
+		_, d, err := svc.GetRun(ctx, admin, project.Slug, repo.Slug, ci, int(r.RunNumber))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Run.Status
+	}
+	old := run("refs/heads/main", "a")
+	again := run("refs/heads/main", "b")
+	same := run("refs/heads/main", "b")
+	feature := run("refs/heads/feature", "f")
+	if status(old) != pipeline.StatusCancelled {
+		t.Errorf("run of a replaced commit = %s, want cancelled", status(old))
+	}
+	for _, r := range []db.PipelineRun{again, same, feature} {
+		if got := status(r); got != pipeline.StatusPending {
+			t.Errorf("run %d (%s) = %s, want pending", r.RunNumber, r.Ref, got)
+		}
+	}
+	gone, err := st.WithdrawPendingRunsForRef(ctx, repo.ID, "refs/heads/feature")
+	if err != nil || len(gone) != 1 || status(feature) != pipeline.StatusCancelled {
+		t.Fatalf("withdraw feature runs: %v %v %s", gone, err, status(feature))
+	}
+	if status(again) != pipeline.StatusPending {
+		t.Fatal("withdrawing a branch touched another branch's runs")
 	}
 }

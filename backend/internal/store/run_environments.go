@@ -70,20 +70,57 @@ func (s *Store) CommitDeployFacts(ctx context.Context, repoID uuid.UUID, sha str
 // are still waiting for a worker (queue row unclaimed), keeping keep. A burst of
 // pushes/merges to one branch then runs only its newest commit, instead of
 // queueing one deploy per merge. Returns the cancelled run numbers.
-func (s *Store) SupersedePendingRuns(ctx context.Context, pipelineID uuid.UUID, ref string, keep uuid.UUID) ([]int64, error) {
+// SupersedePendingRuns cancels older waiting push runs of the pipeline on
+// ref. With includeSameCommit false, only runs of a different (older) commit
+// than the kept run go: a re-run of the same commit is deliberate.
+func (s *Store) SupersedePendingRuns(ctx context.Context, pipelineID uuid.UUID, ref string, keep uuid.UUID, includeSameCommit ...bool) ([]int64, error) {
+	same := len(includeSameCommit) == 0 || includeSameCommit[0]
 	rows, err := s.pool.Query(ctx, `
 		WITH old AS (
 			SELECT r.id FROM pipeline_runs r
 			JOIN pipeline_queue q ON q.run_id = r.id AND q.status = 'pending'
 			WHERE r.pipeline_id = $1 AND r.ref = $2 AND r.id <> $3 AND r.status = 'pending' AND r.event = 'push'
 			  AND r.created_at <= (SELECT created_at FROM pipeline_runs WHERE id = $3)
+			  AND ($4 OR r.commit_sha <> (SELECT commit_sha FROM pipeline_runs WHERE id = $3))
 		), withdrawn AS (
 			UPDATE pipeline_queue SET status = 'done', updated_at = now()
 			WHERE run_id IN (SELECT id FROM old) AND status = 'pending'
 		)
 		UPDATE pipeline_runs SET status = 'cancelled', finished_at = now()
 		WHERE id IN (SELECT id FROM old)
-		RETURNING run_number`, pipelineID, ref, keep)
+		RETURNING run_number`, pipelineID, ref, keep, same)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var n int64
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// WithdrawPendingRunsForRef cancels every waiting push run on ref in the
+// repository (all workflows): used when the branch is deleted, or merged so
+// that the base branch's own runs cover its commits. Running jobs finish.
+func (s *Store) WithdrawPendingRunsForRef(ctx context.Context, repoID uuid.UUID, ref string) ([]int64, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH old AS (
+			SELECT r.id FROM pipeline_runs r
+			JOIN pipelines p ON p.id = r.pipeline_id
+			JOIN pipeline_queue q ON q.run_id = r.id AND q.status = 'pending'
+			WHERE p.repo_id = $1 AND r.ref = $2 AND r.status = 'pending' AND r.event = 'push'
+		), withdrawn AS (
+			UPDATE pipeline_queue SET status = 'done', updated_at = now()
+			WHERE run_id IN (SELECT id FROM old) AND status = 'pending'
+		)
+		UPDATE pipeline_runs SET status = 'cancelled', finished_at = now()
+		WHERE id IN (SELECT id FROM old)
+		RETURNING run_number`, repoID, ref)
 	if err != nil {
 		return nil, err
 	}

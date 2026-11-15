@@ -35,3 +35,17 @@ func TestHasConcurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestKeepsSupersededRuns(t *testing.T) {
+	for y, want := range map[string]bool{
+		"on: push\n": false,
+		"env:\n  QUILL_KEEP_SUPERSEDED_RUNS: \"true\"\n": true,
+		"env:\n  QUILL_KEEP_SUPERSEDED_RUNS: true\n":     true,
+		"env:\n  QUILL_KEEP_SUPERSEDED_RUNS: \"no\"\n":   false,
+		"env:\n  OTHER: \"true\"\n":                      false,
+	} {
+		if got := KeepsSupersededRuns(y); got != want {
+			t.Errorf("KeepsSupersededRuns(%q) = %v, want %v", y, got, want)
+		}
+	}
+}

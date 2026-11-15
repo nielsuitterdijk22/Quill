@@ -169,11 +169,14 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	if err := s.enqueueSpec(ctx, run, tenantID, spec, scope); err != nil {
 		return run, err
 	}
-	// With a `concurrency:` group, a newer push supersedes older runs of this
-	// workflow on the same ref that are still waiting: a burst of merges
-	// deploys only the newest.
-	if event == "push" && pipeline.HasConcurrency(yaml) {
-		if gone, err := s.store.SupersedePendingRuns(ctx, pl.ID, ref, run.ID); err != nil {
+	// A newer push supersedes this workflow's waiting runs of older commits on
+	// the same ref (default since 2026-11-15: a repo's CI machine runs jobs one
+	// at a time, so checking a replaced commit only delays the current one).
+	// A `concurrency:` group also drops waiting runs of the same commit, as on
+	// GitHub; `env: QUILL_KEEP_SUPERSEDED_RUNS: "true"` opts out.
+	group := pipeline.HasConcurrency(yaml)
+	if event == "push" && (group || !pipeline.KeepsSupersededRuns(yaml)) {
+		if gone, err := s.store.SupersedePendingRuns(ctx, pl.ID, ref, run.ID, group); err != nil {
 			s.logger.Warn("supersede pending runs failed", "run", run.ID, "error", err)
 		} else if len(gone) > 0 {
 			s.logger.Info("superseded pending runs", "workflow", path, "ref", ref, "runs", gone)

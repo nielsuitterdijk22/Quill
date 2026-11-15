@@ -496,6 +496,9 @@ func (s *Service) engineMergePull(ctx context.Context, repo db.Repository, be gi
 	// same push event (GitHub semantics): workflows on `push: main` run for the
 	// merge commit. Without it a merged PR never deploys. Like a real push, a CI
 	// failure to start is logged and never fails the merge.
+	// The head branch's waiting runs are covered by the base branch's runs
+	// of the merge from here on.
+	s.withdrawRefRuns(ctx, be.repoID, "refs/heads/"+pr.HeadRef, "merged")
 	if _, err := s.HandleEnginePush(ctx, be.repoID, []EngineRefUpdate{
 		{Ref: "refs/heads/" + pr.BaseRef, Old: baseSHA, New: mergedSHA},
 	}); err != nil {

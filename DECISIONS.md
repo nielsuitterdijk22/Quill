@@ -568,3 +568,22 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   pr.line_commented, pr.reviewed, pr.edited, environment.created.
 - Not counted: reads (code browsing, run views). Rejected for now: page-view counters, cohorts and a
   warehouse (overkill at this scale). Add server-side counters for a few key views when needed.
+
+## 2026-11-15 — Superseding waiting runs by default
+
+- A push of a newer commit now cancels the workflow's **waiting** runs of older commits on the same
+  branch for every workflow, not only those with `concurrency:`. A waiting run of the same commit
+  stays (a deliberate re-run); running jobs always finish; manual runs are never touched. A
+  `concurrency:` group keeps GitHub's stricter rule (same-commit waiting runs go too).
+  Opt out per workflow with `env: QUILL_KEEP_SUPERSEDED_RUNS: "true"` (a plain env entry, valid on
+  GitHub Actions too).
+- Deleting a branch, or merging its PR, withdraws that branch's waiting runs (all workflows): the base
+  branch's run of the merge covers the commits.
+- Why: each repo's CI machine runs jobs one at a time. Tempo's three back-to-back merges plus
+  force-pushed feature branches queued 12 runs (2+ hours), most for commits already replaced.
+  Overrides the 2026-11-15 "opt-in only" choice. The queue test that rejected unconditional
+  superseding still passes unchanged (its runs share one commit), and the old "never superseded"
+  assertion now exercises the opt-out.
+- Rejected: two jobs on one CI machine (DEV1-S is 2 vCPU / 2 GB; `./check` and image builds side by
+  side risk OOM; the egress firewall and act's Docker state are per machine). Better: let the broker
+  start a second machine for a repo with a backlog. Proposed, not built yet.
