@@ -215,11 +215,17 @@ func (s *Service) enginePullDTO(ctx context.Context, repo db.Repository, be gitB
 			return forgejo.PullRequest{}, err
 		}
 		dto.Mergeable = clean
-		adds, dels, files, err := pullStats(dir, baseSHA, headSHA)
-		if err != nil {
-			return forgejo.PullRequest{}, err
+	}
+	// Stats describe the pull's own commits (the shas recorded on the row),
+	// whatever its state: a merged PR's branches no longer differ, and a
+	// conflicting one still changes files.
+	if live && pr.BaseSHA != "" && pr.HeadSHA != "" {
+		if adds, dels, files, err := pullStats(dir, pr.BaseSHA, pr.HeadSHA); err == nil {
+			dto.Additions, dto.Deletions, dto.ChangedFiles = adds, dels, files
 		}
-		dto.Additions, dto.Deletions, dto.ChangedFiles = adds, dels, files
+	}
+	if pr.State != "open" {
+		dto.Head.SHA, dto.Base.SHA = pr.HeadSHA, pr.BaseSHA
 	}
 	_ = repo
 	_ = be
@@ -274,7 +280,29 @@ func (s *Service) engineGetPull(ctx context.Context, repo db.Repository, be gitB
 		}
 		return store.PullRequest{}, forgejo.PullRequest{}, err
 	}
+	// An open pull compares the live branch tips: record them so the diff,
+	// commits and stats follow pushes to the head branch (until 2026-11-15
+	// they stayed at the commit the PR was opened with).
+	if pr.State == "open" {
+		head, headOK, err := revParseRef(dir, pr.HeadRef)
+		if err != nil {
+			return store.PullRequest{}, forgejo.PullRequest{}, err
+		}
+		base, baseOK, err := revParseRef(dir, pr.BaseRef)
+		if err != nil {
+			return store.PullRequest{}, forgejo.PullRequest{}, err
+		}
+		if headOK && baseOK && (head != pr.HeadSHA || base != pr.BaseSHA) {
+			if err := s.store.RefreshPullHeads(ctx, pr.ID, head, base); err != nil {
+				return store.PullRequest{}, forgejo.PullRequest{}, fmt.Errorf("refresh pull heads: %w", err)
+			}
+			pr.HeadSHA, pr.BaseSHA = head, base
+		}
+	}
 	dto, err := s.enginePullDTO(ctx, repo, be, dir, pr, true)
+	if err != nil {
+		return store.PullRequest{}, forgejo.PullRequest{}, err
+	}
 	return pr, dto, nil
 }
 
@@ -455,6 +483,10 @@ func (s *Service) engineMergePull(ctx context.Context, repo db.Repository, be gi
 		return forgejo.PullRequest{}, err
 	}
 	if err := gitengine.SyncRepoToBucket(ctx, s.gitEngine, s.GitReferee(), rcx, m, etag, st, mergedSHA, login); err != nil {
+		return forgejo.PullRequest{}, err
+	}
+	// Freeze what was merged: the diff/commits of a merged PR read these.
+	if err := s.store.RefreshPullHeads(ctx, pr.ID, headSHA, baseSHA); err != nil {
 		return forgejo.PullRequest{}, err
 	}
 	if err := s.store.MarkPullMerged(ctx, be.repoID, number, actor.UserID, login, method, mergedSHA); err != nil {

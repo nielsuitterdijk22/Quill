@@ -360,3 +360,13 @@ func (s *Store) UpdatePull(ctx context.Context, pullID uuid.UUID, title, body *s
 		WHERE id = $1
 		RETURNING `+pullColumns, pullID, title, body))
 }
+
+// RefreshPullHeads records the branch tips an open pull currently compares
+// (its diff, commits and stats read them), so commits pushed after the PR was
+// opened show up, and a merged or closed PR keeps the last state it had.
+func (s *Store) RefreshPullHeads(ctx context.Context, pullID uuid.UUID, headSHA, baseSHA string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE pull_requests SET head_sha = $2, base_sha = $3
+		WHERE id = $1 AND (head_sha <> $2 OR base_sha <> $3)`, pullID, headSHA, baseSHA)
+	return err
+}

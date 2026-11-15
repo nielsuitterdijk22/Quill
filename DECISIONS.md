@@ -520,3 +520,17 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   retries can't succeed: tempo's deploy health check burned 10 minutes on 40 refusals of its own
   function host. The abort is said live and on the failed step. Rejected: failing on the first
   refusal (tools probe optional hosts once, e.g. telemetry); per-step timeouts (the workflow's own).
+
+## 2026-11-15 — PRs follow their branch; stats for merged PRs; file tree; agents open PRs
+
+- **PR heads:** a PR's diff and commits read the shas stored on its row, which were set once at
+  creation, so commits pushed afterwards never appeared (PR #1 hid its later commits). An open PR
+  now records its live branch tips on every view; a merge freezes the tips it merged.
+- **Files-changed count:** it was computed only for open, cleanly mergeable PRs; merged, closed and
+  conflicting PRs said "0 files". It now comes from the row's shas in every state.
+- **File tree:** the Files-changed tab gets a sticky tree (folders folded like GitHub's, filter,
+  +/- and comment counts, current-file highlight, collapsible files). The page widens to 1600px there.
+- **`quill admin open-pull`:** operators/agents open a PR as a user from the CLI (agents have no
+  API token). Rejected: API tokens for agents now (the right end state, a bigger change).
+- PR #1's row was hand-marked `state='merged'`; the engine's merged state is `closed` + `merged`.
+  Corrected.

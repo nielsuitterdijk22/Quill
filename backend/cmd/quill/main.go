@@ -58,6 +58,7 @@ Commands:
   admin seed-file    create or update a file in a repository via the Forgejo API, committing as an admin seed
   admin purge-e2e    delete live-e2e debris: tenants/projects/repos whose slug starts with e2e- (never users)
   admin git-maintenance  reconcile engine-repo manifests against the referee, repack past the threshold, GC orphan packs
+  admin open-pull        open a PR on an engine repo as a user (an agent hands a pushed branch to review)
   admin migrate-forgejo-to-bucket  D1 migration: mirror each Forgejo repo into the engine bucket (refs + packs + PR history), verify, freeze the repo read-only
 
 seed-file content comes from --content (inline text) or --file (a file path, or '-' to read stdin).
@@ -74,7 +75,7 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, migrate-forgejo-to-bucket, remask-run-logs)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, open-pull, migrate-forgejo-to-bucket, remask-run-logs)")
 	}
 	switch args[0] {
 	case "create-repo":
@@ -85,6 +86,8 @@ func runAdmin(args []string) error {
 		return runPurgeE2e(args[1:])
 	case "issue-git-token":
 		return runIssueGitToken(args[1:])
+	case "open-pull":
+		return runOpenPull(args[1:])
 	case "set-repo-secret":
 		return runSetRepoSecret(args[1:])
 	case "git-relocate":
@@ -96,7 +99,7 @@ func runAdmin(args []string) error {
 	case "remask-run-logs":
 		return runRemaskRunLogs(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, migrate-forgejo-to-bucket, remask-run-logs)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, open-pull, migrate-forgejo-to-bucket, remask-run-logs)", args[0])
 	}
 }
 

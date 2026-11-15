@@ -5,6 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 
 import type { DiffFile, LineComment } from "../../../../../../../lib/api";
 import { addLineCommentAction, type LineCommentState } from "./actions";
+import { DiffFileTree } from "./DiffFileTree";
 
 const STATUS_GLYPH: Record<string, string> = {
   added: "A",
@@ -119,6 +120,42 @@ export function DiffWithComments({
   comments: LineComment[];
 }) {
   const [active, setActive] = useState<string | null>(null);
+  const [current, setCurrent] = useState(0);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  // Track which file is in view so the tree highlights it while scrolling.
+  useEffect(() => {
+    const els = files.map((_, i) => document.getElementById(`diff-file-${i}`));
+    const io = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setCurrent(Number(visible[0].target.getAttribute("data-index")));
+      },
+      { rootMargin: "-10% 0px -70% 0px" },
+    );
+    els.forEach((el) => el && io.observe(el));
+    return () => io.disconnect();
+  }, [files]);
+
+  const jump = (i: number) => {
+    setCollapsed((prev) => {
+      if (!prev.has(i)) return prev;
+      const next = new Set(prev);
+      next.delete(i);
+      return next;
+    });
+    setCurrent(i);
+    document.getElementById(`diff-file-${i}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const toggleFile = (i: number) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   if (files.length === 0) {
     return <div className="empty">No changes to display.</div>;
@@ -131,20 +168,43 @@ export function DiffWithComments({
     if (arr) arr.push(c);
     else byLine.set(k, [c]);
   }
+  const commentCounts = new Map<string, number>();
+  for (const c of comments) commentCounts.set(c.path, (commentCounts.get(c.path) ?? 0) + 1);
 
   return (
+    <div className="diff-layout">
+      <DiffFileTree
+        files={files}
+        activeIndex={current}
+        commentCounts={commentCounts}
+        onSelect={jump}
+      />
     <div className="diff">
-      {files.map((f) => (
-        <div className="diff-file" key={f.path}>
+      {files.map((f, fi) => (
+        <div className="diff-file" key={f.path} id={`diff-file-${fi}`} data-index={fi}>
           <div className="diff-file-head">
+            <button
+              type="button"
+              className="diff-collapse"
+              aria-label={collapsed.has(fi) ? "Expand file" : "Collapse file"}
+              aria-expanded={!collapsed.has(fi)}
+              onClick={() => toggleFile(fi)}
+            >
+              {collapsed.has(fi) ? "▸" : "▾"}
+            </button>
             <span className={`diff-status ${f.status}`}>
               {STATUS_GLYPH[f.status] ?? "M"}
             </span>
             <span className="mono path">
               {f.status === "renamed" ? `${f.oldPath} → ${f.path}` : f.path}
             </span>
+            <span className="spacer" />
+            <span className="diff-file-stat">
+              {f.additions > 0 && <span className="add">+{f.additions}</span>}
+              {f.deletions > 0 && <span className="del">−{f.deletions}</span>}
+            </span>
           </div>
-          {f.isBinary ? (
+          {collapsed.has(fi) ? null : f.isBinary ? (
             <div className="diff-binary">Binary file not shown.</div>
           ) : (
             <table className="diff-table">
@@ -232,6 +292,7 @@ export function DiffWithComments({
           )}
         </div>
       ))}
+    </div>
     </div>
   );
 }

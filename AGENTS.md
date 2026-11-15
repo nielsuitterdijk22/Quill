@@ -83,7 +83,10 @@ ones marked **(enforced)**: breaking them throws the work away.
   mirror — push `main` to both (`git push quill main && git push origin main`).
   **Since 2026-11-15 `main` on Quill is PR-only** (branch policy: require pull request; the
   `production` environment only deploys `main`). Agents push a branch (`git push quill agent/<topic>`)
-  and hand it to the owner to open/merge the PR (agents have git tokens, not API tokens). After a
+  and open its PR with `quill admin open-pull --project nuitterdijk --repo quill --author nuitterdijk
+  --head agent/<topic> --head-sha $(git rev-parse HEAD) --base-sha $(git rev-parse quill/main)
+  --title ... --body-file <md>` (run from `backend/` with the prod `QUILL_DATABASE_URL`); the owner
+  reviews and merges it (agents have git tokens, not API tokens). After a
   merge, sync the mirror: `git fetch quill && git push origin quill/main:main`.
   Agent git credentials: `quill admin issue-git-token --username nuitterdijk --out <file>`
   (0600; use via a credential helper, delete the file and revoke the token after).
