@@ -68,6 +68,11 @@ func CloudInit(o CloudInitOpts) string {
 		fmt.Fprintf(&b, "      %s=%s\n", kv[0], kv[1])
 	}
 	b.WriteString("runcmd:\n")
+	// Swap (2026-11-15): a DEV1-S has 2 GB of RAM and builds get all of it;
+	// compiling one big generated Go package (Tempo's Anthropic SDK, ~2.3 GB
+	// RSS) was OOM-killed. A 4 GB swapfile on the 40 GB root disk turns that
+	// into a slower build instead of a failed one, at no cost.
+	b.WriteString("  - fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile || true\n")
 	b.WriteString("  - systemctl start docker\n")
 	// Containers on bridge networks (DOCKER-USER) and everything on the host
 	// network, including act's job containers (OUTPUT), lose the metadata

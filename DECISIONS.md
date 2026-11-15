@@ -614,3 +614,12 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   tile with a hue derived from the repo name) names the repo there, on the run form and on the
   recent-runs heading. Quill and Tempo share workflow names (ci, foundry-check), so name-only rows
   were ambiguous.
+
+## 2026-11-15 — 4 GB swap on CI machines
+
+- Tempo's deploy #22 was OOM-killed compiling the Anthropic Go SDK (one generated package, ~2.3 GB RSS)
+  on a DEV1-S (2 GB RAM, no swap). CI machines now boot with a 4 GB swapfile on their 40 GB root
+  disk, before Docker starts. Heavy compiles get slower instead of failing; no extra cost.
+- Rejected for now: DEV1-M (4 GB) for every CI machine, about 2× the hourly price for every job
+  when only rare builds need it. Worth revisiting (or a per-repo machine size) if swap-bound builds
+  get too slow.
