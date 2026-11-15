@@ -90,11 +90,16 @@ type jobResponse struct {
 type runDetailResponse struct {
 	runResponse
 	Jobs []jobResponse `json:"jobs"`
+	// Environment the run deploys to; BlockedReason is set when the deploy
+	// gate refused it.
+	Environment   string `json:"environment,omitempty"`
+	BlockedReason string `json:"blockedReason,omitempty"`
 }
 
 func newRunDetailResponse(d platform.RunDetail) runDetailResponse {
 	out := runDetailResponse{runResponse: newRunResponse(d.Run)}
 	out.WorkflowPath = d.Pipeline.WorkflowPath
+	out.Environment, out.BlockedReason = d.Environment, d.BlockedReason
 	out.Jobs = make([]jobResponse, 0, len(d.Jobs))
 	for _, jd := range d.Jobs {
 		jr := jobResponse{

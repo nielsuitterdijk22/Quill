@@ -26,6 +26,14 @@ const enginePipelineYAML = "name: engine-ci\non: [push]\njobs:\n  build:\n    ru
 // returns the service, the pushed head and the repo id.
 func enginePipelineRepo(t *testing.T, slug string) (*platform.Service, platform.Actor, string, string, uuid.UUID) {
 	t.Helper()
+	svc, act, s, head, id, _ := enginePipelineRepoURL(t, slug)
+	return svc, act, s, head, id
+}
+
+// enginePipelineRepoURL is enginePipelineRepo plus the git base URL, for
+// tests that push more branches.
+func enginePipelineRepoURL(t *testing.T, slug string) (*platform.Service, platform.Actor, string, string, uuid.UUID, string) {
+	t.Helper()
 	browseGitAvailable(t)
 	svc, st, gitURL := browseFixture(t)
 	svc = svc.WithQueueMode().WithGitPublicURL("https://git.example.test").WithGitRunTokenSecret("run-token-secret")
@@ -64,7 +72,7 @@ func enginePipelineRepo(t *testing.T, slug string) (*platform.Service, platform.
 	if out, err := browseGitPush(t, work, "origin", "main"); err != nil {
 		t.Fatalf("push: %v\n%s", err, out)
 	}
-	return svc, act, slug, head, repo.ID
+	return svc, act, slug, head, repo.ID, gitURL
 }
 
 // claimRunJob claims queue rows until it finds the one for runID (other tests
@@ -185,4 +193,50 @@ func TestEnginePushTriggersPipelines(t *testing.T) {
 	if job.Spec.Event != "push" || !strings.Contains(job.Spec.CloneURL, slug+"/app.git") {
 		t.Fatalf("spec = %+v", job.Spec)
 	}
+}
+
+// Merging a pull request moves the base branch exactly like a push does, so
+// the workflows listening for a push on the base branch must run for the merge
+// commit (GitHub semantics). Without this a repo deploying on push to main
+// never deploys a merged PR.
+func TestEngineMergeTriggersPushPipelines(t *testing.T) {
+	svc, act, slug, _, _, gitURL := enginePipelineRepoURL(t, "engpipe-m")
+	ctx := context.Background()
+
+	work := t.TempDir()
+	if out, err := exec.Command("git", "clone", "-q", gitURL+"/"+slug+"/app", work).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	browseGit(t, work, "checkout", "-q", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browseGit(t, work, "add", "-A")
+	browseGit(t, work, "commit", "-qm", "feature")
+	if out, err := browseGitPush(t, work, "origin", "feature"); err != nil {
+		t.Fatalf("push feature: %v\n%s", err, out)
+	}
+	if _, _, err := svc.CreatePull(ctx, act, slug, "app", platform.CreatePullInput{
+		Title: "Feature", Head: "feature", Base: "main",
+	}); err != nil {
+		t.Fatalf("CreatePull: %v", err)
+	}
+	_, merged, err := svc.MergePull(ctx, act, slug, "app", 1, "merge")
+	if err != nil {
+		t.Fatalf("MergePull: %v", err)
+	}
+	if merged.MergeCommit == "" {
+		t.Fatalf("merged pull has no merge commit: %+v", merged)
+	}
+
+	_, runs, _, err := svc.ListRuns(ctx, act, slug, "app")
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	for _, r := range runs {
+		if r.Event == "push" && r.CommitSha == merged.MergeCommit && strings.HasSuffix(r.Ref, "main") {
+			return
+		}
+	}
+	t.Fatalf("no push run on main for merge commit %s; runs = %+v", merged.MergeCommit, runs)
 }

@@ -460,7 +460,13 @@ export type PipelineJob = {
   steps: PipelineStep[];
 };
 
-export type PipelineRunDetail = PipelineRun & { jobs: PipelineJob[] };
+export type PipelineRunDetail = PipelineRun & {
+  jobs: PipelineJob[];
+  // Environment the run deploys to; blockedReason is set when the deploy
+  // gate (environment policies) refused it.
+  environment?: string;
+  blockedReason?: string;
+};
 
 export type PipelinesResult = {
   repository: Repo;

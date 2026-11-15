@@ -37,13 +37,15 @@ function AtlasGlyph({ paint }: { paint: string }) {
   );
 }
 
+// Tempo's metronome (kept identical to Tempo's own AppMarks.tsx).
 function TempoGlyph({ paint }: { paint: string }) {
   return (
-    <g stroke={paint} strokeWidth={2.2} strokeLinecap="round">
-      <path d="M7 17.5V13.5" />
-      <path d="M10.7 17.5V7" />
-      <path d="M14.4 17.5V10.5" />
-      <path d="M18 17.5V8.5" />
+    <g fill={paint}>
+      <path d="M10.9 4.6h2.2c.5 0 .9.3 1 .8l3.3 12.6H6.6L9.9 5.4c.1-.5.5-.8 1-.8z" fillOpacity={0.38} />
+      <rect x="5.6" y="17.4" width="12.8" height="2" rx="1" />
+      <circle cx="12" cy="15.4" r="1.25" />
+      <circle cx="14.9" cy="9.5" r="1.6" />
+      <path d="M12 15.4 16.9 5.6" fill="none" stroke={paint} strokeWidth={1.5} strokeLinecap="round" />
     </g>
   );
 }

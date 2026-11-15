@@ -81,6 +81,10 @@ ones marked **(enforced)**: breaking them throws the work away.
   `quill` = `https://git.black-tulip.nl/nuitterdijk/quill` (since 2026-11-15; `https://api.black-tulip.nl/git/...` still works) (Quill CI runs
   `.github/workflows/quill-deploy.yml` on every push to main); GitHub (`origin`) is a
   mirror — push `main` to both (`git push quill main && git push origin main`).
+  **Since 2026-11-15 `main` on Quill is PR-only** (branch policy: require pull request; the
+  `production` environment only deploys `main`). Agents push a branch (`git push quill agent/<topic>`)
+  and hand it to the owner to open/merge the PR (agents have git tokens, not API tokens). After a
+  merge, sync the mirror: `git fetch quill && git push origin quill/main:main`.
   Agent git credentials: `quill admin issue-git-token --username nuitterdijk --out <file>`
   (0600; use via a credential helper, delete the file and revoke the token after).
   This overrides the old "the loop commits" rule above.

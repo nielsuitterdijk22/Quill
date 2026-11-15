@@ -30,6 +30,9 @@ jobs:
     name: Build, push, apply
     if: ${{ github.server_url != 'https://github.com' }}
     runs-on: ubuntu-latest
+    # Quill's deploy gate: the production environment's policies (only main,
+    # which only changes through merged PRs) decide before the run is queued.
+    environment: production
     steps:
       - uses: actions/checkout@v4
 

@@ -443,3 +443,27 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - **git host.** The Cloudflare `git` record is DNS-only now, so `git_host_on_api` defaults to true:
   `git.black-tulip.nl` binds to the api container and becomes the public clone base. Forgejo on the VM
   is stopped after the cutover is verified (reversible); deleting its data waits for an explicit yes.
+
+## 2026-11-15 — Environment policies are enforced (deploy gates); merges fire push events; Quill's production is PR-only (owner: "did you test all environments / policies properly? … set up a prod env for quill and add a policy that it's only via PR")
+
+- **Gap found:** environment policies were stored and editable but never evaluated; a run reached an
+  environment only via the API's explicit `environment` field, and the workflow `environment:` key was
+  ignored. Now a run targets an environment explicitly or via its jobs' `environment:` (one per workflow;
+  expressions rejected), and repo + project + org environment policies are evaluated **before anything
+  is queued** (`deploy_gate.go`, the existing typed evaluator). A refused run is recorded as failed with
+  the reasons (`pipeline_run_environments`, migration 000037; a side table so sqlc's `pipeline_runs` stays
+  untouched), never reaches a worker or the environment's secrets, and the run page shows a banner. A
+  workflow naming an undefined environment is blocked (fail closed); an explicit unknown one is a 400.
+  Facts: ref (branch), green non-deploy run of the commit, prior successful deploys of the commit per
+  environment, age since the commit's first run. **Approvals have no approval flow yet**: a rule requiring
+  them blocks with "0 of N required approvals" instead of passing silently (follow-up).
+- **Merges fire the push event** (found independently by the Tempo session): an engine PR merge moved
+  the base branch without post-receive, so push-triggered workflows (deploys), SBOMs and contribution
+  indexing skipped merges. `engineMergePull` now calls `HandleEnginePush`.
+- **Quill's production:** environment `production` on project nuitterdijk with an environment policy
+  `allowedSourceBranches: [main]`, and a branch policy on `main` (require pull request + block force
+  push), so production only ever runs code merged through a PR. `quill-deploy.yml` declares
+  `environment: production`. Deploy keys stay **repo** secrets: environment secrets are project-wide here
+  (13 repos), which would widen them.
+- **Rejected:** gating inside the worker (secrets would already have left the api); a `blocked` run
+  status (every client knows `failure`; the reason travels separately).

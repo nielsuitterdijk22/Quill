@@ -4832,3 +4832,13 @@ button.sbom-chip:hover {
   line-height: 1.7;
   word-break: break-word;
 }
+
+/* A run the deploy gate refused (run page). */
+.banner.danger {
+  background: color-mix(in oklab, var(--red) 12%, transparent);
+  border-color: color-mix(in oklab, var(--red) 34%, transparent);
+  color: var(--red);
+}
+.banner.danger b {
+  color: var(--red);
+}

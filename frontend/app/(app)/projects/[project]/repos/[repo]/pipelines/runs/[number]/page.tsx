@@ -50,6 +50,15 @@ export default async function RunDetailPage({
         refName={repo.defaultBranch}
         active="pipelines"
       />
+      {run.blockedReason ? (
+        <div className="banner danger" role="alert">
+          <b>Not deployed.</b> {run.blockedReason}
+        </div>
+      ) : run.environment ? (
+        <div className="banner">
+          Deploys to <b>{run.environment}</b>.
+        </div>
+      ) : null}
       <RunView
         project={params.project}
         repo={params.repo}

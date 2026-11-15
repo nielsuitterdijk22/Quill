@@ -41,6 +41,10 @@ type RunDetail struct {
 	Run      db.PipelineRun
 	Pipeline db.Pipeline
 	Jobs     []JobDetail
+	// Environment the run deploys to ("" = none) and, when the deploy gate
+	// refused it, why.
+	Environment   string
+	BlockedReason string
 }
 
 // JobDetail is a job and its steps within a run.
@@ -166,6 +170,11 @@ func (s *Service) GetRun(ctx context.Context, actor Actor, projectSlug, repoSlug
 		return db.Repository{}, RunDetail{}, fmt.Errorf("list jobs: %w", err)
 	}
 	detail := RunDetail{Run: run, Pipeline: pl, Jobs: make([]JobDetail, 0, len(jobs))}
+	if env, ok, err := s.store.GetRunEnvironment(ctx, run.ID); err != nil {
+		return db.Repository{}, RunDetail{}, fmt.Errorf("load run environment: %w", err)
+	} else if ok {
+		detail.Environment, detail.BlockedReason = env.Environment, env.BlockedReason
+	}
 	for _, j := range jobs {
 		steps, err := s.store.ListStepsByJob(ctx, j.ID)
 		if err != nil {
@@ -317,6 +326,11 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, src pipel
 		return s.enqueuePipelineRun(ctx, repo, src, in, yaml, commitSHA, triggeredBy)
 	}
 
+	gate, err := s.deployGate(ctx, repo, in.EnvironmentSlug, yaml, ref, commitSHA)
+	if err != nil {
+		return db.PipelineRun{}, err
+	}
+
 	workflowName := pipeline.WorkflowName(yaml, path)
 	pl, err := s.store.UpsertPipeline(ctx, db.UpsertPipelineParams{
 		RepoID:       repo.ID,
@@ -347,10 +361,10 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, src pipel
 
 	cloneAuth := s.cloneAuth(src)
 
-	envID, err := s.resolveRunEnvironment(ctx, repo.ProjectID, in.EnvironmentSlug)
-	if err != nil {
-		return db.PipelineRun{}, err
+	if blocked, err := s.recordGate(ctx, run, gate); err != nil || blocked {
+		return run, err
 	}
+	envID := gate.EnvID
 	secrets, err := s.resolveRunSecrets(ctx, repo.ProjectID, repo.ID, envID)
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("resolve secrets: %w", err)
@@ -374,26 +388,6 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, src pipel
 	})
 
 	return run, nil
-}
-
-// resolveRunEnvironment maps an optional environment slug to its id for secret
-// resolution. An empty slug yields an invalid NullUUID (no environment). An
-// unknown slug is a client error.
-func (s *Service) resolveRunEnvironment(ctx context.Context, projectID uuid.UUID, envSlug string) (uuid.NullUUID, error) {
-	if strings.TrimSpace(envSlug) == "" {
-		return uuid.NullUUID{}, nil
-	}
-	env, err := s.store.GetEnvironmentBySlug(ctx, db.GetEnvironmentBySlugParams{
-		ProjectID: projectID,
-		Lower:     normalizeSlug(envSlug),
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.NullUUID{}, fmt.Errorf("%w: unknown environment %q", ErrInvalidInput, envSlug)
-	}
-	if err != nil {
-		return uuid.NullUUID{}, fmt.Errorf("lookup environment: %w", err)
-	}
-	return uuid.NullUUID{UUID: env.ID, Valid: true}, nil
 }
 
 // executeRun carries out the actual workflow execution in a background goroutine.

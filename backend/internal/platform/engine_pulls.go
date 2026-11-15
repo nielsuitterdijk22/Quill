@@ -450,6 +450,15 @@ func (s *Service) engineMergePull(ctx context.Context, repo db.Repository, be gi
 	if err := s.store.MarkPullMerged(ctx, be.repoID, number, actor.UserID, login, method, mergedSHA); err != nil {
 		return forgejo.PullRequest{}, err
 	}
+	// The merge moved the base branch exactly like a push would, so fire the
+	// same push event (GitHub semantics): workflows on `push: main` run for the
+	// merge commit. Without it a merged PR never deploys. Like a real push, a CI
+	// failure to start is logged and never fails the merge.
+	if _, err := s.HandleEnginePush(ctx, be.repoID, []EngineRefUpdate{
+		{Ref: "refs/heads/" + pr.BaseRef, Old: baseSHA, New: mergedSHA},
+	}); err != nil {
+		s.logger.Warn("merge push event failed", "repo", be.projectSlug+"/"+be.repoSlug, "pull", number, "error", err)
+	}
 	_, merged, err := s.engineGetPull(ctx, repo, be, number)
 	return merged, err
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/nielsuitterdijk22/quill/internal/egress"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
@@ -96,18 +97,23 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	// Same spec the inline path builds: environment-scoped secrets and clone
 	// credentials resolved at enqueue time (they must never be re-resolved by
 	// the worker, which is outside the trust boundary of the secret store).
-	envID, err := s.resolveRunEnvironment(ctx, repo.ProjectID, in.EnvironmentSlug)
+	// Deploy gate: the run's environment (explicit or the workflow's
+	// `environment:`) and its policies, decided before anything is queued.
+	gate, err := s.deployGate(ctx, repo, in.EnvironmentSlug, yaml, ref, commitSHA)
 	if err != nil {
 		return db.PipelineRun{}, err
 	}
-	secrets, err := s.resolveRunSecrets(ctx, repo.ProjectID, repo.ID, envID)
-	if err != nil {
-		return db.PipelineRun{}, fmt.Errorf("resolve secrets: %w", err)
-	}
-	// Egress policy: resolved now, like secrets (the worker enforces it).
-	egressPolicy, err := s.resolveRunEgress(ctx, repo)
-	if err != nil {
-		return db.PipelineRun{}, fmt.Errorf("resolve egress policy: %w", err)
+	envID := gate.EnvID
+	var secrets map[string]string
+	var egressPolicy *egress.Policy
+	if gate.Blocked == "" { // a refused run never sees the environment's secrets
+		if secrets, err = s.resolveRunSecrets(ctx, repo.ProjectID, repo.ID, envID); err != nil {
+			return db.PipelineRun{}, fmt.Errorf("resolve secrets: %w", err)
+		}
+		// Egress policy: resolved now, like secrets (the worker enforces it).
+		if egressPolicy, err = s.resolveRunEgress(ctx, repo); err != nil {
+			return db.PipelineRun{}, fmt.Errorf("resolve egress policy: %w", err)
+		}
 	}
 	cloneAuth := s.cloneAuth(src)
 	fullName := src.fullName()
@@ -135,6 +141,9 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	})
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("create run: %w", err)
+	}
+	if blocked, err := s.recordGate(ctx, run, gate); err != nil || blocked {
+		return run, err
 	}
 
 	spec := pipeline.JobSpec{
