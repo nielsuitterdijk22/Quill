@@ -73,7 +73,7 @@ export default async function RunDetailPage({
               gitRef={run.ref || repo.defaultBranch}
             />
             {(run.status === "running" || run.status === "pending") && (
-              <CancelButton project={params.project} repo={params.repo} number={run.runNumber} />
+              <CancelButton project={params.project} repo={params.repo} number={run.runNumber} workflowPath={workflowPath} />
             )}
             <Link className="btn" href={`${base}/pipelines`}>
               ← All pipelines

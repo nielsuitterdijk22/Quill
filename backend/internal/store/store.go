@@ -117,16 +117,28 @@ func (s *Store) SetUserActive(ctx context.Context, username string, active bool)
 
 // CancelRun transitions a pipeline run from running/queued to cancelled if it
 // hasn't already finished. Written by hand to avoid re-running sqlc.
-func (s *Store) CancelRun(ctx context.Context, repoID uuid.UUID, runNumber int64) (bool, error) {
+func (s *Store) CancelRun(ctx context.Context, repoID uuid.UUID, workflowPath string, runNumber int64) (bool, error) {
+	// 'pending' is a queue-mode run waiting for a worker (2026-11-15: the
+	// cancel button did nothing for those); its unclaimed queue row is
+	// withdrawn so no worker picks it up.
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE pipeline_runs r
-		SET status = 'cancelled', finished_at = now()
-		FROM pipelines p
-		WHERE r.pipeline_id = p.id
-		  AND p.repo_id = $1
-		  AND r.run_number = $2
-		  AND r.status IN ('running', 'queued')`,
-		repoID, runNumber)
+		WITH cancelled AS (
+			UPDATE pipeline_runs r
+			SET status = 'cancelled', finished_at = now()
+			FROM pipelines p
+			WHERE r.pipeline_id = p.id
+			  AND p.repo_id = $1
+			  AND r.run_number = $2
+			  -- run numbers count per workflow: scope to it when known
+			  AND ($3 = '' OR p.workflow_path = $3)
+			  AND r.status IN ('running', 'queued', 'pending')
+			RETURNING r.id
+		), withdrawn AS (
+			UPDATE pipeline_queue q SET status = 'done', updated_at = now()
+			WHERE q.run_id IN (SELECT id FROM cancelled) AND q.status = 'pending'
+		)
+		SELECT 1 FROM cancelled`,
+		repoID, runNumber, workflowPath)
 	if err != nil {
 		return false, err
 	}

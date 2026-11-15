@@ -8,9 +8,10 @@ type CancelButtonProps = {
   project: string;
   repo: string;
   number: number;
+  workflowPath: string;
 };
 
-export function CancelButton({ project, repo, number }: CancelButtonProps) {
+export function CancelButton({ project, repo, number, workflowPath }: CancelButtonProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -22,7 +23,7 @@ export function CancelButton({ project, repo, number }: CancelButtonProps) {
       try {
         const token = await getToken();
         const res = await fetch(
-          `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}/pipelines/runs/${number}/cancel`,
+          `/api/backend/projects/${encodeURIComponent(project)}/repos/${encodeURIComponent(repo)}/pipelines/runs/${number}/cancel?workflow=${encodeURIComponent(workflowPath)}`,
           {
             method: "POST",
             headers: {

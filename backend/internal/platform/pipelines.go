@@ -188,12 +188,12 @@ func (s *Service) GetRun(ctx context.Context, actor Actor, projectSlug, repoSlug
 // CancelRun transitions a running or queued pipeline run to cancelled. It
 // returns ErrNotFound when the run doesn't exist and ErrConflict when it has
 // already finished.
-func (s *Service) CancelRun(ctx context.Context, actor Actor, projectSlug, repoSlug string, runNumber int) error {
+func (s *Service) CancelRun(ctx context.Context, actor Actor, projectSlug, repoSlug, workflowPath string, runNumber int) error {
 	repo, _, _, err := s.resolveRepo(ctx, actor, projectSlug, repoSlug, false)
 	if err != nil {
 		return err
 	}
-	cancelled, err := s.store.CancelRun(ctx, repo.ID, int64(runNumber))
+	cancelled, err := s.store.CancelRun(ctx, repo.ID, strings.TrimSpace(workflowPath), int64(runNumber))
 	if err != nil {
 		return fmt.Errorf("cancel run: %w", err)
 	}
@@ -269,6 +269,12 @@ func (s *Service) triggerEvent(ctx context.Context, repo db.Repository, src pipe
 		}
 		if !match {
 			continue
+		}
+		// Push filters (branches / tags, + their -ignore forms).
+		if event == "push" {
+			if ok, err := pipeline.MatchesPushRef(yaml, ref); err != nil || !ok {
+				continue
+			}
 		}
 		run, err := s.runWorkflow(ctx, repo, src, TriggerInput{
 			WorkflowPath: f.Path,

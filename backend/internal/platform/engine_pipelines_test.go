@@ -240,3 +240,42 @@ func TestEngineMergeTriggersPushPipelines(t *testing.T) {
 	}
 	t.Fatalf("no push run on main for merge commit %s; runs = %+v", merged.MergeCommit, runs)
 }
+
+// Push filters are honoured (2026-11-15): a workflow limited to
+// `branches: [main]` — a deploy — does not run for a push to another branch,
+// while an unfiltered workflow does.
+func TestEnginePushHonoursBranchFilters(t *testing.T) {
+	svc, _, slug, _, repoID, gitURL := enginePipelineRepoURL(t, "engpipe-f")
+	ctx := context.Background()
+	work := t.TempDir()
+	if out, err := exec.Command("git", "clone", "-q", gitURL+"/"+slug+"/app", work).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	deploy := "name: deploy\non:\n  push:\n    branches: [main]\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo d\n"
+	if err := os.WriteFile(filepath.Join(work, ".github/workflows/deploy.yml"), []byte(deploy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	browseGit(t, work, "add", "-A")
+	browseGit(t, work, "commit", "-qm", "deploy workflow")
+	mainHead := browseGit(t, work, "rev-parse", "HEAD")
+	if out, err := browseGitPush(t, work, "origin", "main"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	if out, err := browseGitPush(t, work, "origin", "main:feature"); err != nil {
+		t.Fatalf("push feature: %v\n%s", err, out)
+	}
+	count := func(ref string) int {
+		t.Helper()
+		runs, err := svc.HandleEnginePush(ctx, repoID, []platform.EngineRefUpdate{{Ref: ref, New: mainHead}})
+		if err != nil {
+			t.Fatalf("HandleEnginePush %s: %v", ref, err)
+		}
+		return len(runs)
+	}
+	if n := count("refs/heads/feature"); n != 1 {
+		t.Fatalf("feature push started %d runs, want 1 (ci only, not the main-only deploy)", n)
+	}
+	if n := count("refs/heads/main"); n != 2 {
+		t.Fatalf("main push started %d runs, want 2", n)
+	}
+}

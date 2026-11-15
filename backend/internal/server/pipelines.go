@@ -389,7 +389,9 @@ func (s *Server) handleCancelRun(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "invalid_input", "run number must be a positive integer")
 		return
 	}
-	if err := s.platform.CancelRun(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number); err != nil {
+	// ?workflow= scopes the run number to its workflow (numbers count per
+	// workflow); without it every workflow's run with that number matches.
+	if err := s.platform.CancelRun(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), r.URL.Query().Get("workflow"), number); err != nil {
 		s.writePlatformError(w, err, "could not cancel run")
 		return
 	}

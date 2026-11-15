@@ -467,3 +467,9 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   (13 repos), which would widen them.
 - **Rejected:** gating inside the worker (secrets would already have left the api); a `blocked` run
   status (every client knows `failure`; the reason travels separately).
+
+- **Follow-up fixes found while verifying (same day):** push triggers ignored `branches`/`tags` filters
+  (every push to any branch ran every push workflow, the deploy included) — `pipeline.MatchesPushRef`
+  now applies GitHub's push filters (`paths` still not evaluated); Cancel ignored queue-mode `pending`
+  runs and cancelled run #N of *every* workflow — it now covers pending runs (withdrawing the queue row)
+  and is scoped by `?workflow=`.

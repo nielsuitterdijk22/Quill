@@ -51,10 +51,11 @@ export function cancelPipelineRun(
   project: string,
   repo: string,
   number: number,
+  workflowPath = "",
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return postNoContent(
     token,
-    `/api/v1/projects/${project}/repos/${repo}/pipelines/runs/${number}/cancel`,
+    `/api/v1/projects/${project}/repos/${repo}/pipelines/runs/${number}/cancel?workflow=${encodeURIComponent(workflowPath)}`,
     {},
   );
 }
