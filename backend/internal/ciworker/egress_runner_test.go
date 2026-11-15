@@ -74,3 +74,59 @@ func TestEgressRunner(t *testing.T) {
 		t.Fatal("job ran without its egress policy")
 	}
 }
+
+// retryingRunner is a health-check loop against a refused host: it retries
+// until its context is cancelled, then reports the step act was running.
+type retryingRunner struct {
+	ctl   *fakeEgress
+	tries *int
+}
+
+func (r retryingRunner) Run(ctx context.Context, spec pipeline.JobSpec) (pipeline.RunResult, error) {
+	if spec.LogSink != nil {
+		spec.LogSink("deploy", "Health check", "waiting for the api")
+	}
+	for ctx.Err() == nil && *r.tries < 1000 {
+		*r.tries++
+		r.ctl.onBlock("api.example", 443)
+	}
+	return pipeline.RunResult{Status: pipeline.StatusCancelled, Jobs: []pipeline.JobResult{{Key: "deploy", Status: pipeline.StatusCancelled, Steps: []pipeline.StepResult{
+		{Name: "Build", Status: pipeline.StatusSuccess},
+		{Name: "Health check", Status: pipeline.StatusCancelled, Logs: "curl: (35) SSL_ERROR_SYSCALL"},
+	}}}}, nil
+}
+
+// Retrying a refused host can't succeed (the policy is fixed for the run):
+// after AbortAfter refusals of one host the run stops, failed, saying why,
+// instead of burning the step's own timeout.
+func TestEgressRunnerStopsRetryLoops(t *testing.T) {
+	ctl := &fakeEgress{}
+	tries := 0
+	var live []string
+	res, err := EgressRunner{Inner: retryingRunner{ctl, &tries}, Ctl: ctl}.Run(context.Background(), pipeline.JobSpec{
+		Egress:  &egress.Policy{Mode: egress.ModeAllowlist},
+		LogSink: func(job, step, line string) { live = append(live, line) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tries != DefaultEgressAbortAfter {
+		t.Fatalf("run kept going: %d refusals", tries)
+	}
+	if res.Status != pipeline.StatusFailure || res.Jobs[0].Steps[1].Status != pipeline.StatusFailure {
+		t.Fatalf("aborted run not failed: %+v", res)
+	}
+	logs := res.Jobs[0].Steps[1].Logs
+	if !strings.Contains(logs, "stopped the run: api.example:443 was refused 6 times") || !strings.Contains(logs, "api.example:443 (6×)") {
+		t.Fatalf("step logs: %q", logs)
+	}
+	if !strings.Contains(strings.Join(live, "\n"), "stopped the run") {
+		t.Fatalf("abort not reported live: %q", live)
+	}
+
+	// Disabled: the loop runs its course.
+	tries = 0
+	if _, err := (EgressRunner{Inner: retryingRunner{ctl, &tries}, Ctl: ctl, AbortAfter: -1}).Run(context.Background(), pipeline.JobSpec{}); err != nil || tries != 1000 {
+		t.Fatalf("AbortAfter=-1: tries=%d err=%v", tries, err)
+	}
+}

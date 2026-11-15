@@ -23,7 +23,17 @@ type EgressApplier interface {
 type EgressRunner struct {
 	Inner pipeline.Runner
 	Ctl   EgressApplier
+	// AbortAfter stops the run once one host has been refused this many
+	// times (0 = DefaultEgressAbortAfter; negative = never). A run's policy
+	// is fixed when it is queued, so retrying a refused host cannot succeed:
+	// a health-check loop against an unlisted host otherwise burns its whole
+	// timeout (tempo's deploy waited 10 minutes on 40 refusals, 2026-11-15).
+	AbortAfter int
 }
+
+// DefaultEgressAbortAfter is the refusal count of one host that stops a run.
+// One-off probes (telemetry, update checks) stay well below it.
+const DefaultEgressAbortAfter = 6
 
 const egressLogPrefix = "quill egress: "
 
@@ -31,8 +41,14 @@ const egressLogPrefix = "quill egress: "
 func (r EgressRunner) Run(ctx context.Context, spec pipeline.JobSpec) (pipeline.RunResult, error) {
 	var mu sync.Mutex
 	blocked := map[string]int{}
-	var curJob, curStep string
+	var curJob, curStep, aborted string
 	sink := spec.LogSink
+	limit := r.AbortAfter
+	if limit == 0 {
+		limit = DefaultEgressAbortAfter
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	onBlock := func(host string, port int) {
 		key := host
 		if key == "" {
@@ -42,10 +58,20 @@ func (r EgressRunner) Run(ctx context.Context, spec pipeline.JobSpec) (pipeline.
 		mu.Lock()
 		blocked[key]++
 		first := blocked[key] == 1
+		stop := limit > 0 && blocked[key] == limit && aborted == ""
+		if stop {
+			aborted = key
+		}
 		job, step := curJob, curStep
 		mu.Unlock()
 		if first && sink != nil {
 			sink(job, step, egressLogPrefix+"blocked "+key+" (not on this repository's egress allowlist)")
+		}
+		if stop {
+			if sink != nil {
+				sink(job, step, egressLogPrefix+abortMessage(key, limit))
+			}
+			cancel()
 		}
 	}
 	if err := r.Ctl.Apply(spec.Egress, onBlock); err != nil {
@@ -62,10 +88,52 @@ func (r EgressRunner) Run(ctx context.Context, spec pipeline.JobSpec) (pipeline.
 	res, err := r.Inner.Run(ctx, spec)
 	mu.Lock()
 	defer mu.Unlock()
+	if aborted != "" {
+		if err != nil {
+			return res, fmt.Errorf("%s", abortMessage(aborted, limit))
+		}
+		res.Status = pipeline.StatusFailure
+		markAbortedStep(&res)
+	}
 	if err == nil && len(blocked) > 0 {
 		appendEgressSummary(&res, blocked)
+		if aborted != "" {
+			appendToFailedStep(&res, egressLogPrefix+abortMessage(aborted, limit)+"\n")
+		}
 	}
 	return res, err
+}
+
+func abortMessage(key string, n int) string {
+	return fmt.Sprintf("stopped the run: %s was refused %d times. Retrying cannot succeed, because the egress policy is fixed for this run. Allow the host under the repository's settings → Pipeline egress, then re-run.", key, n)
+}
+
+// markAbortedStep fails the step the abort interrupted (act reports it as
+// cancelled or leaves it running) so the run page points at it.
+func markAbortedStep(res *pipeline.RunResult) {
+	for ji := range res.Jobs {
+		for si := range res.Jobs[ji].Steps {
+			if res.Jobs[ji].Steps[si].Status == pipeline.StatusFailure {
+				return
+			}
+		}
+	}
+	for ji := range res.Jobs {
+		for si := range res.Jobs[ji].Steps {
+			st := &res.Jobs[ji].Steps[si]
+			if st.Status != pipeline.StatusSuccess && st.Status != pipeline.StatusSkipped {
+				st.Status = pipeline.StatusFailure
+				res.Jobs[ji].Status = pipeline.StatusFailure
+				return
+			}
+		}
+	}
+}
+
+func appendToFailedStep(res *pipeline.RunResult, text string) {
+	if t := summaryTarget(res); t != nil {
+		t.Logs += text
+	}
 }
 
 // appendEgressSummary adds the refused hosts to the first failed step (or
@@ -82,7 +150,14 @@ func appendEgressSummary(res *pipeline.RunResult, blocked map[string]int) {
 	for _, k := range keys {
 		fmt.Fprintf(&b, "  %s (%d×)\n", k, blocked[k])
 	}
-	b.WriteString("Add expected hosts under the repository's Settings → Pipeline egress.\n")
+	b.WriteString("Add expected hosts under the repository's settings → Pipeline egress.\n")
+	if target := summaryTarget(res); target != nil {
+		target.Logs += b.String()
+	}
+}
+
+// summaryTarget is the first failed step, or the last step when none failed.
+func summaryTarget(res *pipeline.RunResult) *pipeline.StepResult {
 	var target *pipeline.StepResult
 	for ji := range res.Jobs {
 		for si := range res.Jobs[ji].Steps {
@@ -99,7 +174,5 @@ func appendEgressSummary(res *pipeline.RunResult, blocked map[string]int) {
 			}
 		}
 	}
-	if target != nil {
-		target.Logs += b.String()
-	}
+	return target
 }

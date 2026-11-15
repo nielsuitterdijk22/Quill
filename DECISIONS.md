@@ -515,3 +515,8 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   browsers dropped it and every input used the UA default font; textareas were forced monospace.
   Now Geist Sans 14px for all fields; `.mono` keeps the code face for secrets and host lists.
   `--font-sans`/`--font-mono` tokens defined (several rules referenced them undefined).
+- **Egress fail-fast (2026-11-15):** a run stops (failed) once one host has been refused 6 times
+  (`EgressRunner.AbortAfter`, default `DefaultEgressAbortAfter`). The policy is fixed at enqueue, so
+  retries can't succeed: tempo's deploy health check burned 10 minutes on 40 refusals of its own
+  function host. The abort is said live and on the failed step. Rejected: failing on the first
+  refusal (tools probe optional hosts once, e.g. telemetry); per-step timeouts (the workflow's own).
