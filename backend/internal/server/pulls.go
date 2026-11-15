@@ -405,6 +405,7 @@ func (s *Server) handleEditPull(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := newPullResponse(pr)
 	resp.ViewerIsAuthor = s.viewerIsAuthor(r.Context(), actor, pr)
+	s.logAudit(r, "pr.edited", "pull_request", strconv.Itoa(number), map[string]any{"project": slug, "repo": repoSlug, "state": req.State, "title": req.Title != nil, "description": req.Body != nil})
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"repository": newRepoResponse(repo),
 		"pull":       resp,
@@ -504,6 +505,7 @@ func (s *Server) handleCreatePullComment(w http.ResponseWriter, r *http.Request)
 		s.writePlatformError(w, err, "could not add comment")
 		return
 	}
+	s.logAudit(r, "pr.commented", "pull_request", strconv.Itoa(number), map[string]any{"project": chi.URLParam(r, "slug"), "repo": chi.URLParam(r, "repo")})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newPullCommentResponse(comment)})
 }
 
@@ -607,6 +609,7 @@ func (s *Server) handleCreateLineComment(w http.ResponseWriter, r *http.Request)
 		s.writePlatformError(w, err, "could not add line comment")
 		return
 	}
+	s.logAudit(r, "pr.line_commented", "pull_request", strconv.Itoa(number), map[string]any{"project": chi.URLParam(r, "slug"), "repo": chi.URLParam(r, "repo")})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newLineCommentResponse(comment)})
 }
 
@@ -772,5 +775,6 @@ func (s *Server) handleCreatePullReview(w http.ResponseWriter, r *http.Request) 
 		s.writePlatformError(w, err, "could not submit review")
 		return
 	}
+	s.logAudit(r, "pr.reviewed", "pull_request", strconv.Itoa(number), map[string]any{"project": chi.URLParam(r, "slug"), "repo": chi.URLParam(r, "repo"), "event": req.Event})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"review": newReviewResponse(review)})
 }

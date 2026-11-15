@@ -103,6 +103,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		s.writePlatformError(w, err, "could not create environment")
 		return
 	}
+	s.logAudit(r, "environment.created", "environment", env.Slug, map[string]any{"project": chi.URLParam(r, "slug")})
 	httpx.JSON(w, http.StatusCreated, newEnvironmentResponse(env))
 }
 

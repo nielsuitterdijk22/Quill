@@ -61,6 +61,7 @@ const ORG_NAV: NavItem[] = [
 
 // ADMIN_NAV holds entries only platform admins see (tenant-wide governance).
 const ADMIN_NAV: NavItem[] = [
+  { href: "/admin/analytics", label: "Analytics", icon: "dashboard" },
   { href: "/admin/audit-log", label: "Audit log", icon: "eye" },
 ];
 

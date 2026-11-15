@@ -552,3 +552,19 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - **Close/reopen:** `PATCH /pulls/{n}` takes `state` (open|closed); a merged PR stays closed.
 - Follow-ups: repo-scoped tokens (today a token acts as its user everywhere), a settings page to mint
   and expire them, `pr checkout`, changing a PR's base.
+
+## 2026-11-15 — Operator analytics (first-party)
+
+- **`/admin/analytics`** (platform admins): signups per day, an activation funnel (repo → push → PR →
+  pipeline run → invite → upgrade, each the user's first audit event of that kind), every account with
+  its milestones and last activity, plan usage per organization against the three free-plan gates
+  (repos, pipeline minutes this month, storage; free tenants at ≥80% flagged "near limit"), and
+  feature usage per audit action against the previous window. Plan usage is computed by the same
+  store calls the quota gates use, so the page and the limits never disagree.
+- **First-party only:** everything comes from users, tenants, the audit log, pipeline runs and the
+  referee. No tracker or client events, in line with the no-telemetry stance. End-to-end fixtures
+  (`e2e…`) are excluded.
+- **New audit events** so features show up: issue.opened/updated/commented, pr.commented,
+  pr.line_commented, pr.reviewed, pr.edited, environment.created.
+- Not counted: reads (code browsing, run views). Rejected for now: page-view counters, cohorts and a
+  warehouse (overkill at this scale). Add server-side counters for a few key views when needed.

@@ -20,3 +20,50 @@ export function adminResetPassword(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return postNoContent(token, `/api/v1/admin/users/${encodeURIComponent(username)}/reset-password`, { newPassword });
 }
+
+export type AnalyticsData = {
+  windowDays: number;
+  generatedAt: string;
+  totalSignups: number;
+  windowSignups: number;
+  activeUsers: number;
+  signupsByDay: { day: string; count: number }[];
+  funnel: { key: string; label: string; users: number }[];
+  signups: {
+    username: string;
+    createdAt: string;
+    plan: string;
+    isAdmin: boolean;
+    lastSeen?: string;
+    reached: Record<string, string>;
+  }[];
+  tenants: {
+    slug: string;
+    name: string;
+    plan: string;
+    personal: boolean;
+    members: number;
+    repos: number;
+    repoLimit: number;
+    minutes: number;
+    minuteLimit: number;
+    storageBytes: number;
+    storageLimit: number;
+    nearLimit: boolean;
+    createdAt: string;
+  }[];
+  features: {
+    feature: string;
+    action: string;
+    events: number;
+    users: number;
+    tenants: number;
+    previous: number;
+  }[];
+  runs: { total: number; succeeded: number; failed: number; minutes: number };
+};
+
+// getAnalytics loads operator analytics (admins only) for the last `days` days.
+export function getAnalytics(token: string, days: number): Promise<Result<AnalyticsData>> {
+  return authGet<AnalyticsData>(token, `/api/v1/admin/analytics?days=${days}`);
+}

@@ -162,6 +162,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not create issue")
 		return
 	}
+	s.logAudit(r, "issue.opened", "issue", strconv.Itoa(int(issue.Number)), map[string]any{"project": slug, "repo": repo})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"issue": newIssueResponse(issue)})
 }
 
@@ -203,6 +204,7 @@ func (s *Server) handleEditIssue(w http.ResponseWriter, r *http.Request) {
 		s.writePlatformError(w, err, "could not update issue")
 		return
 	}
+	s.logAudit(r, "issue.updated", "issue", strconv.Itoa(number), map[string]any{"project": slug, "repo": repo, "state": req.State, "description": req.Body != nil})
 	httpx.JSON(w, http.StatusOK, map[string]any{"issue": newIssueResponse(issue)})
 }
 
@@ -229,5 +231,6 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 		s.writePlatformError(w, err, "could not post comment")
 		return
 	}
+	s.logAudit(r, "issue.commented", "issue", strconv.Itoa(number), map[string]any{"project": slug, "repo": repo})
 	httpx.JSON(w, http.StatusCreated, map[string]any{"comment": newIssueCommentResponse(comment)})
 }

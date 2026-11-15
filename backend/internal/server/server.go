@@ -474,6 +474,7 @@ func (s *Server) setupRoutes() {
 				r.Post("/admin/users/{username}/reset-password", s.handleAdminResetPassword)
 			}
 			r.Get("/admin/audit-log", s.handleListAuditLog)
+			r.Get("/admin/analytics", s.handleGetAnalytics)
 			r.Get("/admin/audit-log/export", s.handleExportAuditLog)
 		})
 

@@ -5076,3 +5076,169 @@ button.sbom-chip:hover {
     max-height: 280px;
   }
 }
+
+/* ---- admin analytics -------------------------------------------------------- */
+.an-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.an-head h1 {
+  margin-bottom: 4px;
+}
+.an-head p {
+  margin: 0;
+}
+.an-pad {
+  padding: 16px 18px;
+}
+.an-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+}
+.an-bar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 4px 4px 0 0;
+}
+.an-bar:hover {
+  background: var(--row-hover);
+}
+.an-bar span {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+.an-bar span.zero {
+  background: var(--line);
+}
+.an-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.an-funnel {
+  display: grid;
+  gap: 8px;
+}
+.an-step {
+  display: grid;
+  grid-template-columns: 190px 1fr 40px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.an-step-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+.an-step-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.an-step-n {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.an-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.an-table th,
+.an-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+.an-table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.an-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.an-table .an-r {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.an-table .an-c {
+  text-align: center;
+}
+.an-group td {
+  background: color-mix(in oklab, var(--panel2) 55%, transparent);
+  font-weight: 600;
+}
+.an-indent {
+  padding-left: 26px !important;
+}
+.an-yes {
+  color: var(--green);
+  font-weight: 700;
+}
+.an-up {
+  color: var(--green);
+}
+.an-down {
+  color: var(--red);
+}
+.an-meter {
+  display: grid;
+  gap: 4px;
+  min-width: 110px;
+  font-variant-numeric: tabular-nums;
+}
+.an-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+.an-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.an-meter-fill.warn {
+  background: var(--amber);
+}
+.an-foot {
+  font-size: 12px;
+  margin-top: -12px;
+}
+@media (max-width: 760px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .an-step {
+    grid-template-columns: 1fr 40px;
+  }
+  .an-step-track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .an-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

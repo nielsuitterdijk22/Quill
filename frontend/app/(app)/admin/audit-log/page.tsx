@@ -14,6 +14,7 @@ const ACTION_CATEGORIES = [
   { label: "Projects", value: "project" },
   { label: "Repositories", value: "repo" },
   { label: "Pull requests", value: "pr" },
+  { label: "Issues", value: "issue" },
   { label: "Pipelines", value: "pipeline" },
   { label: "Policies", value: "policy" },
   { label: "Admin", value: "admin" },
