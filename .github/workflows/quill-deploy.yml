@@ -98,6 +98,7 @@ jobs:
             --build-arg NEXT_PUBLIC_ZITADEL_PROJECT_ID=398314472394981379 \
             --build-arg QUILL_API_BASE_URL=https://api.black-tulip.nl \
             --build-arg NEXT_PUBLIC_API_WS_URL=wss://api.black-tulip.nl \
+            --build-arg NEXT_PUBLIC_TEMPO_URL=https://tempo.black-tulip.nl \
             --build-arg NEXT_PUBLIC_GIT_SHA="$SHA"
           build quill-backup -f deploy/scaleway/docker/backup.Dockerfile deploy/scaleway/docker/
           build quill-zitadel -f deploy/scaleway/docker/zitadel.Dockerfile deploy/scaleway/docker/
