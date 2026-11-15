@@ -69,6 +69,17 @@ func TestEditPullAndIssueText(t *testing.T) {
 		t.Fatal("a non-member edited the pull")
 	}
 
+	// Close and reopen (an API client closes a superseded PR).
+	if _, got, err := svc.SetPullState(ctx, act, "edit-acme", "app", n, "closed"); err != nil || got.State != "closed" {
+		t.Fatalf("close: %+v %v", got.State, err)
+	}
+	if _, got, err := svc.SetPullState(ctx, act, "edit-acme", "app", n, "open"); err != nil || got.State != "open" {
+		t.Fatalf("reopen: %+v %v", got.State, err)
+	}
+	if _, _, err := svc.SetPullState(ctx, stranger, "edit-acme", "app", n, "closed"); err == nil {
+		t.Fatal("a non-member closed the pull")
+	}
+
 	is, err := svc.CreateIssue(ctx, act, "edit-acme", "app", "Bug", "old")
 	if err != nil {
 		t.Fatalf("CreateIssue: %v", err)

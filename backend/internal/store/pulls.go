@@ -370,3 +370,12 @@ func (s *Store) RefreshPullHeads(ctx context.Context, pullID uuid.UUID, headSHA,
 		WHERE id = $1 AND (head_sha <> $2 OR base_sha <> $3)`, pullID, headSHA, baseSHA)
 	return err
 }
+
+// SetPullState closes or reopens an unmerged pull ("open" | "closed").
+// Returns pgx.ErrNoRows when the pull is merged (merged pulls stay closed).
+func (s *Store) SetPullState(ctx context.Context, pullID uuid.UUID, state string) (PullRequest, error) {
+	return scanPull(s.pool.QueryRow(ctx, `
+		UPDATE pull_requests SET state = $2, updated_at = now()
+		WHERE id = $1 AND NOT merged
+		RETURNING `+pullColumns, pullID, state))
+}

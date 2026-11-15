@@ -83,13 +83,12 @@ ones marked **(enforced)**: breaking them throws the work away.
   mirror — push `main` to both (`git push quill main && git push origin main`).
   **Since 2026-11-15 `main` on Quill is PR-only** (branch policy: require pull request; the
   `production` environment only deploys `main`). Agents push a branch (`git push quill agent/<topic>`)
-  and open its PR with `quill admin open-pull --project nuitterdijk --repo quill --author nuitterdijk
-  --head agent/<topic> --head-sha $(git rev-parse HEAD) --base-sha $(git rev-parse quill/main)
-  --title ... --body-file <md>` (run from `backend/` with the prod `QUILL_DATABASE_URL`); the owner
-  reviews and merges it. Agents may also act through the real API with an API token
-  (`quill admin issue-api-token --username nuitterdijk --name <label> --out <file>`, Bearer `qat_…`):
-  `POST .../pulls` to open, `POST .../pulls/{n}/merge` `{"method":"rebase"}` to merge when the owner asks,
-  `POST .../pipelines` to trigger a run. Revoke the token (delete its git_tokens row) after use. After a
+  and open its PR with the `quill` client: from `backend/`, `QUILL_TOKEN_FILE=<file> go run ./cmd/quill pr open
+  --head agent/<topic> --title ... --body-file <md>`, then `pr merge <n> --method rebase` once `./check` is green
+  (the owner wants agents to merge their own work, 2026-11-15), `run watch <n> --workflow
+  .github/workflows/quill-deploy.yml` for the deploy. The token comes from `quill admin issue-api-token
+  --username nuitterdijk --name <label> --out <file>` (Bearer `qat_…`, acts as the owner); revoke it (delete
+  its git_tokens row) after use. `quill admin open-pull` remains for when no API is reachable. After a
   merge, sync the mirror: `git fetch quill && git push origin quill/main:main`.
   Agent git credentials: `quill admin issue-git-token --username nuitterdijk --out <file>`
   (0600; use via a credential helper, delete the file and revoke the token after).

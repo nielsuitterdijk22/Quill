@@ -2,6 +2,7 @@ package platform_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,5 +74,8 @@ func TestPullFollowsBranchAndKeepsStatsAfterMerge(t *testing.T) {
 	}
 	if _, files, err = svc.GetPullDiff(ctx, act, "heads-acme", "app", n); err != nil || len(files) != 2 {
 		t.Fatalf("merged diff files = %d (%v)", len(files), err)
+	}
+	if _, _, err := svc.SetPullState(ctx, act, "heads-acme", "app", n, "open"); !errors.Is(err, platform.ErrInvalidInput) {
+		t.Fatalf("reopened a merged pull: %v", err)
 	}
 }

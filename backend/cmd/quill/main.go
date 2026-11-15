@@ -1,4 +1,5 @@
-// Command quill is the Quill administrative CLI. It operates on the platform
+// Command quill is the Quill CLI: `quill pr`/`quill run` drive the REST API
+// with an API token; `quill admin` is the administrative side. It operates on the platform
 // directly (Postgres + Forgejo) without going through the HTTP API, for
 // bootstrapping and repair tasks such as creating tenants and repositories.
 package main
@@ -35,6 +36,10 @@ func run(args []string) error {
 	switch args[0] {
 	case "admin":
 		return runAdmin(args[1:])
+	case "pr":
+		return runPR(args[1:])
+	case "run":
+		return runRun(args[1:])
 	case "-h", "--help", "help":
 		return usage()
 	default:
@@ -43,9 +48,23 @@ func run(args []string) error {
 }
 
 func usage() error {
-	fmt.Fprint(os.Stderr, `quill - Quill administrative CLI
+	fmt.Fprint(os.Stderr, `quill - Quill CLI
 
-Usage:
+API client (needs only an API token — see issue-api-token; env QUILL_TOKEN / QUILL_TOKEN_FILE /
+~/.config/quill/token, QUILL_API_URL, QUILL_REPO; the repo is otherwise taken from git remotes):
+  quill pr list [--state open|closed|all]
+  quill pr view <n>
+  quill pr open --title <t> [--head <branch>] [--base main] [--body <md> | --body-file <file|->]
+  quill pr edit <n> [--title <t>] [--body <md> | --body-file <file|->]
+  quill pr merge <n> [--method merge|rebase|squash]
+  quill pr close <n> | quill pr reopen <n>
+  quill run list [--workflow <path>] [--limit N]
+  quill run trigger --workflow <path> [--ref main] [--environment <env>]
+  quill run view <n> --workflow <path> [--logs]
+  quill run watch <n> --workflow <path>     (exits non-zero unless the run succeeds)
+  every client command takes --repo project/repo, --api <origin>, --token-file <file>, --json
+
+Admin (operates on Postgres/the bucket directly; operator credentials):
   quill admin create-repo --tenant <id-or-slug> --name <name> [--description <text>] [--visibility public|internal|private]
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --content <text> [--branch <ref>]
   quill admin seed-file --tenant <id-or-slug> --repo <name> --path <repo-relative-path> --file <path-or--> [--branch <ref>]

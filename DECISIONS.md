@@ -540,3 +540,15 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   so neither kind stands in for the other; no schema change. Minted with
   `quill admin issue-api-token` for now. Rejected: letting git tokens call the API (a push credential
   shouldn't merge); a new table (a migration for no gain yet). Follow-up: a UI to mint them, expiry.
+
+## 2026-11-15 — `quill` API client; closing PRs
+
+- **`quill pr` / `quill run`:** a stdlib client over the REST API, authenticated by an API token
+  (QUILL_TOKEN, QUILL_TOKEN_FILE or ~/.config/quill/token); the repo comes from --repo, QUILL_REPO or the
+  clone's Quill remote. Same binary as `quill admin`, but it needs no database or cloud credentials, so
+  another agent session (tempo-98) gets a token rather than operator access. The owner wants agents to
+  merge their own PRs ("tempo session should be able to merge itself"). Rejected: a separate binary
+  (one tool to install), third-party CLI frameworks (flag is enough).
+- **Close/reopen:** `PATCH /pulls/{n}` takes `state` (open|closed); a merged PR stays closed.
+- Follow-ups: repo-scoped tokens (today a token acts as its user everywhere), a settings page to mint
+  and expire them, `pr checkout`, changing a PR's base.

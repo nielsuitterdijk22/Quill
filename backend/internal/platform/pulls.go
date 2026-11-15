@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/nielsuitterdijk22/quill/internal/forgejo"
 	"github.com/nielsuitterdijk22/quill/internal/pipeline"
@@ -396,6 +398,33 @@ func (s *Service) EditPull(ctx context.Context, actor Actor, projectSlug, repoSl
 	}
 	if _, err := s.store.UpdatePull(ctx, pr.ID, title, body); err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("update pull: %w", err)
+	}
+	_, dto, err := s.engineGetPull(ctx, repo, be, number)
+	return repo, dto, err
+}
+
+// SetPullState closes or reopens a pull request (members; a merged pull
+// can't be reopened). Reopening re-reads the branch tips on the next view.
+func (s *Service) SetPullState(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int, state string) (db.Repository, forgejo.PullRequest, error) {
+	if state != "open" && state != "closed" {
+		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: state must be open or closed", ErrInvalidInput)
+	}
+	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	if err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	if !be.engine {
+		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: needs a Quill-hosted repository", ErrInvalidInput)
+	}
+	pr, _, err := s.engineGetPull(ctx, repo, be, number)
+	if err != nil {
+		return db.Repository{}, forgejo.PullRequest{}, err
+	}
+	if _, err := s.store.SetPullState(ctx, pr.ID, state); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("%w: a merged pull request stays closed", ErrInvalidInput)
+		}
+		return db.Repository{}, forgejo.PullRequest{}, err
 	}
 	_, dto, err := s.engineGetPull(ctx, repo, be, number)
 	return repo, dto, err

@@ -373,6 +373,7 @@ func (s *Server) handleGetPull(w http.ResponseWriter, r *http.Request) {
 type editPullRequest struct {
 	Title *string `json:"title"`
 	Body  *string `json:"body"`
+	State *string `json:"state"` // "open" | "closed"
 }
 
 // handleEditPull changes a pull request's title and/or description.
@@ -390,7 +391,14 @@ func (s *Server) handleEditPull(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	repo, pr, err := s.platform.EditPull(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "repo"), number, req.Title, req.Body)
+	slug, repoSlug := chi.URLParam(r, "slug"), chi.URLParam(r, "repo")
+	if req.State != nil {
+		if _, _, err := s.platform.SetPullState(r.Context(), actor, slug, repoSlug, number, *req.State); err != nil {
+			s.writePlatformError(w, err, "could not update pull request")
+			return
+		}
+	}
+	repo, pr, err := s.platform.EditPull(r.Context(), actor, slug, repoSlug, number, req.Title, req.Body)
 	if err != nil {
 		s.writePlatformError(w, err, "could not update pull request")
 		return
