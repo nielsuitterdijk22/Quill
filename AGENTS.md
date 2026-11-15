@@ -86,7 +86,10 @@ ones marked **(enforced)**: breaking them throws the work away.
   and open its PR with `quill admin open-pull --project nuitterdijk --repo quill --author nuitterdijk
   --head agent/<topic> --head-sha $(git rev-parse HEAD) --base-sha $(git rev-parse quill/main)
   --title ... --body-file <md>` (run from `backend/` with the prod `QUILL_DATABASE_URL`); the owner
-  reviews and merges it (agents have git tokens, not API tokens). After a
+  reviews and merges it. Agents may also act through the real API with an API token
+  (`quill admin issue-api-token --username nuitterdijk --name <label> --out <file>`, Bearer `qat_…`):
+  `POST .../pulls` to open, `POST .../pulls/{n}/merge` `{"method":"rebase"}` to merge when the owner asks,
+  `POST .../pipelines` to trigger a run. Revoke the token (delete its git_tokens row) after use. After a
   merge, sync the mirror: `git fetch quill && git push origin quill/main:main`.
   Agent git credentials: `quill admin issue-git-token --username nuitterdijk --out <file>`
   (0600; use via a credential helper, delete the file and revoke the token after).

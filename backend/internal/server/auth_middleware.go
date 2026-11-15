@@ -7,6 +7,7 @@ import (
 
 	"github.com/nielsuitterdijk22/quill/internal/auth"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
+	"github.com/nielsuitterdijk22/quill/internal/platform"
 )
 
 // cookieToken is the name of the httpOnly cookie that may carry the access token
@@ -43,6 +44,18 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			id  auth.Identity
 			err error
 		)
+
+		// API token (automation): checked before the IdP, by prefix.
+		if strings.HasPrefix(token, platform.APITokenPrefix) {
+			id, err = s.platform.AuthenticateAPIToken(r.Context(), token)
+			if err != nil {
+				httpx.Error(w, http.StatusUnauthorized, "unauthorized", "invalid or revoked api token")
+				return
+			}
+			ctx := context.WithValue(r.Context(), identityKey, id)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 
 		// External IdP path (Zitadel): verify the RS256 JWT and provision
 		// user/tenant on first login.

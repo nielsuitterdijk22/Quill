@@ -60,3 +60,51 @@ func runIssueGitToken(args []string) error {
 	fmt.Printf("git token %q minted for %s (id %s) → %s\n", *name, cred.Username, cred.ID, *out)
 	return nil
 }
+
+// runIssueAPIToken mints an API token (Authorization: Bearer qat_…) for a
+// user: operator tooling for automation acting as that user (agents opening
+// and merging PRs, triggering runs). Same handling as issue-git-token: the
+// secret goes to --out (0600), never stdout; revoke it from the user's token
+// list (or DELETE FROM git_tokens WHERE id = …) when done.
+func runIssueAPIToken(args []string) error {
+	fs := flag.NewFlagSet("issue-api-token", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	username := fs.String("username", "", "user the token acts as")
+	name := fs.String("name", "automation", "token label shown in the user's token list")
+	out := fs.String("out", "", "file to write the token to (created 0600)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *username == "" || *out == "" {
+		return errors.New("issue-api-token: --username and --out are required")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	ctx := context.Background()
+	st, err := store.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer st.Close()
+	user, err := st.GetUserByUsername(ctx, *username)
+	if err != nil {
+		return fmt.Errorf("user %s: %w", *username, err)
+	}
+	svc := platform.NewService(st, forgejo.New(cfg.Forgejo), logging.New("warn", "text"))
+	cred, err := svc.MintAPIToken(ctx, platform.Actor{UserID: user.ID}, *name)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(*out, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := fmt.Fprintln(f, cred.Token); err != nil {
+		return err
+	}
+	fmt.Printf("api token %q minted for %s (id %s) → %s\n", *name, cred.Username, cred.ID, *out)
+	return nil
+}

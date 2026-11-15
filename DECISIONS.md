@@ -534,3 +534,9 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   API token). Rejected: API tokens for agents now (the right end state, a bigger change).
 - PR #1's row was hand-marked `state='merged'`; the engine's merged state is `closed` + `merged`.
   Corrected.
+- **API tokens (`qat_…`):** a REST bearer credential acting as its user, so agents open/merge PRs and
+  trigger runs through the real API (owner, 2026-11-15: "I want you to be able to work autonomously").
+  Stored like native git tokens (same table, list and revoke; SHA-256 only) and told apart by prefix,
+  so neither kind stands in for the other; no schema change. Minted with
+  `quill admin issue-api-token` for now. Rejected: letting git tokens call the API (a push credential
+  shouldn't merge); a new table (a migration for no gain yet). Follow-up: a UI to mint them, expiry.
