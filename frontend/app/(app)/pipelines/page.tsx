@@ -4,6 +4,7 @@ import { getPipelines, listReposByProject, getMyProjects, type PipelineRun } fro
 import { getToken } from "../../lib/session";
 import { fmtDate } from "../../components/repo";
 import { RunStatusBadge } from "../../components/pipelines";
+import { RepoChip } from "../../components/RepoChip";
 
 type PipelineRow = {
   projectSlug: string;
@@ -46,6 +47,19 @@ export default async function PipelinesOverviewPage() {
     .flat()
     .sort((a, b) => (b.lastRun?.createdAt ?? "").localeCompare(a.lastRun?.createdAt ?? ""));
 
+  // Group by repository (most recently active first) so repos with the same
+  // workflow names (ci, foundry-check, …) don't blur together.
+  const groups: { key: string; projectSlug: string; repoSlug: string; rows: PipelineRow[] }[] = [];
+  for (const row of rows) {
+    const key = `${row.projectSlug}/${row.repoSlug}`;
+    let g = groups.find((x) => x.key === key);
+    if (!g) {
+      g = { key, projectSlug: row.projectSlug, repoSlug: row.repoSlug, rows: [] };
+      groups.push(g);
+    }
+    g.rows.push(row);
+  }
+
   return (
     <>
       <div className="top">
@@ -63,32 +77,44 @@ export default async function PipelinesOverviewPage() {
             <span className="mono">.github/workflows</span> in a repository.
           </div>
         ) : (
-          rows.map((row) => (
-            <Link
-              className="row-item"
-              key={`${row.projectSlug}:${row.repoSlug}:${row.workflowPath}`}
-              href={`/${encodeURIComponent(row.projectSlug)}/${encodeURIComponent(row.repoSlug)}/pipelines`}
-            >
-              <span className="tree-icon">◇</span>
-              <div className="pr-main">
-                <span className="nm">{row.name}</span>
-                <span className="sub run-row-meta">
-                  <span className="mono">{row.repoName}</span>
-                  <span className="mono">{row.workflowPath}</span>
+          groups.map((g) => (
+            <div key={g.key}>
+              <div className="pipeline-group-head">
+                <Link href={`/${encodeURIComponent(g.projectSlug)}/${encodeURIComponent(g.repoSlug)}/pipelines`}>
+                  <RepoChip project={g.projectSlug} repo={g.repoSlug} />
+                </Link>
+                <span className="spacer" />
+                <span className="sub">
+                  {g.rows.length} workflow{g.rows.length === 1 ? "" : "s"}
                 </span>
               </div>
-              <span className="spacer" />
-              {row.lastRun ? (
-                <>
-                  <span className="sub">
-                    #{row.lastRun.runNumber} · {fmtDate(row.lastRun.createdAt)}
-                  </span>
-                  <RunStatusBadge status={row.lastRun.status} />
-                </>
-              ) : (
-                <span className="sub">Never run</span>
-              )}
-            </Link>
+              {g.rows.map((row) => (
+                <Link
+                  className="row-item"
+                  key={`${row.projectSlug}:${row.repoSlug}:${row.workflowPath}`}
+                  href={`/${encodeURIComponent(row.projectSlug)}/${encodeURIComponent(row.repoSlug)}/pipelines`}
+                >
+                  <span className="tree-icon">◇</span>
+                  <div className="pr-main">
+                    <span className="nm">{row.name}</span>
+                    <span className="sub run-row-meta">
+                      <span className="mono">{row.workflowPath}</span>
+                    </span>
+                  </div>
+                  <span className="spacer" />
+                  {row.lastRun ? (
+                    <>
+                      <span className="sub">
+                        #{row.lastRun.runNumber} · {fmtDate(row.lastRun.createdAt)}
+                      </span>
+                      <RunStatusBadge status={row.lastRun.status} />
+                    </>
+                  ) : (
+                    <span className="sub">Never run</span>
+                  )}
+                </Link>
+              ))}
+            </div>
           ))
         )}
       </div>

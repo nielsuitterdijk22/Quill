@@ -3,7 +3,7 @@
 
 import { redirect } from "next/navigation";
 import { auth as zitadelAuth } from "../auth";
-import { fetchMe, type User } from "./api";
+import { fetchMe, fetchMeResult, type User } from "./api";
 
 // getToken returns the current IdP bearer token for Quill backend calls, or
 // undefined when the user is not signed in.
@@ -31,6 +31,30 @@ export async function getSession(): Promise<User | null> {
   } catch {
     return null;
   }
+}
+
+// SessionState distinguishes a dead session from a temporarily unreachable
+// backend: only "expired" should send someone back to sign in.
+export type SessionState =
+  | { kind: "anonymous" }
+  | { kind: "signed-in"; user: User; token: string }
+  | { kind: "expired" }
+  | { kind: "unavailable" };
+
+// getSessionState resolves the session, retrying once on a transient
+// failure (the api answers 502/503 for a few seconds while a deploy swaps
+// its container; before 2026-11-15 that signed people out mid-session).
+export async function getSessionState(): Promise<SessionState> {
+  const token = await getToken();
+  if (!token) return { kind: "anonymous" };
+  let res = await fetchMeResult(token);
+  if (!res.user && res.status !== 401 && res.status !== 403) {
+    await new Promise((r) => setTimeout(r, 1500));
+    res = await fetchMeResult(token);
+  }
+  if (res.user) return { kind: "signed-in", user: res.user, token };
+  if (res.status === 401 || res.status === 403) return { kind: "expired" };
+  return { kind: "unavailable" };
 }
 
 // requireSession returns the current Quill user, redirecting to /sign-in when

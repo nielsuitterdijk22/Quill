@@ -1,5 +1,6 @@
 "use client";
 
+import { RepoChip } from "../../../../../../components/RepoChip";
 import { useFormState, useFormStatus } from "react-dom";
 
 import type { Branch, Environment, PipelineSummary } from "../../../../../../lib/api";
@@ -42,9 +43,8 @@ export function RunWorkflowForm({
     <div className="panel run-action-panel">
       <div className="run-action-copy">
         <strong>Run workflow</strong>
-        <span className="sub">
-          Start a workflow manually against a branch in this repository.
-        </span>
+        <RepoChip project={project} repo={repo} />
+        <span className="sub">Start a workflow manually against a branch of this repository.</span>
       </div>
       <form className="run-workflow-form" action={formAction}>
         <label>

@@ -600,3 +600,17 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   minutes) and `QUILL_CIW_KEEP_IMAGES`. It's on only on self-terminating CI machines
   (`QUILL_CIW_DISK_RECLAIM` overrides), never on a developer's Docker. Uses the Engine API over the
   socket with net/http. Rejected: the Docker Go client (it would pull a dozen new modules).
+
+## 2026-11-15 — A restarting API no longer signs people out; repos tell apart on Pipelines
+
+- The app layout sent anyone whose `/auth/me` call failed to `/sign-in?stale=1`, for any failure.
+  During every deploy the api container swap answers 5xx for a few seconds, so signed-in users were
+  bounced to sign-in mid-session (the owner hit it on the Support link and the issues page; a live
+  probe saw the redirect while deploy #16 ran, and the same pages load fine otherwise). Now only a
+  401/403 means "expired". Other failures retry once after 1.5 s, then show "Quill is reconnecting"
+  with a retry, still signed in. Live regression test: `TestWebSupportIssues` (full load and the RSC
+  fetch a click makes).
+- Pipelines: the cross-repo list groups workflows under each repository, and a `RepoChip` (initial
+  tile with a hue derived from the repo name) names the repo there, on the run form and on the
+  recent-runs heading. Quill and Tempo share workflow names (ci, foundry-check), so name-only rows
+  were ambiguous.

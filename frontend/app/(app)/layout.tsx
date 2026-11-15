@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { Sidebar } from "../components/Sidebar";
 import { KeyboardShortcuts } from "../components/KeyboardShortcuts";
-import { getToken, getSession } from "../lib/session";
+import { getSessionState } from "../lib/session";
 import { authGet } from "../lib/api/client";
 import { listOrgs } from "../lib/api/organizations";
 import type { Organization } from "../lib/api/organizations";
@@ -16,16 +16,36 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getSession();
-  const token = await getToken();
+  const state = await getSessionState();
 
   // A session that carries a dead access token (the Zitadel token expires
   // hours before the Auth.js cookie does) must NOT degrade into the anonymous
   // shell — that half-anonymous state is what made sign-in feel like a loop.
-  // Force a real re-authentication instead.
-  if (!user && token) {
+  // Force a real re-authentication instead. Only a 401 means dead: while a
+  // deploy swaps the api container it answers 5xx for a few seconds, and
+  // treating that as "expired" signed people out mid-session (2026-11-15).
+  if (state.kind === "expired") {
     redirect("/sign-in?stale=1");
   }
+  if (state.kind === "unavailable") {
+    return (
+      <div className="app app-public">
+        <main className="main main-public">
+          <div className="panel an-pad">
+            <h2>Quill is reconnecting</h2>
+            <p className="subtle">
+              The server didn&apos;t answer just now (usually a deploy finishing). You&apos;re still signed in.
+            </p>
+            <a className="btn primary" href="">
+              Try again
+            </a>
+          </div>
+        </main>
+      </div>
+    );
+  }
+  const user = state.kind === "signed-in" ? state.user : null;
+  const token = state.kind === "signed-in" ? state.token : undefined;
 
   // Truly anonymous visitors get a bare shell: PUBLIC repositories are
   // browsable without an account (GH-style), so the (app) group stays

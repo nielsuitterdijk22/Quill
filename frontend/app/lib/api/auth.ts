@@ -26,17 +26,23 @@ export function register(input: RegisterInput): Promise<AuthResult> {
 }
 
 export async function fetchMe(token: string): Promise<User | null> {
+  return (await fetchMeResult(token)).user;
+}
+
+// fetchMeResult resolves the current user and says why when it can't:
+// status 401 means the token is dead (expired or revoked); anything else
+// (0 = unreachable, 5xx = the api restarting during a deploy) is transient
+// and must not be mistaken for a signed-out session.
+export async function fetchMeResult(token: string): Promise<{ user: User | null; status: number }> {
   try {
-    console.log("apibase", API_BASE);
     const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
-    console.log(res);
-    if (!res.ok) return null;
-    return (await res.json()) as User;
+    if (!res.ok) return { user: null, status: res.status };
+    return { user: (await res.json()) as User, status: res.status };
   } catch {
-    return null;
+    return { user: null, status: 0 };
   }
 }
 

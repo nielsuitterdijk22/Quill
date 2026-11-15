@@ -1,3 +1,4 @@
+import { RepoChip } from "../../../../../../components/RepoChip";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -105,7 +106,9 @@ export default async function PipelinesPage({
 
       <div className="panel">
         <h2>
-          Recent runs
+          <span>
+            Recent runs in <RepoChip project={params.project} repo={params.repo} showProject={false} />
+          </span>
           <span className="tag">{runs.length}</span>
         </h2>
         {runs.length === 0 ? (
