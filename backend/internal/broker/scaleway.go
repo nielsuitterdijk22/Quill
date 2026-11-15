@@ -36,6 +36,10 @@ type ScalewayConfig struct {
 	TokenSecret string
 	// MaxInstances caps concurrently alive CI instances (default 3).
 	MaxInstances int
+	// RootVolumeGB sizes the instance's root disk (default 40). The image's
+	// default (~10 GB) filled up on a deploy that builds four images after
+	// another job on the same machine (2026-11-15).
+	RootVolumeGB int
 	// BootGrace: an instance younger than this has probably not claimed (and
 	// bound) yet, so it still counts toward the repos that need a worker.
 	BootGrace time.Duration
@@ -72,6 +76,9 @@ func NewScalewayOrchestrator(cfg ScalewayConfig, logger *slog.Logger) (*Scaleway
 	}
 	if cfg.CloudInitFor == nil || cfg.TokenSecret == "" {
 		return nil, fmt.Errorf("cloud-init renderer and token secret are required")
+	}
+	if cfg.RootVolumeGB <= 0 {
+		cfg.RootVolumeGB = 40
 	}
 	if cfg.MaxInstances <= 0 {
 		cfg.MaxInstances = 3
@@ -217,6 +224,7 @@ func (o *ScalewayOrchestrator) createInstance(ctx context.Context) (string, erro
 		Project:           &o.cfg.ProjectID,
 		Tags:              []string{o.cfg.InstanceTag},
 		DynamicIPRequired: scw.BoolPtr(true),
+		Volumes:           rootVolume(o.cfg.RootVolumeGB),
 	}, scw.WithContext(ctx))
 	if err != nil {
 		return "", fmt.Errorf("create ci instance: %w", err)
@@ -335,5 +343,12 @@ func (o *ScalewayOrchestrator) reapOrphanVolumes(ctx context.Context) {
 			continue
 		}
 		o.logger.Info("reaped orphan CI volume", "volume", v.ID)
+	}
+}
+
+// rootVolume is the CreateServer volume map that sizes the SBS root disk.
+func rootVolume(gb int) map[string]*instance.VolumeServerTemplate {
+	return map[string]*instance.VolumeServerTemplate{
+		"0": {Size: scw.SizePtr(scw.Size(gb) * scw.GB), VolumeType: instance.VolumeVolumeTypeSbsVolume, Boot: scw.BoolPtr(true)},
 	}
 }

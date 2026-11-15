@@ -9,6 +9,7 @@
 //	QUILL_CIB_ZONE                  Scaleway zone of the ephemeral CI instance (default fr-par-1)
 //	QUILL_CIB_PROJECT_ID            Scaleway project the instances live in
 //	QUILL_CIB_INSTANCE_TAG          tag identifying CI workers (default quill-ci-worker)
+//	QUILL_CIB_ROOT_VOLUME_GB        root disk size in GB (default 40)
 //	QUILL_CIB_INSTANCE_TYPE         commercial type (default DEV1-S)
 //	QUILL_CIB_TTL                   max worker lifetime before TTL-kill (default 3h)
 //	QUILL_CIB_API_URL               api base URL handed to the ciworker via cloud-init
@@ -65,12 +66,14 @@ func main() {
 		UbuntuImage:      os.Getenv("QUILL_PIPELINE_UBUNTU_IMAGE"),
 	}
 	maxInstances, _ := strconv.Atoi(getenv("QUILL_CIB_MAX_INSTANCES", "3"))
+	rootGB, _ := strconv.Atoi(getenv("QUILL_CIB_ROOT_VOLUME_GB", "40"))
 
 	orch, err := broker.NewScalewayOrchestrator(broker.ScalewayConfig{
 		Zone:           zone,
 		ProjectID:      projectID,
 		InstanceTag:    tag,
 		CommercialType: getenv("QUILL_CIB_INSTANCE_TYPE", "DEV1-S"),
+		RootVolumeGB:   rootGB,
 		TTL:            ttl,
 		TokenSecret:    secret,
 		MaxInstances:   maxInstances,

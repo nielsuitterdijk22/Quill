@@ -587,3 +587,16 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - Rejected: two jobs on one CI machine (DEV1-S is 2 vCPU / 2 GB; `./check` and image builds side by
   side risk OOM; the egress firewall and act's Docker state are per machine). Better: let the broker
   start a second machine for a repo with a backlog. Proposed, not built yet.
+
+## 2026-11-15 — CI machine disk: 40 GB root, reclaim before jobs
+
+- Deploy #15 failed with "no space left on device": the broker never sized the root disk, so CI
+  machines got the image default (~10 GB). The deploy machine had just run deploy #14, whose four
+  images and build cache were still there.
+- The broker now creates a 40 GB SBS root volume (`QUILL_CIB_ROOT_VOLUME_GB`). It lives and dies with
+  the machine, so the cost is fractions of a cent per run.
+- The worker reclaims Docker space before a job when under 12 GB free: it prunes the build cache and
+  untags images no container uses, never forced, keeping the act runner image (re-pulling it costs
+  minutes) and `QUILL_CIW_KEEP_IMAGES`. It's on only on self-terminating CI machines
+  (`QUILL_CIW_DISK_RECLAIM` overrides), never on a developer's Docker. Uses the Engine API over the
+  socket with net/http. Rejected: the Docker Go client (it would pull a dozen new modules).

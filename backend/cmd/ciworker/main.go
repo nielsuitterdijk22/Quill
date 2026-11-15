@@ -18,6 +18,9 @@
 //	QUILL_CIW_SELF_TERMINATE          "true"/"1": delete own Scaleway instance on exit
 //	SCW_ACCESS_KEY / SCW_SECRET_KEY   (when self-terminating) scoped worker IAM key
 //	SCW_INSTANCE_ID                   instance id override when metadata is unreachable
+//	QUILL_CIW_DISK_RECLAIM            "on"/"off": reclaim Docker space before jobs when the disk is low
+//	                                  (default: on when QUILL_CIW_SELF_TERMINATE, i.e. on CI machines)
+//	QUILL_CIW_KEEP_IMAGES             extra image prefixes never reclaimed (comma-separated)
 //	QUILL_CIW_EGRESS                  "enforce": run the egress proxy + firewall and apply
 //	                                  each job's egress policy (needs NET_ADMIN, host network)
 //
@@ -31,6 +34,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nielsuitterdijk22/quill/internal/ciworker"
@@ -97,6 +101,18 @@ func main() {
 		}
 		runner = ciworker.EgressRunner{Inner: runner, Ctl: ctl}
 		logger.Info("egress controls active")
+	}
+	// Disk hygiene on the throwaway CI machine (never a developer's Docker):
+	// reclaim unused images and build cache before a job when space is low.
+	if v := getenv("QUILL_CIW_DISK_RECLAIM", ""); v == "on" || (v != "off" && getboolEnv("QUILL_CIW_SELF_TERMINATE")) {
+		keep := []string{strings.SplitN(getenv("QUILL_PIPELINE_UBUNTU_IMAGE", "catthehacker/ubuntu:act-latest"), ":", 2)[0]}
+		for _, k := range strings.Split(getenv("QUILL_CIW_KEEP_IMAGES", ""), ",") {
+			if k = strings.TrimSpace(k); k != "" {
+				keep = append(keep, k)
+			}
+		}
+		runner = ciworker.DiskRunner{Inner: runner, Disk: ciworker.DockerDisk{Path: "/"}, Keep: keep, Log: logger.Info}
+		logger.Info("disk reclaim active", "keep", keep)
 	}
 	logger.Info("ciworker draining queue", "worker", workerID, "idle_exit", idleExit)
 	processed, err := ciworker.Drain(context.Background(), client, workerID, runner, idleExit, terminate,
