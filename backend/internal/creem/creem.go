@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -77,20 +76,40 @@ func (c *Client) ProProductID() string {
 type Checkout struct {
 	ID          string `json:"id"`
 	CheckoutURL string `json:"checkout_url"`
-	CustomerID  string `json:"customer_id,omitempty"`
-	CustomerURL string `json:"customer_url,omitempty"`
 }
 
-// CreateCheckout opens a checkout session for a product (e.g. the team-plan
-// product) with metadata that survives to the webhook so the completed checkout
-// can be attributed to the right Quill org.
-func (c *Client) CreateCheckout(ctx context.Context, productID, successURL, requestID string, metadata map[string]string) (*Checkout, error) {
-	body, err := json.Marshal(map[string]any{
-		"product_id":  productID,
-		"success_url": successURL,
-		"request_id":  requestID,
-		"metadata":    metadata,
-	})
+// CheckoutInput describes a checkout session to open.
+type CheckoutInput struct {
+	ProductID  string
+	SuccessURL string
+	RequestID  string
+	// Units is the seat count for per-seat products (Team is priced per seat);
+	// values below 1 are sent as 1.
+	Units int
+	// CustomerEmail pre-fills the checkout's email field (optional).
+	CustomerEmail string
+	// Metadata survives to the webhook (checkout and subscription objects) so
+	// the payment can be attributed to the right Quill tenant.
+	Metadata map[string]string
+}
+
+// CreateCheckout opens a hosted checkout session (POST /v1/checkouts).
+func (c *Client) CreateCheckout(ctx context.Context, in CheckoutInput) (*Checkout, error) {
+	units := in.Units
+	if units < 1 {
+		units = 1
+	}
+	payload := map[string]any{
+		"product_id":  in.ProductID,
+		"success_url": in.SuccessURL,
+		"request_id":  in.RequestID,
+		"units":       units,
+		"metadata":    in.Metadata,
+	}
+	if in.CustomerEmail != "" {
+		payload["customer"] = map[string]string{"email": in.CustomerEmail}
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -121,45 +140,96 @@ func (c *Client) CreateCheckout(ctx context.Context, productID, successURL, requ
 	return &out, nil
 }
 
-// VerifySignature checks a Creem webhook's creem-signature header:
-// "t=<unix seconds>,sha256=<hex hmac of '<t>.<body>'>". The timestamp bounds
-// replay attacks (skewWindow).
-func VerifySignature(secret, body []byte, header string, skewWindow time.Duration) bool {
-	var ts, sigHex string
-	for _, part := range strings.Split(header, ",") {
-		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
-		if !ok {
-			continue
-		}
-		switch k {
-		case "t":
-			ts = v
-		case "sha256", "v1":
-			sigHex = v
-		}
-	}
-	if ts == "" || sigHex == "" {
+// VerifySignature checks a webhook's creem-signature header: the lowercase hex
+// HMAC-SHA256 of the raw request body keyed with the webhook secret (Creem's
+// documented scheme; there is no timestamp component). Comparison is
+// constant-time. Events are applied idempotently, so a replayed event cannot
+// do more than re-assert the state it already described.
+func VerifySignature(secret, body []byte, header string) bool {
+	header = strings.TrimSpace(header)
+	if len(secret) == 0 || header == "" {
 		return false
 	}
-	sec, err := strconv.ParseInt(ts, 10, 64)
+	got, err := hex.DecodeString(header)
 	if err != nil {
-		return false
-	}
-	age := time.Since(time.Unix(sec, 0))
-	if age < -skewWindow || age > skewWindow {
 		return false
 	}
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(ts))
-	mac.Write([]byte("."))
 	mac.Write(body)
-	return hmac.Equal(mac.Sum(nil), decodeHex(sigHex))
+	return hmac.Equal(mac.Sum(nil), got)
 }
 
-func decodeHex(s string) []byte {
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		return nil
+// Sign computes the creem-signature value for body (used by tests and local
+// tooling that replays events).
+func Sign(secret, body []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// Event is the normalized subset of a Creem webhook event Quill acts on.
+type Event struct {
+	ID             string
+	Type           string
+	ProductID      string
+	CustomerID     string
+	SubscriptionID string
+	Metadata       map[string]string
+}
+
+// ref is an expandable reference: Creem sends some relations either as an id
+// string or as the expanded object.
+type ref struct{ ID string }
+
+func (r *ref) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		return json.Unmarshal(b, &r.ID)
 	}
-	return b
+	var obj struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return nil // unknown shape: treat as absent rather than reject the event
+	}
+	r.ID = obj.ID
+	return nil
+}
+
+// ParseEvent decodes a webhook body. Checkout events carry the checkout in
+// "object" (product/customer/subscription expanded); subscription events
+// carry the subscription itself (its id is the subscription id).
+func ParseEvent(body []byte) (Event, error) {
+	var raw struct {
+		ID        string `json:"id"`
+		EventType string `json:"eventType"`
+		Object    struct {
+			ID           string         `json:"id"`
+			Object       string         `json:"object"`
+			Product      ref            `json:"product"`
+			Customer     ref            `json:"customer"`
+			Subscription ref            `json:"subscription"`
+			Metadata     map[string]any `json:"metadata"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return Event{}, err
+	}
+	evt := Event{
+		ID:         raw.ID,
+		Type:       raw.EventType,
+		ProductID:  raw.Object.Product.ID,
+		CustomerID: raw.Object.Customer.ID,
+		Metadata:   map[string]string{},
+	}
+	if raw.Object.Object == "subscription" || strings.HasPrefix(raw.EventType, "subscription.") {
+		evt.SubscriptionID = raw.Object.ID
+	} else {
+		evt.SubscriptionID = raw.Object.Subscription.ID
+	}
+	for k, v := range raw.Object.Metadata {
+		if s, ok := v.(string); ok {
+			evt.Metadata[k] = s
+		}
+	}
+	return evt, nil
 }

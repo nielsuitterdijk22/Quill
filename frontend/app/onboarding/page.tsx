@@ -460,6 +460,7 @@ export default function OnboardingPage() {
                   <li>Custom org slug</li>
                   <li>Role-based member access</li>
                   <li>Org-wide branch policies</li>
+                  <li>14-day free trial, then €5 per seat/month</li>
                 </ul>
               </div>
               <div className="ob-card-footer">
@@ -488,7 +489,10 @@ export default function OnboardingPage() {
         <main className="ob-main ob-main--narrow">
           <div className="ob-headline">
             <h1 className="ob-title">Set up your organization</h1>
-            <p className="ob-sub">Choose a unique slug — it becomes part of every repository URL.</p>
+            <p className="ob-sub">
+              Choose a unique slug — it becomes part of every repository URL. Your organization starts a
+              14-day Team trial; subscribe any time from its billing settings (€5 per seat/month).
+            </p>
           </div>
 
           {error && <div className="ob-error">{error}</div>}

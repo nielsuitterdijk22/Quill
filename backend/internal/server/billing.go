@@ -15,9 +15,12 @@ import (
 )
 
 type billingResponse struct {
-	Plan   string         `json:"plan"`
-	Usage  billingUsage   `json:"usage"`
-	Limits *billingLimits `json:"limits,omitempty"`
+	Plan        string         `json:"plan"`
+	Usage       billingUsage   `json:"usage"`
+	Limits      *billingLimits `json:"limits,omitempty"`
+	TrialEndsAt *time.Time     `json:"trialEndsAt,omitempty"`
+	Locked      bool           `json:"locked"`
+	Seats       int            `json:"seats"`
 }
 
 type billingUsage struct {
@@ -51,8 +54,11 @@ func handleBillingGet(s *Server) http.HandlerFunc {
 			return
 		}
 		resp := billingResponse{
-			Plan:  view.Plan,
-			Usage: billingUsage(view.Usage),
+			Plan:        view.Plan,
+			Usage:       billingUsage(view.Usage),
+			TrialEndsAt: view.TrialEndsAt,
+			Locked:      view.Locked,
+			Seats:       view.Seats,
 		}
 		if view.Limits != nil {
 			resp.Limits = &billingLimits{
@@ -138,7 +144,7 @@ func (s *Server) handleCreemWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "invalid_body", "could not read webhook body")
 		return
 	}
-	orgSlug, err := s.platform.ProcessCreemWebhook(r.Context(), raw, r.Header.Get("creem-signature"))
+	res, err := s.platform.ProcessCreemWebhook(r.Context(), raw, r.Header.Get("creem-signature"))
 	if err != nil {
 		if errors.Is(err, platform.ErrPaymentsNotConfigured) {
 			httpx.Error(w, http.StatusNotImplemented, "not_configured", "payments are not configured on this server")
@@ -154,9 +160,13 @@ func (s *Server) handleCreemWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "internal", "could not process webhook")
 		return
 	}
-	if orgSlug != "" {
-		s.logAudit(r, "billing.plan_upgraded_creem", "org", orgSlug, map[string]any{
-			"org": orgSlug,
+	if res.TenantSlug != "" {
+		action := "billing.plan_lapsed_creem"
+		if res.Upgraded {
+			action = "billing.plan_upgraded_creem"
+		}
+		s.logAudit(r, action, "org", res.TenantSlug, map[string]any{
+			"org": res.TenantSlug, "plan": res.Plan,
 		})
 	}
 	w.WriteHeader(http.StatusOK)
@@ -176,8 +186,11 @@ func (s *Server) handleMyBilling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := billingResponse{
-		Plan:  view.Plan,
-		Usage: billingUsage(view.Usage),
+		Plan:        view.Plan,
+		Usage:       billingUsage(view.Usage),
+		TrialEndsAt: view.TrialEndsAt,
+		Locked:      view.Locked,
+		Seats:       view.Seats,
 	}
 	if view.Limits != nil {
 		resp.Limits = &billingLimits{

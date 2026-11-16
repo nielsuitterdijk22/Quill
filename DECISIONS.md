@@ -623,3 +623,32 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - Rejected for now: DEV1-M (4 GB) for every CI machine, about 2× the hourly price for every job
   when only rare builds need it. Worth revisiting (or a per-repo machine size) if swap-bound builds
   get too slow.
+
+## 2026-11-16 — Paid teams (14-day trial) and a working Creem integration
+
+- **The Creem integration had never worked against real Creem.** `VerifySignature` expected a
+  Stripe-like `t=…,sha256=<hmac of "t.body">` header and the parser read `obj.product_id`. Creem
+  actually sends `creem-signature` = hex HMAC-SHA256(secret, raw body) and nests data under
+  `object` with `product`/`customer`/`subscription` expanded (docs.creem.io/code/webhooks). The old
+  tests used the invented format, so they passed while every real webhook would have been a 400:
+  no paid checkout could have upgraded a plan. Now on the documented scheme; tests use payloads in
+  Creem's shape, an independently computed HMAC, and assert the old format is refused. Creem's
+  scheme has no replay window, so every webhook action is idempotent instead.
+- **Organizations are no longer free** (owner, chose trial + lock-on-cancel): a new org starts a
+  14-day Team trial (`plan='trial'`, window in side table `tenant_subscriptions`, migration 000038,
+  which also moves existing free orgs onto a fresh trial). An expired trial or a canceled/expired
+  subscription (`plan='lapsed'`) locks the org: creating repos, triggering pipelines and inviting
+  members answer 402; reads and clones keep working. Expiry is evaluated lazily on each gate and
+  billing read, no cron (cost lesson). Personal accounts are unchanged (free tier with caps; a
+  canceled Pro returns to free, never locked).
+- Webhooks: checkout.completed / subscription.active|paid|trialing grant the product's plan and
+  record the Creem customer + subscription ids; subscription.canceled|expired revoke it only when
+  the event's subscription is the one on record (a late cancel of an old subscription can't lock a
+  resubscribed org). Tenant comes from metadata `tenantSlug` (legacy `orgSlug`), else from the
+  recorded subscription id (Creem's `subscription.expired` sample has no metadata).
+  Enterprise/internal plans are never changed by self-service events.
+- Team checkout sends `units` = current member count (per-seat price) and pre-fills the admin email.
+- Rejected: pay-before-create (owner chose the trial); `kind`/`trial_ends_at` columns on the
+  `tenants` scans (hand-curated sqlc, see the drift note); a cron expiring trials.
+- Follow-ups: sync the seat count to the Creem subscription as members join/leave; a "Manage
+  billing" link through Creem's customer portal.

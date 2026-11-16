@@ -75,6 +75,9 @@ type Service struct {
 	// gate. Defaults to the Forgejo-backed storageUsage; tests override it to
 	// avoid a live git backend.
 	storageProbe func(ctx context.Context, tenantID uuid.UUID) (int64, error)
+
+	// clock is the time source for trial windows; tests move it forward.
+	clock func() time.Time
 	// gitCache is the engine's hydration cache (B4 browse reads hydrate a
 	// bare repo from the bucket; nil unless WithGitCache was called).
 	gitCache *gitengine.RepoCache
@@ -375,4 +378,12 @@ func isUniqueViolation(err error) bool {
 // request was cancelled or timed out. Callers must defer the returned cancel.
 func detachedContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+}
+
+// now is the service's clock (time.Now unless a test overrides clock).
+func (s *Service) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
 }

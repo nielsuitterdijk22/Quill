@@ -15,6 +15,11 @@ export type BillingView = {
     storageBytes?: number;
     pipelineMinutes?: number;
   };
+  // Organizations run a 14-day Team trial ("trial"); a trial that ended or a
+  // canceled subscription ("lapsed") is locked until the org subscribes.
+  trialEndsAt?: string;
+  locked?: boolean;
+  seats?: number;
 };
 
 // getBilling is tenant-admin only on the backend; non-admins get a 403 which

@@ -176,9 +176,20 @@ func TestBillingUsageAndPlan(t *testing.T) {
 		t.Fatalf("finish run: %v", err)
 	}
 
-	// Tenant admin sees plan + usage. New orgs default to the free plan
-	// (migration 000021), which carries the hard limits.
+	// Tenant admin sees plan + usage. Organizations are not free: a new org
+	// runs a Team trial (migration 000038) — no hard caps, not locked.
 	view, err := svc.GetBilling(ctx, founder, "acme2")
+	if err != nil {
+		t.Fatalf("get billing: %v", err)
+	}
+	if view.Plan != PlanTrial || view.Locked || view.Limits != nil || view.TrialEndsAt == nil {
+		t.Fatalf("new org: want an active trial without caps, got %+v", view)
+	}
+	// The free plan (still the individual tier) carries the hard limits.
+	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "acme2", PlanFree); err != nil {
+		t.Fatalf("set free plan: %v", err)
+	}
+	view, err = svc.GetBilling(ctx, founder, "acme2")
 	if err != nil {
 		t.Fatalf("get billing: %v", err)
 	}

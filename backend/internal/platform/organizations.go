@@ -82,6 +82,17 @@ func (s *Service) CreateOrganization(ctx context.Context, actor Actor, slug, nam
 		return db.Tenant{}, db.Project{}, fmt.Errorf("create organization: %w", err)
 	}
 
+	// Organizations are not free: every new org starts a Team trial.
+	if err := s.startOrgTrial(ctx, tenant.ID); err != nil {
+		cctx, cancel := detachedContext(ctx)
+		defer cancel()
+		if delErr := s.store.DeleteTenant(cctx, tenant.ID); delErr != nil {
+			s.logger.Error("failed to roll back org tenant", "tenant", tenant.ID, "error", delErr)
+		}
+		return db.Tenant{}, db.Project{}, fmt.Errorf("start trial: %w", err)
+	}
+	tenant.Plan = PlanTrial
+
 	// Seed the org's first project under the new tenant by pointing the actor's
 	// tenant at it. CreateProject provisions the Forgejo org and records ownership.
 	orgActor := actor
@@ -269,6 +280,9 @@ func (s *Service) CreateInvite(ctx context.Context, actor Actor, orgSlug, email,
 		return InviteResult{}, err
 	}
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
+		return InviteResult{}, err
+	}
+	if err := s.enforceTenantActive(ctx, tenant); err != nil {
 		return InviteResult{}, err
 	}
 	email = strings.TrimSpace(email)
