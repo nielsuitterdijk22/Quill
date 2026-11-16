@@ -668,3 +668,27 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   webhook, or billing-page view, so an outage heals without a cron. A new subscription id resets
   it. Syncs are serialized per tenant in-process; with several api instances two simultaneous
   changes could race, but the next touch reconciles to the live member count.
+
+## 2026-11-16 — SCIM 2.0 provisioning for organizations
+
+- Quill is its own SCIM service provider at `/scim/v2` (Users + Groups, PATCH, eq filters,
+  paging), authenticated by per-org bearer tokens (`qsc_…`, SHA-256 stored, minted by org admins
+  under org settings). Rejected: Zitadel's SCIM server — v2.65.1 (what we run) has none, later
+  versions are Users-only and org-scoped in Zitadel, while membership and groups live in Quill.
+- Tenant isolation: a token resolves to exactly one tenant and every query is tenant-scoped. SCIM
+  ids are per-tenant record ids (`scim_users.id`), never global user ids; group member ids must
+  belong to the same tenant or the request is a 400. Tests cover cross-tenant reads, writes and
+  group smuggling, and were checked against a deliberately broken scoping.
+- Accounts are matched by email (globally unique); otherwise SCIM pre-creates an account with no
+  sign-in identity. The person's first Zitadel sign-in with that **verified** email claims it
+  (`auth.linkProvisioned`); an account that already has an identity is never linked by email,
+  so email alone can't take an existing account over. SCIM never rewrites a person's global
+  profile or email (they live on `scim_users`), and never changes an existing member's role.
+- Deprovisioning (`active=false` or DELETE) removes org membership and every group membership in
+  the org in one transaction, always: even on a locked org and even for the last admin (the IdP
+  is the source of truth; a lingering group grant would keep project access). Creating or
+  reactivating members needs an active org (402-style 403 otherwise). Seats follow (seat sync).
+- Wire tolerance for Okta and Entra ID: string booleans ("False"), case-insensitive ops, path-less
+  value objects with dotted keys, `members[value eq "…"]` removal, `excludedAttributes=members`.
+  Unknown user attributes are accepted and ignored. Audit rows are written as actor `scim`.
+- Not done yet: SSO login routing (next PR), SCIM nested groups (IdP groups are flat, depth 1).

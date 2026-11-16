@@ -6,6 +6,7 @@ import {
   getOrgGroups,
   getOrgInvites,
   getOrgMembers,
+  getOrgSCIMTokens,
   getOrgSSO,
   getTenantEnvironmentPolicies,
   getTenantEgress,
@@ -18,6 +19,7 @@ import { OrgBilling } from "../../../../components/organization/OrgBilling";
 import { OrgGroups } from "../../../../components/organization/OrgGroups";
 import { OrgMembers } from "../../../../components/organization/OrgMembers";
 import { OrgSSO } from "../../../../components/organization/OrgSSO";
+import { OrgProvisioning } from "../../../../components/organization/OrgProvisioning";
 import { PolicyManager } from "../../../../components/policy/PolicyManager";
 import { EnvironmentPolicyManager } from "../../../../components/policy/EnvironmentPolicyManager";
 import { TenantEgressForm } from "../../../../components/egress/EgressForms";
@@ -75,6 +77,11 @@ export default async function OrgSettingsPage({
         updatedAt: "",
       };
 
+  // SCIM tokens are admin-only too.
+  const scimRes = canEdit ? await getOrgSCIMTokens(token, params.org) : ({ ok: false } as const);
+  const scimTokens = scimRes.ok ? scimRes.data.tokens : [];
+  const scimBaseUrl = scimRes.ok ? scimRes.data.baseUrl : "";
+
   return (
     <>
       <div className="crumbs">
@@ -123,6 +130,26 @@ export default async function OrgSettingsPage({
             </p>
           </div>
           <OrgSSO org={org.slug} config={sso} />
+        </section>
+      )}
+
+      {canEdit && (
+        <section className="settings-section settings-card">
+          <div className="settings-head">
+            <h2 className="settings-title">Provisioning (SCIM)</h2>
+            <p className="subtle">
+              Let your identity provider (Okta, Microsoft Entra ID, JumpCloud, …) manage members and groups.
+              People it assigns join this organization, groups it pushes appear under Groups, and anyone it
+              deactivates loses access immediately. Accounts are matched by email; people sign in with their
+              usual Quill login.
+            </p>
+          </div>
+          <OrgProvisioning
+            org={org.slug}
+            baseUrl={scimBaseUrl}
+            tokens={scimTokens}
+            unavailable={billing?.locked ? "Provisioning new members is paused until this organization subscribes; deprovisioning keeps working." : undefined}
+          />
         </section>
       )}
 

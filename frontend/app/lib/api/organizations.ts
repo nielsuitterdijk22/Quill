@@ -138,6 +138,30 @@ export function deleteOrgSSO(token: string, org: string): Promise<SimpleResult> 
   return deleteResource(token, `/api/v1/orgs/${org}/sso`);
 }
 
+// SCIM provisioning tokens. The raw token is returned only on creation.
+export type SCIMToken = {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  token?: string;
+};
+
+export function getOrgSCIMTokens(
+  token: string,
+  org: string,
+): Promise<Result<{ tokens: SCIMToken[]; baseUrl: string }>> {
+  return authGet<{ tokens: SCIMToken[]; baseUrl: string }>(token, `/api/v1/orgs/${org}/scim/tokens`);
+}
+
+export function createOrgSCIMToken(token: string, org: string, name: string): Promise<DataResult<SCIMToken>> {
+  return postData<SCIMToken>(token, `/api/v1/orgs/${org}/scim/tokens`, { name });
+}
+
+export function revokeOrgSCIMToken(token: string, org: string, id: string): Promise<SimpleResult> {
+  return deleteResource(token, `/api/v1/orgs/${org}/scim/tokens/${id}`);
+}
+
 // listOrgs returns the organizations the authenticated user belongs to. Degrades
 // to an empty list on any error so nav never blanks the shell.
 export async function listOrgs(token: string): Promise<Organization[]> {

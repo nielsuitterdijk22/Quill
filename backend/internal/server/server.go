@@ -410,6 +410,10 @@ func (s *Server) setupRoutes() {
 		}))))
 	}
 
+	// SCIM 2.0 provisioning for organizations (per-org bearer tokens, no
+	// session auth): identity providers point their SCIM connector here.
+	s.router.Route("/scim/v2", s.scimRoutes)
+
 	// Versioned API surface. Resource routes are added in later PRs.
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/meta", s.handleMeta)
@@ -544,6 +548,9 @@ func (s *Server) setupRoutes() {
 				r.Get("/sso", s.handleGetOrgSSO)
 				r.Put("/sso", s.handleSetOrgSSO)
 				r.Delete("/sso", s.handleDeleteOrgSSO)
+				r.Get("/scim/tokens", s.handleListSCIMTokens)
+				r.Post("/scim/tokens", s.handleCreateSCIMToken)
+				r.Delete("/scim/tokens/{id}", s.handleRevokeSCIMToken)
 				r.Route("/groups", func(r chi.Router) {
 					r.Get("/", handleGroupsList(s))
 					r.Post("/", handleGroupsCreate(s))

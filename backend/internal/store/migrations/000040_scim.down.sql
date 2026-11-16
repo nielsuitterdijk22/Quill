@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS scim_groups;
+DROP TABLE IF EXISTS scim_users;
+DROP TABLE IF EXISTS scim_tokens;

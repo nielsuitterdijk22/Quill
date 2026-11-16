@@ -115,3 +115,56 @@ func TestProvisionUserCreatesPersonalTenant(t *testing.T) {
 		t.Fatalf("resolveIdentity user = %s, want %s", idFast.UserID, id.UserID)
 	}
 }
+
+// TestProvisionedAccountLinksOnFirstSignIn: an account an org created over
+// SCIM (no sign-in identity yet) is claimed by the person's first Zitadel
+// sign-in with that verified email — and never otherwise: an unverified
+// email, or an account that already has an identity, is not linked.
+func TestProvisionedAccountLinksOnFirstSignIn(t *testing.T) {
+	st := provisionTestStore(t)
+	v := NewZitadelVerifier(config.ZitadelConfig{Issuer: "https://auth.example.test"}, st, slog.Default())
+	ctx := context.Background()
+
+	provisioned, err := st.CreateUser(ctx, db.CreateUserParams{Username: "bob", Email: "bob@acme.test", DisplayName: "Bob", IsActive: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An org already owns the slug "bob": the account tenant must not collide.
+	if _, err := st.CreateOrgTenant(ctx, db.CreateOrgTenantParams{Slug: "bob", Name: "Bob's Org"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unverified email: not linked (and the duplicate email can't be created).
+	if _, err := v.provisionUser(ctx, "sub-unverified", zitadelUserInfo{Email: "bob@acme.test", PreferredUsername: "bob"}); err == nil {
+		t.Fatal("unverified email must not claim a provisioned account")
+	}
+	if idents, _ := st.ListAuthIdentitiesForUser(ctx, provisioned.ID); len(idents) != 0 {
+		t.Fatalf("unverified sign-in attached an identity: %v", idents)
+	}
+
+	// Verified: linked to the same account, which gets its own tenant.
+	id, err := v.provisionUser(ctx, "sub-bob", zitadelUserInfo{Email: "Bob@Acme.test", EmailVerified: true, PreferredUsername: "bob"})
+	if err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	if id.UserID != provisioned.ID || id.Username != "bob" {
+		t.Fatalf("linked identity = %+v, want user %s", id, provisioned.ID)
+	}
+	tenant, err := st.GetTenantByID(ctx, id.TenantID)
+	if err != nil || tenant.Slug == "bob" || tenant.Slug == "" {
+		t.Fatalf("account tenant = %+v err=%v (must not reuse the org's slug)", tenant, err)
+	}
+	ident, err := st.GetAuthIdentity(ctx, db.GetAuthIdentityParams{Provider: ProviderZitadel, Subject: "sub-bob"})
+	if err != nil || ident.UserID != provisioned.ID {
+		t.Fatalf("identity not recorded: %+v err=%v", ident, err)
+	}
+
+	// A second Zitadel subject with the same verified email can't take the
+	// account over now that it has an identity.
+	if _, err := v.provisionUser(ctx, "sub-attacker", zitadelUserInfo{Email: "bob@acme.test", EmailVerified: true, PreferredUsername: "bob"}); err == nil {
+		t.Fatal("an account with an identity must never be linked again")
+	}
+	if _, err := st.GetAuthIdentity(ctx, db.GetAuthIdentityParams{Provider: ProviderZitadel, Subject: "sub-attacker"}); err == nil {
+		t.Fatal("attacker identity recorded")
+	}
+}

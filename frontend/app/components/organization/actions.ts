@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import {
   addGroupMember,
+  createOrgSCIMToken,
+  revokeOrgSCIMToken,
   createOrgGroup,
   createOrgInvite,
   deleteOrgGroup,
@@ -138,6 +140,27 @@ export async function setGroupProjectRoleAction(
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
   const res = await setGroupProjectRole(token, org, group, project, role);
   if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function createSCIMTokenAction(
+  org: string,
+  name: string,
+): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await createOrgSCIMToken(token, org, name.trim());
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true, token: res.data.token ?? "" };
+}
+
+export async function revokeSCIMTokenAction(org: string, id: string): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await revokeOrgSCIMToken(token, org, id);
+  if (!res.ok) return res;
   revalidate(org);
   return { ok: true };
 }

@@ -316,6 +316,7 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 type zitadelUserInfo struct {
 	Sub               string `json:"sub"`
 	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
 	PreferredUsername string `json:"preferred_username"`
 	Name              string `json:"name"`
 	GivenName         string `json:"given_name"`
@@ -346,6 +347,11 @@ func (v *ZitadelVerifier) fetchUserInfo(ctx context.Context, rawToken string) (z
 }
 
 func (v *ZitadelVerifier) provisionUser(ctx context.Context, userID string, info zitadelUserInfo) (Identity, error) {
+	// An account an organization provisioned over SCIM (never signed in) is
+	// claimed by the person's first sign-in with that verified email.
+	if id, ok, err := v.linkProvisioned(ctx, userID, info); err != nil || ok {
+		return id, err
+	}
 	// preferred_username is often a login name like "user@domain"; take the local
 	// part as the username seed so derived handles stay clean.
 	seed := info.PreferredUsername
@@ -551,4 +557,59 @@ func (v *ZitadelVerifier) DeleteUser(ctx context.Context, subject string) error 
 		return fmt.Errorf("zitadel delete user returned %d for %s", resp.StatusCode, subject)
 	}
 	return nil
+}
+
+// linkProvisioned attaches a first-time Zitadel sign-in to an account an
+// organization pre-created over SCIM. It only applies when the IdP asserts the
+// email as verified and the account has never had any sign-in identity, so an
+// existing person's account can never be taken over by email alone. The
+// account gets its per-account tenant here, as a regular signup would.
+func (v *ZitadelVerifier) linkProvisioned(ctx context.Context, subject string, info zitadelUserInfo) (Identity, bool, error) {
+	email := strings.TrimSpace(info.Email)
+	if email == "" || !info.EmailVerified {
+		return Identity{}, false, nil
+	}
+	user, err := v.store.GetUserByEmail(ctx, strings.ToLower(email))
+	if err != nil {
+		return Identity{}, false, nil // not found (or unreadable): regular provisioning
+	}
+	idents, err := v.store.ListAuthIdentitiesForUser(ctx, user.ID)
+	if err != nil {
+		return Identity{}, false, err
+	}
+	if len(idents) > 0 || !user.IsActive {
+		return Identity{}, false, nil
+	}
+	// The account tenant's slug mirrors the username; an org may already own
+	// that slug, in which case a subject-derived suffix keeps it unique.
+	tenantSlug := strings.ToLower(user.Username)
+	if _, err := v.store.GetTenantBySlug(ctx, tenantSlug); err == nil {
+		tenantSlug += "-" + strings.ToLower(tailOf(subject, 6))
+	}
+	var tenantID uuid.UUID
+	err = v.store.InTx(ctx, func(q *db.Queries) error {
+		if _, err := q.CreateAuthIdentity(ctx, db.CreateAuthIdentityParams{
+			UserID: user.ID, Provider: ProviderZitadel, Subject: subject,
+		}); err != nil {
+			return err
+		}
+		if user.TenantID.Valid {
+			tenantID = user.TenantID.UUID
+			return nil
+		}
+		tenant, err := q.CreateTenant(ctx, db.CreateTenantParams{Slug: tenantSlug, Name: user.DisplayName})
+		if err != nil {
+			return fmt.Errorf("create account tenant: %w", err)
+		}
+		if _, err := q.SetUserTenant(ctx, db.SetUserTenantParams{ID: user.ID, TenantID: uuid.NullUUID{UUID: tenant.ID, Valid: true}}); err != nil {
+			return fmt.Errorf("link account tenant: %w", err)
+		}
+		tenantID = tenant.ID
+		return nil
+	})
+	if err != nil {
+		return Identity{}, false, err
+	}
+	v.logger.Info("linked first sign-in to a provisioned account", "user", user.ID, "username", user.Username)
+	return Identity{UserID: user.ID, Username: user.Username, Email: user.Email, IsAdmin: user.IsAdmin, TenantID: tenantID}, true, nil
 }
