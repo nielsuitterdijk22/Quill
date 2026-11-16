@@ -798,3 +798,30 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   and says it couldn't load. (The transient failure itself was not reproduced.)
 - The org list carries plan/trial/locked, so the sidebar shows "trial · Nd" or "locked" for every
   member and the onboarding screens tell the creator about the 14-day trial.
+
+## 2026-11-16 — Databases moved from Serverless SQL to a managed PostgreSQL (db-dev-s)
+
+- **Why:** the two Serverless SQL databases had billed €26.9 in the first 16 days of November
+  (≈€50/month at that rate; heavy agent testing inflated it) because they never really scaled to
+  zero. One always-on `db-dev-s` (2 vCPU / 2 GB / local SSD) is a flat €0.0136/h node +
+  €0.002/h management ≈ **€11.4/month** (prices from Scaleway's public catalog API).
+- **What:** one instance `quill-pg` (PostgreSQL 16, fr-par-1, no HA, daily managed backups kept
+  7 days, plus the nightly pg_backup dump to object storage) hosting the `quill` and `zitadel`
+  databases under one admin user with a Terraform-generated 40-char password. `managed_db.tf`.
+- **Reachability:** public endpoint, ACL 0.0.0.0/0, TLS required (`sslmode=require`). Containers
+  and jobs have no fixed egress IPs, jobs cannot join a private network, and the container
+  sandbox has no private NIC (see the Zitadel POD_IP note). Same exposure class as the
+  serverless database it replaced. Follow-up: private network for the containers, then close the
+  public ACL.
+- **Cutover (2026-11-16 ~20:51–20:53 CET):** created the instance (no service touched),
+  rehearsed twice (pg_dump -Fc / pg_restore --no-owner --no-acl; ~1 min, both DBs ~20 MB;
+  identical row counts on every table and sequence; the api run locally and Zitadel run locally
+  from the same image against the copy), then copy → verify → full CI-equivalent `terraform
+  apply` (secrets from Secret Manager via deploy-tfvars.py) in about two minutes. Afterwards:
+  the old audit log stayed at 1012 rows while the new one grew; the old Zitadel event log stayed
+  at the 4052 events copied while the new one grew; no writes were lost in the window.
+- **Left in place:** the Serverless SQL databases (idle; storage only) as the rollback and until
+  the owner approves deleting them. Rolling back = revert this change and apply (loses writes
+  made since the cutover). `sdb_user`/`sdb_password` variables are now unused for DB access.
+- **Operator access:** `terraform output -json db_urls` (the operator recipe in AGENTS.md was
+  updated). The e2e `purge-e2e` and local debugging runs now hit the managed instance.
