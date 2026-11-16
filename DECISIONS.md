@@ -844,3 +844,20 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   `sdb_password` stay as optional, unused variables so existing var files keep applying. Before
   this, the nightly dumps in the backup bucket (postgres/quill, postgres/zitadel) were the only
   pre-cutover copy besides the databases themselves.
+
+## 2026-11-16 — One continuous login: auto-start, branded Zitadel pages, no username step
+
+- A new user used to see five screens in two visual styles: Quill's card with a "Sign in"
+  button, Zitadel's login name page, its password page, an MFA setup nag, then Quill's "pick a
+  username" page. Now: `/sign-in` starts the OIDC flow on render (a short branded screen covers
+  the redirect; `?error=` shows the card instead, so a failing login can never loop; `/sign-up`
+  opens Zitadel's registration form with `prompt=create`); Zitadel's pages carry Quill's palette,
+  gold mark, Geist font, dark theme and Quill-worded texts (instance label policy via
+  `deploy/scaleway/scripts/zitadel-branding.py`); the username step is gone (the backend already
+  derives a handle at first sign-in and Settings already edits it).
+- Not changed, on purpose: Zitadel's login pages cannot take Quill's CSS (v1 login UI: colours,
+  logo, font and texts only; a cardless layout and a footer rule stay). The MFA setup page is
+  still offered once (skip lifetime raised from 30 days to 10 years): removing MFA entirely means
+  disabling second factors instance-wide, a security decision left to the owner.
+- Sign-out already ends the Zitadel session (RP-initiated logout), so landing on `/sign-in`
+  after signing out shows the login page rather than silently signing back in.

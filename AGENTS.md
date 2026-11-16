@@ -177,6 +177,19 @@ production when you're about to deploy that same change, and check `/readyz` aft
 Serverless logs ARE reachable now: `SCW_DEFAULT_PROJECT_ID=<namespace project>
 scw container container logs <container-id> time-span=30m` (stream; kill it after a few seconds).
 
+### Login look and feel
+
+Zitadel serves the login pages, so they cannot share Quill's CSS. Its label policy (palette, logo,
+Geist font, dark theme) and login texts are set by an idempotent script:
+`ZITADEL_MANAGEMENT_TOKEN=<PAT> python3 deploy/scaleway/scripts/zitadel-branding.py` (PAT = Secret
+Manager `app-zitadel-management-token`; Cloudflare rejects Python's default User-Agent, the script
+sets its own). Run it after changing Quill's palette (`frontend/app/globals.css`) or restoring a
+Zitadel database into a fresh instance. The flow for a new user is: `/sign-in` auto-starts the
+login (no button screen) → Zitadel login name → password → one skippable 2-factor offer (skip
+lifetime 10 years) → Quill onboarding (no username step; the handle is derived and editable in
+Settings). `/sign-in?error=…` shows a card with a button instead of auto-starting, so a failing
+login cannot loop. SSO identity orgs inherit the instance label policy.
+
 ### Live e2e tests
 
 `backend/tests/live/` (Go, stdlib only) drives the deployed platform: headless Zitadel

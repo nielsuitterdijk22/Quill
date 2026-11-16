@@ -5461,3 +5461,19 @@ button.sbom-chip:hover {
   line-height: 1.55;
   margin: 0 0 16px;
 }
+
+/* Sign-in redirect screen (auto-start): a spinner while the browser is sent to the login. */
+.signin-spinner {
+  width: 26px;
+  height: 26px;
+  margin: 26px auto 14px;
+  border: 2.5px solid color-mix(in oklab, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: signin-spin 0.8s linear infinite;
+}
+@keyframes signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
