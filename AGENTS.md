@@ -168,6 +168,13 @@ Secret Manager (`/quill/app/app-forgejo-admin-token`), `ZITADEL_ISSUER=https://a
 `QUILL_ENV=production`, plus any `QUILL_JWT_SECRET`/`QUILL_SECRET_ENCRYPTION_KEY`.
 Then point tests at `QUILL_E2E_API_URL=http://localhost:18080` and read real errors in
 the local log.
+**Careful: a local build applies its migrations to the live SDB at startup.** If it carries a
+migration production doesn't have yet, deployed api instances used to crash on every cold start
+("no migration found for version N") — a ~15-minute outage on 2026-11-16. Since then the api
+tolerates a schema that is ahead, but still: only run a local build with new migrations against
+production when you're about to deploy that same change, and check `/readyz` afterwards.
+Serverless logs ARE reachable now: `SCW_DEFAULT_PROJECT_ID=<namespace project>
+scw container container logs <container-id> time-span=30m` (stream; kill it after a few seconds).
 
 ### Live e2e tests
 

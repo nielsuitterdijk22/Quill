@@ -734,3 +734,14 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - Rejected: Zitadel's per-org domain validation (instance setting off, and turning it on changes
   every org); one shared org for all SSO users (login policies and IdPs are per org); Zitadel
   v2 SAML metadata-URL fetching (v2.65 needs the XML itself).
+
+## 2026-11-16 — The api starts against a schema that is ahead of it
+
+- Outage (~15 min, caused by the agent): running the SSO build locally against the live SDB
+  applied migration 41; the deployed api, which doesn't know version 41, crashed on every cold
+  start ("no migration found for version 41"). Recovered by applying 41's down migration and
+  resetting `schema_migrations` to 40. The same failure would hit any rollback.
+- Fix: `store.Migrate` skips (with a warning) when the database version is newer than the
+  binary's latest migration and not dirty; our migrations are additive, so older code runs on
+  a newer schema. Dirty states still fail. `TestMigrateToleratesNewerSchema` reproduces the
+  production error without the guard. Handbook updated (AGENTS.md, debugging section).
