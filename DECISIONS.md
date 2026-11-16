@@ -861,3 +861,12 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   disabling second factors instance-wide, a security decision left to the owner.
 - Sign-out already ends the Zitadel session (RP-initiated logout), so landing on `/sign-in`
   after signing out shows the login page rather than silently signing back in.
+
+## 2026-11-16 — SECURITY: group grants could cross organizations (fixed)
+
+- `SetGroupProjectRole` resolved the project by slug alone, with no check that it belongs to the
+  org. An admin of any org (orgs are self-service) could grant their own group `owner` on another
+  org's or person's private project and thereby reach its repositories. Fixed: project lookups in
+  org-admin operations go through `tenantProject` (other tenants' projects answer not-found).
+  Regression test `TestGroupGrantCannotCrossTenants` fails without the fix. Follow-up: audit
+  production `group_project_roles` for rows whose group and project tenants differ.

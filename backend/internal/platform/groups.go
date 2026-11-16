@@ -255,12 +255,9 @@ func (s *Service) SetGroupProjectRole(ctx context.Context, actor Actor, orgSlug,
 	if role != "owner" && role != "member" {
 		return ErrInvalidInput
 	}
-	project, err := s.store.GetProjectBySlug(ctx, projectSlug)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
+	project, err := s.tenantProject(ctx, tenant.ID, projectSlug)
 	if err != nil {
-		return fmt.Errorf("lookup project: %w", err)
+		return err
 	}
 	if err := s.store.SetGroupProjectRole(ctx, db.SetGroupProjectRoleParams{
 		GroupID:   group.ID,
@@ -281,12 +278,9 @@ func (s *Service) RemoveGroupProjectRole(ctx context.Context, actor Actor, orgSl
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return err
 	}
-	project, err := s.store.GetProjectBySlug(ctx, projectSlug)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
+	project, err := s.tenantProject(ctx, tenant.ID, projectSlug)
 	if err != nil {
-		return fmt.Errorf("lookup project: %w", err)
+		return err
 	}
 	if err := s.store.RemoveGroupProjectRole(ctx, db.RemoveGroupProjectRoleParams{GroupID: group.ID, ProjectID: project.ID}); err != nil {
 		return fmt.Errorf("remove group project role: %w", err)
@@ -360,4 +354,24 @@ func (s *Service) ListOrgProjects(ctx context.Context, actor Actor, orgSlug stri
 		out = append(out, OrgProjectRef{Slug: p.Slug, Name: p.Name})
 	}
 	return out, nil
+}
+
+// tenantProject resolves a project by slug WITHIN a tenant: a project of any
+// other org (or a personal project) answers ErrNotFound, exactly like a missing
+// one. Project slugs are global, so every org-admin operation that takes a
+// project slug must go through this — SetGroupProjectRole once looked the slug
+// up globally, letting an admin of ANY org (orgs are self-service) grant their
+// own group `owner` on another org's or person's private project.
+func (s *Service) tenantProject(ctx context.Context, tenantID uuid.UUID, slug string) (db.Project, error) {
+	project, err := s.store.GetProjectBySlug(ctx, strings.TrimSpace(slug))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.Project{}, ErrNotFound
+	}
+	if err != nil {
+		return db.Project{}, fmt.Errorf("lookup project: %w", err)
+	}
+	if project.TenantID != tenantID {
+		return db.Project{}, ErrNotFound
+	}
+	return project, nil
 }

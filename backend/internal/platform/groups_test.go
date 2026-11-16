@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
@@ -262,5 +263,69 @@ func TestGroupAccessAndOrgProjectsRead(t *testing.T) {
 	}
 	if _, err := svc.ListOrgProjects(ctx, outsider, "gaorg"); !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrNotFound) {
 		t.Fatalf("outsider projects: %v", err)
+	}
+}
+
+// TestGroupGrantCannotCrossTenants: an admin of org A must not be able to grant
+// A's group a role on another org's project. SetGroupProjectRole looked the
+// project up by slug alone, so an admin of ANY org (orgs are self-service)
+// could make themselves owner of anyone's private project (found 2026-11-16).
+func TestGroupGrantCannotCrossTenants(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+	adminA := Actor{UserID: scopeMakeUser(t, st, "xt-admin-a")}
+	adminB := Actor{UserID: scopeMakeUser(t, st, "xt-admin-b")}
+	insider := Actor{UserID: scopeMakeUser(t, st, "xt-member-a")}
+	if _, _, err := svc.CreateOrganization(ctx, adminA, "xt-org-a", "Org A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.CreateOrganization(ctx, adminB, "xt-org-b", "Org B"); err != nil {
+		t.Fatal(err)
+	}
+	ta, _ := st.GetTenantBySlug(ctx, "xt-org-a")
+	_ = st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: ta.ID, UserID: insider.UserID, Role: "member"})
+	if _, err := svc.CreateGroup(ctx, adminA, "xt-org-a", "crew", "Crew", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddGroupMember(ctx, adminA, "xt-org-a", "crew", insider.UserID); err != nil {
+		t.Fatal(err)
+	}
+	projB, _ := st.GetProjectBySlug(ctx, "xt-org-b")
+
+	// B's project: refused, indistinguishable from a missing project, and no access results.
+	if err := svc.SetGroupProjectRole(ctx, adminA, "xt-org-a", "crew", "xt-org-b", "owner"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-tenant grant: want ErrNotFound, got %v", err)
+	}
+	if role, _ := svc.effectiveProjectRole(ctx, insider, projB.ID); role != "" {
+		t.Fatalf("org A's member reaches org B's project as %q", role)
+	}
+	if err := svc.RemoveGroupProjectRole(ctx, adminA, "xt-org-a", "crew", "xt-org-b"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-tenant remove: want ErrNotFound, got %v", err)
+	}
+	// Another person's PERSONAL project is just as protected.
+	victim := Actor{UserID: scopeMakeUser(t, st, "xt-victim")}
+	vt, err := st.CreateTenant(ctx, db.CreateTenantParams{Slug: "xt-victim", Name: "xt-victim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// users.tenant_id references the tenant: detach before deleting it.
+		_, _ = st.Pool().Exec(context.Background(), "UPDATE users SET tenant_id = NULL WHERE tenant_id = $1", vt.ID)
+		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM projects WHERE tenant_id = $1", vt.ID)
+		_, _ = st.Pool().Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", vt.ID)
+	})
+	if _, err := st.SetUserTenant(ctx, db.SetUserTenantParams{ID: victim.UserID, TenantID: uuid.NullUUID{UUID: vt.ID, Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CreatePersonalProject(ctx, victim.UserID, "xt-victim"); err != nil {
+		t.Fatalf("victim's personal project: %v", err)
+	}
+	if err := svc.SetGroupProjectRole(ctx, adminA, "xt-org-a", "crew", "xt-victim", "owner"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("grant on a personal project: want ErrNotFound, got %v", err)
+	}
+
+	// The legitimate path still works: A's own project.
+	if err := svc.SetGroupProjectRole(ctx, adminA, "xt-org-a", "crew", "xt-org-a", "owner"); err != nil {
+		t.Fatalf("same-org grant: %v", err)
 	}
 }
