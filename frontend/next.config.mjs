@@ -42,6 +42,11 @@ function reservedTopLevelRoutes() {
 
 const nextConfig = {
   reactStrictMode: true,
+  // The same reserved top-level routes, for client code (the sidebar's
+  // repo-context detection) — inlined at build time, one source of truth.
+  env: {
+    NEXT_PUBLIC_RESERVED_ROUTES: reservedTopLevelRoutes().join(","),
+  },
   // Emit a self-contained server bundle for small production images.
   output: "standalone",
   async rewrites() {

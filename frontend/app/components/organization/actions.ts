@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import {
   addGroupMember,
+  removeGroupMember,
+  removeGroupProjectRole,
   createOrgSCIMToken,
   revokeOrgSCIMToken,
   createOrgGroup,
@@ -28,7 +30,8 @@ import { getToken } from "../../lib/session";
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 function revalidate(org: string) {
-  revalidatePath(`/orgs/${org}/settings`);
+  // Every settings section lives under this layout.
+  revalidatePath(`/orgs/${org}/settings`, "layout");
 }
 
 export async function inviteMemberAction(
@@ -171,6 +174,24 @@ export async function verifySSODomainAction(org: string): Promise<ActionResult> 
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
   const res = await verifyOrgSSODomain(token, org);
   if (!res.ok) return { ok: false, error: res.error };
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function removeGroupMemberAction(org: string, group: string, userId: string): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await removeGroupMember(token, org, group, userId);
+  if (!res.ok) return res;
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function removeGroupProjectRoleAction(org: string, group: string, project: string): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await removeGroupProjectRole(token, org, group, project);
+  if (!res.ok) return res;
   revalidate(org);
   return { ok: true };
 }

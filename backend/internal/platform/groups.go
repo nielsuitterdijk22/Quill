@@ -310,3 +310,54 @@ func (s *Service) effectiveProjectRole(ctx context.Context, actor Actor, project
 	}
 	return role, nil
 }
+
+// GroupProjectRole is one project a group has a role on.
+type GroupProjectRole struct {
+	ProjectSlug string
+	Role        string
+	Since       time.Time
+}
+
+// ListGroupProjectRoles returns the projects a group is granted (any tenant
+// member may read it, like the group tree).
+func (s *Service) ListGroupProjectRoles(ctx context.Context, actor Actor, orgSlug, groupSlug string) ([]GroupProjectRole, error) {
+	_, group, err := s.resolveGroup(ctx, actor, orgSlug, groupSlug)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.store.ListGroupProjectRoles(ctx, group.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list group project roles: %w", err)
+	}
+	out := make([]GroupProjectRole, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, GroupProjectRole{ProjectSlug: r.ProjectSlug, Role: r.Role, Since: r.CreatedAt})
+	}
+	return out, nil
+}
+
+// OrgProjectRef is a project in an organization (for pickers).
+type OrgProjectRef struct {
+	Slug string
+	Name string
+}
+
+// ListOrgProjects returns an organization's projects (tenant members).
+func (s *Service) ListOrgProjects(ctx context.Context, actor Actor, orgSlug string) ([]OrgProjectRef, error) {
+	tenant, err := s.getTenant(ctx, orgSlug)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeTenantMember(ctx, actor, tenant.ID); err != nil {
+		return nil, err
+	}
+	projects, err := s.store.ListProjectsByTenantID(ctx, tenant.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	out := make([]OrgProjectRef, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, OrgProjectRef{Slug: p.Slug, Name: p.Name})
+	}
+	return out, nil
+}

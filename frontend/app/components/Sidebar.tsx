@@ -70,11 +70,14 @@ const ORG_ADMIN_NAV: NavItem[] = [
   { href: "/admin/users", label: "Users", icon: "user" },
 ];
 
-// Top-level paths that are app routes, not owner namespaces.
-const RESERVED_TOP_LEVEL = new Set([
-  "projects", "settings", "admin", "repositories", "pulls", "pipelines", "sbom",
-  "sign-in", "sign-up", "login", "register", "api",
-]);
+// Top-level paths that are app routes, not owner namespaces. Derived from the
+// app directory at build time (next.config.mjs) — a hand-kept list here once
+// missed "orgs", so org settings showed a bogus "orgs / {org}" repo context.
+const RESERVED_TOP_LEVEL = new Set(
+  (process.env.NEXT_PUBLIC_RESERVED_ROUTES || "projects,settings,admin,repositories,pulls,pipelines,sbom,orgs,invite,onboarding,sign-in,sign-up,login,register,api")
+    .split(",")
+    .filter(Boolean),
+);
 
 // isRepoScoped is true for any path inside a specific repository. Handles both
 // the long form /projects/{project}/repos/{repo}/... and the short namespace

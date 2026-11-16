@@ -231,3 +231,36 @@ func TestBillingUsageAndPlan(t *testing.T) {
 		t.Fatalf("internal plan should have no hard limits: got plan=%q limits=%+v", view2.Plan, view2.Limits)
 	}
 }
+
+// TestGroupAccessAndOrgProjectsRead: the settings UI lists a group's project
+// grants and the org's projects (for the picker); members can read both,
+// outsiders can't.
+func TestGroupAccessAndOrgProjectsRead(t *testing.T) {
+	svc, st := scopeTestService(t)
+	ctx := context.Background()
+	admin := Actor{UserID: scopeMakeUser(t, st, "ga-admin")}
+	if _, _, err := svc.CreateOrganization(ctx, admin, "gaorg", "GA Org"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateGroup(ctx, admin, "gaorg", "eng", "Engineering", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetGroupProjectRole(ctx, admin, "gaorg", "eng", "gaorg", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	roles, err := svc.ListGroupProjectRoles(ctx, admin, "gaorg", "eng")
+	if err != nil || len(roles) != 1 || roles[0].ProjectSlug != "gaorg" || roles[0].Role != "owner" {
+		t.Fatalf("roles = %+v err=%v", roles, err)
+	}
+	projects, err := svc.ListOrgProjects(ctx, admin, "gaorg")
+	if err != nil || len(projects) != 1 || projects[0].Slug != "gaorg" {
+		t.Fatalf("projects = %+v err=%v", projects, err)
+	}
+	outsider := Actor{UserID: scopeMakeUser(t, st, "ga-outsider")}
+	if _, err := svc.ListGroupProjectRoles(ctx, outsider, "gaorg", "eng"); !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrNotFound) {
+		t.Fatalf("outsider roles: %v", err)
+	}
+	if _, err := svc.ListOrgProjects(ctx, outsider, "gaorg"); !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrNotFound) {
+		t.Fatalf("outsider projects: %v", err)
+	}
+}

@@ -131,9 +131,9 @@ func handleBillingCheckout(s *Server) http.HandlerFunc {
 // (where the billing panel lives) with a flag the UI can react to.
 func orgBillingURL(cfg *config.Config, orgSlug string) string {
 	if len(cfg.CORSAllowedOrigins) > 0 && cfg.CORSAllowedOrigins[0] != "" {
-		return fmt.Sprintf("%s/orgs/%s/settings?upgraded=1", cfg.CORSAllowedOrigins[0], orgSlug)
+		return fmt.Sprintf("%s/orgs/%s/settings/billing?upgraded=1", cfg.CORSAllowedOrigins[0], orgSlug)
 	}
-	return fmt.Sprintf("/orgs/%s/settings?upgraded=1", orgSlug)
+	return fmt.Sprintf("/orgs/%s/settings/billing?upgraded=1", orgSlug)
 }
 
 // handleCreemWebhook applies verified Creem events (checkout.completed ->

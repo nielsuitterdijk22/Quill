@@ -253,11 +253,20 @@ func TestOrgSettingsPageRenders(t *testing.T) {
 		t.Fatalf("create org: %d %s", st, b)
 	}
 	c := webSession(t)
-	st, _, body := get(t, c, appURL+"/orgs/"+org+"/settings", nil)
-	// React separates adjacent text nodes with <!-- --> in server HTML.
-	page := strings.ReplaceAll(string(body), "<!-- -->", "")
-	if st != 200 || strings.Contains(page, "<title>404") || !strings.Contains(page, "E2E Org Page settings") || !strings.Contains(page, "Provisioning (SCIM)") {
-		t.Fatalf("org settings page: %d (title 404=%v, heading=%v, scim=%v)", st,
-			strings.Contains(page, "<title>404"), strings.Contains(page, "E2E Org Page settings"), strings.Contains(page, "Provisioning (SCIM)"))
+	// /settings opens the first section.
+	st, hdr, _ := get(t, c, appURL+"/orgs/"+org+"/settings", nil)
+	if st/100 != 3 || !strings.HasSuffix(hdr.Get("Location"), "/orgs/"+org+"/settings/members") {
+		t.Fatalf("settings index: %d -> %q", st, hdr.Get("Location"))
+	}
+	for _, sec := range []struct{ path, want string }{
+		{"members", "Members"}, {"groups", "Groups"}, {"sign-in", "Provisioning (SCIM)"},
+		{"billing", "Billing &amp; usage"}, {"policies", "Branch policies"},
+	} {
+		st, _, body := get(t, c, appURL+"/orgs/"+org+"/settings/"+sec.path, nil)
+		// React separates adjacent text nodes with <!-- --> in server HTML.
+		page := strings.ReplaceAll(string(body), "<!-- -->", "")
+		if st != 200 || strings.Contains(page, "<title>404") || !strings.Contains(page, "E2E Org Page settings") || !strings.Contains(page, sec.want) {
+			t.Fatalf("settings/%s: %d (heading=%v, section=%v)", sec.path, st, strings.Contains(page, "E2E Org Page settings"), strings.Contains(page, sec.want))
+		}
 	}
 }

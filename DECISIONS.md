@@ -745,3 +745,21 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   binary's latest migration and not dirty; our migrations are additive, so older code runs on
   a newer schema. Dirty states still fail. `TestMigrateToleratesNewerSchema` reproduces the
   production error without the guard. Handbook updated (AGENTS.md, debugging section).
+
+## 2026-11-16 — Organization settings split into sections; group explorer; admin plan switch
+
+- `/orgs/{org}/settings` is now a layout with a sub-navigation and one page per section:
+  Members, Groups, Sign-in & provisioning (SSO + SCIM, with a short explanation of which does
+  what — the owner found the two unrelated panels confusing), Billing, Policies (branch,
+  environment, egress). `/settings` redirects to Members (`?upgraded=1` → Billing); Creem's
+  checkout return URL points at `/settings/billing`.
+- Groups: a tree plus the selected group's members (add/remove), project access (pick a project,
+  set the role, remove) and subgroups, replacing three free-standing forms where projects were
+  typed by slug and nothing showed what a group had. New reads: `GET /orgs/{slug}/projects`,
+  `GET /orgs/{slug}/groups/{group}/projects`.
+- Billing bypass for our own and test orgs: platform admins set any tenant's plan from Admin →
+  Analytics (`internal` = no trial, no caps, no checkout). Setting `trial` by hand is not offered
+  (it needs a trial window).
+- The sidebar's reserved-route list (a third hand-kept copy) now comes from the same build-time
+  directory scan as the rewrite (`NEXT_PUBLIC_RESERVED_ROUTES`); it had shown a bogus
+  "orgs / {org}" repo context on org settings.

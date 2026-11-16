@@ -542,6 +542,7 @@ func (s *Server) setupRoutes() {
 			r.Post("/orgs", s.handleCreateOrganization)
 			r.Route("/orgs/{slug}", func(r chi.Router) {
 				r.Get("/members", s.handleListOrgMembers)
+				r.Get("/projects", s.handleListOrgProjects)
 				r.Patch("/members/{userId}", s.handleUpdateOrgMemberRole)
 				r.Delete("/members/{userId}", s.handleRemoveOrgMember)
 				r.Get("/invites", s.handleListInvites)
@@ -563,6 +564,7 @@ func (s *Server) setupRoutes() {
 						r.Get("/members", handleGroupMembersList(s))
 						r.Post("/members", handleGroupMembersAdd(s))
 						r.Delete("/members/{userId}", handleGroupMembersRemove(s))
+						r.Get("/projects", handleGroupProjectRolesList(s))
 						r.Put("/projects/{project}", handleGroupProjectRoleSet(s))
 						r.Delete("/projects/{project}", handleGroupProjectRoleRemove(s))
 					})

@@ -263,3 +263,50 @@ func handleGroupProjectRoleRemove(s *Server) http.HandlerFunc {
 		httpx.JSON(w, http.StatusOK, map[string]any{"ok": true})
 	}
 }
+
+func handleGroupProjectRolesList(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		actor, ok := actorFrom(r.Context())
+		if !ok {
+			httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			return
+		}
+		roles, err := s.platform.ListGroupProjectRoles(r.Context(), actor, chi.URLParam(r, "slug"), chi.URLParam(r, "group"))
+		if err != nil {
+			s.writePlatformError(w, err, "could not list group access")
+			return
+		}
+		type item struct {
+			Project string `json:"project"`
+			Role    string `json:"role"`
+			Since   string `json:"since"`
+		}
+		out := make([]item, 0, len(roles))
+		for _, g := range roles {
+			out = append(out, item{Project: g.ProjectSlug, Role: g.Role, Since: g.Since.Format("2006-01-02T15:04:05Z07:00")})
+		}
+		httpx.JSON(w, http.StatusOK, map[string]any{"projects": out})
+	}
+}
+
+func (s *Server) handleListOrgProjects(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	projects, err := s.platform.ListOrgProjects(r.Context(), actor, chi.URLParam(r, "slug"))
+	if err != nil {
+		s.writePlatformError(w, err, "could not list projects")
+		return
+	}
+	type item struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	}
+	out := make([]item, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, item{Slug: p.Slug, Name: p.Name})
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"projects": out})
+}

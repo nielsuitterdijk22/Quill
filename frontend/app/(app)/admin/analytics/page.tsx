@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { getAnalytics, type AnalyticsData } from "../../../lib/api";
 import { getToken, requireSession } from "../../../lib/session";
+import { PlanSelect } from "./PlanSelect";
 
 export const metadata = { title: "Analytics" };
 
@@ -225,7 +226,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: { 
                     <b>{t.name || t.slug}</b> {t.personal && <span className="subtle">personal</span>}{" "}
                     {t.nearLimit && <span className="badge gold">near limit</span>}
                   </td>
-                  <td>{t.plan}</td>
+                  <td>
+                    <PlanSelect slug={t.slug} plan={t.plan} personal={t.personal} />
+                  </td>
                   <td className="an-r">{t.personal ? "—" : t.members}</td>
                   <td>
                     <Meter used={t.repos} limit={t.repoLimit} free={free} label={free ? `${t.repos} / ${t.repoLimit}` : `${t.repos}`} />

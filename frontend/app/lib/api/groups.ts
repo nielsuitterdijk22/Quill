@@ -116,3 +116,21 @@ export function removeGroupProjectRole(
     `/api/v1/orgs/${org}/groups/${group}/projects/${project}`,
   );
 }
+
+// GroupProjectAccess is one project a group is granted a role on.
+export type GroupProjectAccess = { project: string; role: string; since: string };
+
+export function getGroupProjects(
+  token: string,
+  org: string,
+  group: string,
+): Promise<Result<{ projects: GroupProjectAccess[] }>> {
+  return authGet<{ projects: GroupProjectAccess[] }>(token, `/api/v1/orgs/${org}/groups/${group}/projects`);
+}
+
+// OrgProjectRef is a project of an organization (for pickers).
+export type OrgProjectRef = { slug: string; name: string };
+
+export function getOrgProjects(token: string, org: string): Promise<Result<{ projects: OrgProjectRef[] }>> {
+  return authGet<{ projects: OrgProjectRef[] }>(token, `/api/v1/orgs/${org}/projects`);
+}
