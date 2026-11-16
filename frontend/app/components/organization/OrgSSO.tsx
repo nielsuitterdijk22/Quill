@@ -186,8 +186,20 @@ export function OrgSSO({ org, config }: { org: string; config: SSOConfig }) {
         </div>
       )}
 
+      {!(config.configured && config.emailDomain) && (
+        <div className="token-reveal">
+          <p className="hint">
+            <b>Verify your email domain</b> — enter it above (e.g. company.com) and save. You&rsquo;ll get a DNS TXT
+            record to publish; once it&rsquo;s verified, sign-ins from that domain go to your identity provider.
+          </p>
+        </div>
+      )}
+
       {config.configured && config.emailDomain && (
         <div className="token-reveal">
+          <p className="hint">
+            <b>Verify your email domain</b>
+          </p>
           {config.domainVerified ? (
             <p className="hint">
               <span className="badge green">Verified</span> @{config.emailDomain} belongs to this organization.

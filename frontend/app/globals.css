@@ -2298,7 +2298,9 @@ h2.section {
 }
 /* Policy modal — wider than fork-dialog to fit the form fields. */
 .policy-modal {
-  background: var(--panel);
+  /* Solid: --panel is translucent (glass cards); a dialog over the page must
+     not show the content behind it. */
+  background: linear-gradient(var(--panel), var(--panel)), var(--bg);
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--text);
@@ -3399,7 +3401,9 @@ h2.section {
 
 /* Fork dialog */
 .fork-dialog {
-  background: var(--panel);
+  /* Solid: --panel is translucent (glass cards); a dialog over the page must
+     not show the content behind it. */
+  background: linear-gradient(var(--panel), var(--panel)), var(--bg);
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--text);
