@@ -13,12 +13,6 @@ output "rdb_endpoint" {
   value       = "${scaleway_rdb_instance.main.load_balancer[0].ip}:${scaleway_rdb_instance.main.load_balancer[0].port}"
 }
 
-# Legacy serverless databases, kept (idle, storage only) until the owner approves deleting them.
-output "sdb_endpoints" {
-  description = "Serverless SQL database endpoints (host[:port]) per database."
-  value       = { for n, db in scaleway_sdb_sql_database.dbs : n => db.endpoint }
-}
-
 output "db_urls" {
   description = "Full postgres:// URLs (also in Secret Manager under /quill/db/*)."
   value       = local.db_url

@@ -6,19 +6,6 @@
 # engine (bucket + Postgres referee) and CI runs on ephemeral instances
 # started by the broker (ci_broker.tf).
 
-# ---- Serverless SQL databases ----------------------------------------------------
-
-resource "scaleway_sdb_sql_database" "dbs" {
-  for_each = toset(local.sdb_names)
-
-  name       = each.value
-  project_id = scaleway_account_project.quill.id
-  region     = var.region
-  version    = var.sdb_version
-  min_cpu    = var.sdb_min_cpu # 0 = scale to zero when idle
-  max_cpu    = var.sdb_max_cpu
-}
-
 # ---- Container namespace -----------------------------------------------------------
 
 resource "scaleway_container_namespace" "quill" {

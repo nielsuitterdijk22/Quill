@@ -834,3 +834,13 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   real uploads were fine: 2.0 MB quill, 330 KB zitadel).
 - Fix: dump to a file first, refuse an empty dump, then compress. A failed dump now exits 1
   without touching the bucket.
+
+## 2026-11-16 — Serverless SQL databases deleted
+
+- The owner approved deleting the old Serverless SQL databases (`quill`, `zitadel`) once the
+  managed instance had run live: they were idle and frozen at the cutover (audit log at 1012 rows,
+  Zitadel events at the 4052 copied), so the managed database holds everything. The resources,
+  the `sdb_endpoints` output and `sdb_min_cpu`/`sdb_max_cpu` are removed; `sdb_user`/
+  `sdb_password` stay as optional, unused variables so existing var files keep applying. Before
+  this, the nightly dumps in the backup bucket (postgres/quill, postgres/zitadel) were the only
+  pre-cutover copy besides the databases themselves.

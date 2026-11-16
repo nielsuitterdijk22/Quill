@@ -84,13 +84,15 @@ variable "image_tag" {
 # keys -> generate for yourself) and pass both here / via -var (CI: GH secrets
 # SDB_USER / SDB_PASSWORD).
 variable "sdb_user" {
-  description = "IAM user ID used as the username for the serverless SQL databases."
+  description = "UNUSED since 2026-11-16 (the Serverless SQL databases were replaced by a managed instance and deleted); kept optional so existing var files still apply."
   type        = string
+  default     = ""
 }
 
 variable "sdb_password" {
-  description = "API key secret of sdb_user, used as the SDB password."
+  description = "UNUSED since 2026-11-16 (see sdb_user)."
   type        = string
+  default     = ""
   sensitive   = true
 }
 
@@ -109,21 +111,9 @@ variable "dispatch_secret" {
 
 # ---- Serverless SQL databases -----------------------------------------------------
 variable "sdb_version" {
-  description = "PostgreSQL major version for the serverless databases."
+  description = "PostgreSQL major version of the managed database instance."
   type        = string
   default     = "16"
-}
-
-variable "sdb_min_cpu" {
-  description = "Min vCPU for each serverless DB. 0 = scales to zero when idle (no compute charge)."
-  type        = number
-  default     = 0
-}
-
-variable "sdb_max_cpu" {
-  description = "Max vCPU for each serverless DB (bounds the bill under load)."
-  type        = number
-  default     = 4
 }
 
 # ---- Serverless containers (api, web, zitadel) ------------------------------------
