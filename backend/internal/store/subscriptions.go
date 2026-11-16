@@ -15,6 +15,9 @@ type TenantSubscription struct {
 	TrialEndsAt         *time.Time
 	CreemCustomerID     string
 	CreemSubscriptionID string
+	// CreemSeats is the seat count last confirmed on the Creem subscription
+	// (0 = never synced).
+	CreemSeats int
 }
 
 // GetTenantSubscription returns the tenant's subscription row, or the zero
@@ -22,9 +25,9 @@ type TenantSubscription struct {
 func (s *Store) GetTenantSubscription(ctx context.Context, tenantID uuid.UUID) (TenantSubscription, error) {
 	var sub TenantSubscription
 	err := s.pool.QueryRow(ctx, `
-		SELECT trial_ends_at, creem_customer_id, creem_subscription_id
+		SELECT trial_ends_at, creem_customer_id, creem_subscription_id, creem_seats
 		FROM tenant_subscriptions WHERE tenant_id = $1`, tenantID).
-		Scan(&sub.TrialEndsAt, &sub.CreemCustomerID, &sub.CreemSubscriptionID)
+		Scan(&sub.TrialEndsAt, &sub.CreemCustomerID, &sub.CreemSubscriptionID, &sub.CreemSeats)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TenantSubscription{}, nil
 	}
@@ -58,6 +61,8 @@ func (s *Store) SetTenantCreemIDs(ctx context.Context, tenantID uuid.UUID, custo
 		ON CONFLICT (tenant_id) DO UPDATE SET
 		    creem_customer_id = COALESCE(NULLIF(EXCLUDED.creem_customer_id, ''), tenant_subscriptions.creem_customer_id),
 		    creem_subscription_id = COALESCE(NULLIF(EXCLUDED.creem_subscription_id, ''), tenant_subscriptions.creem_subscription_id),
+		    creem_seats = CASE WHEN EXCLUDED.creem_subscription_id <> '' AND EXCLUDED.creem_subscription_id <> tenant_subscriptions.creem_subscription_id
+		                       THEN 0 ELSE tenant_subscriptions.creem_seats END,
 		    updated_at = now()`, tenantID, customerID, subscriptionID)
 	return err
 }
@@ -75,4 +80,11 @@ func (s *Store) TenantIDByCreemSubscription(ctx context.Context, subscriptionID 
 		return uuid.Nil, false, nil
 	}
 	return id, err == nil, err
+}
+
+// SetTenantCreemSeats records the seat count confirmed on the tenant's Creem
+// subscription.
+func (s *Store) SetTenantCreemSeats(ctx context.Context, tenantID uuid.UUID, seats int) error {
+	_, err := s.pool.Exec(ctx, `UPDATE tenant_subscriptions SET creem_seats = $2, updated_at = now() WHERE tenant_id = $1`, tenantID, seats)
+	return err
 }

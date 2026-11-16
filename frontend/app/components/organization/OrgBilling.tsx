@@ -74,7 +74,11 @@ export function OrgBilling({ org, billing }: { org: string; billing: BillingView
       <p>
         Plan: <span className="badge accent">{billing.plan}</span>
         {billing.plan === "team" && (
-          <span className="subtle"> · {seats} {seats === 1 ? "seat" : "seats"}</span>
+          <span className="subtle">
+            {" "}· {seats} {seats === 1 ? "member" : "members"}
+            {billing.billedSeats ? ` · ${billing.billedSeats} billed` : ""}
+            {billing.billedSeats && billing.billedSeats !== seats ? " (syncing)" : ""}
+          </span>
         )}
       </p>
       <table className="policy-table">
@@ -120,6 +124,12 @@ export function OrgBilling({ org, billing }: { org: string; billing: BillingView
         </>
       )}
 
+      {billing.plan === "team" && (
+        <p className="subtle">
+          Seats follow your members: adding or removing someone updates the subscription, and the
+          difference is prorated on your next invoice.
+        </p>
+      )}
       <p className="subtle">
         Usage is metered from the Quill database (repos, pipeline run durations)
         and Forgejo repository sizes (git storage).

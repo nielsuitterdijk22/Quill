@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -232,4 +233,83 @@ func ParseEvent(body []byte) (Event, error) {
 		}
 	}
 	return evt, nil
+}
+
+// SubscriptionItem is one line of a subscription (Team has a single item
+// whose units are the billed seats).
+type SubscriptionItem struct {
+	ID        string `json:"id"`
+	ProductID string `json:"product_id"`
+	PriceID   string `json:"price_id,omitempty"`
+	Units     int    `json:"units"`
+}
+
+// Subscription is the subset of a Creem subscription Quill uses.
+type Subscription struct {
+	ID     string             `json:"id"`
+	Status string             `json:"status"`
+	Items  []SubscriptionItem `json:"items"`
+}
+
+// Seat proration for mid-cycle changes: the difference is calculated now and
+// charged (or credited) with the next invoice, so adding a teammate never
+// triggers a surprise card charge on its own.
+const SeatUpdateBehavior = "proration-charge"
+
+// GetSubscription fetches a subscription (GET /v1/subscriptions?subscription_id=).
+func (c *Client) GetSubscription(ctx context.Context, id string) (*Subscription, error) {
+	var out Subscription
+	if err := c.do(ctx, http.MethodGet, "/v1/subscriptions?subscription_id="+url.QueryEscape(id), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateSubscriptionUnits sets a subscription item's units (seats) with
+// SeatUpdateBehavior (POST /v1/subscriptions/{id}). The item is identified by
+// its id plus its price (or product) id, which Creem validates.
+func (c *Client) UpdateSubscriptionUnits(ctx context.Context, subscriptionID string, item SubscriptionItem, units int) error {
+	line := map[string]any{"id": item.ID, "units": units}
+	if item.PriceID != "" {
+		line["price_id"] = item.PriceID
+	} else {
+		line["product_id"] = item.ProductID
+	}
+	body := map[string]any{"items": []any{line}, "update_behavior": SeatUpdateBehavior}
+	return c.do(ctx, http.MethodPost, "/v1/subscriptions/"+url.PathEscape(subscriptionID), body, nil)
+}
+
+// do performs an authenticated JSON request against the Creem API.
+func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	var rdr io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.cfg.BaseURL+path, rdr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("x-api-key", c.cfg.APIKey)
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("creem: %s %s: %s: %s", method, strings.SplitN(path, "?", 2)[0], resp.Status, strings.TrimSpace(string(rb)))
+	}
+	if out != nil {
+		if err := json.Unmarshal(rb, out); err != nil {
+			return fmt.Errorf("creem: decode %s: %w", path, err)
+		}
+	}
+	return nil
 }

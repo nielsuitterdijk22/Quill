@@ -650,5 +650,21 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - Team checkout sends `units` = current member count (per-seat price) and pre-fills the admin email.
 - Rejected: pay-before-create (owner chose the trial); `kind`/`trial_ends_at` columns on the
   `tenants` scans (hand-curated sqlc, see the drift note); a cron expiring trials.
-- Follow-ups: sync the seat count to the Creem subscription as members join/leave; a "Manage
-  billing" link through Creem's customer portal.
+- Follow-up: a "Manage billing" link through Creem's customer portal.
+
+## 2026-11-16 — Team seats follow membership on Creem
+
+- The Creem subscription's units track the org's member count: accepting an invite or removing a
+  member updates it (`GET /v1/subscriptions?subscription_id=` for the item id, then
+  `POST /v1/subscriptions/{id}` with `items[].units`, docs.creem.io/features/seat-based-billing).
+  Pending invites and role changes don't count. Trials, lapsed orgs and hand-provisioned team
+  plans (no subscription on record) never call Creem.
+- Proration: `proration-charge` (difference billed on the next invoice). Rejected
+  `proration-charge-immediately` (a card charge every time someone joins) and `proration-none`
+  (seats added mid-cycle would be free until renewal).
+- Billing never blocks membership: the sync runs after the change, on a detached context, and
+  only logs on failure. `tenant_subscriptions.creem_seats` (migration 000039) holds the count
+  last confirmed on Creem; any mismatch is retried on the next membership change, paid-plan
+  webhook, or billing-page view, so an outage heals without a cron. A new subscription id resets
+  it. Syncs are serialized per tenant in-process; with several api instances two simultaneous
+  changes could race, but the next touch reconciles to the live member count.

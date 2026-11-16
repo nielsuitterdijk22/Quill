@@ -20,6 +20,8 @@ export type BillingView = {
   trialEndsAt?: string;
   locked?: boolean;
   seats?: number;
+  // Seats confirmed on the Creem subscription (Team only; follows membership).
+  billedSeats?: number;
 };
 
 // getBilling is tenant-admin only on the backend; non-admins get a 403 which

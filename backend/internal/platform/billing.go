@@ -66,6 +66,9 @@ type BillingView struct {
 	Locked bool `json:"locked"`
 	// Seats is the member count a Team checkout charges for.
 	Seats int `json:"seats"`
+	// BilledSeats is the seat count confirmed on the Creem subscription (Team
+	// plans with a subscription; 0 otherwise).
+	BilledSeats int `json:"billedSeats"`
 }
 
 // tenantLocked reports whether a tenant's plan currently refuses new work: a
@@ -180,7 +183,23 @@ func (s *Service) billingView(ctx context.Context, tenant db.Tenant) (BillingVie
 	if err != nil {
 		return BillingView{}, fmt.Errorf("count members: %w", err)
 	}
+	var billed int
+	if tenant.Plan == PlanTeam {
+		sub, err := s.store.GetTenantSubscription(ctx, tenant.ID)
+		if err != nil {
+			return BillingView{}, fmt.Errorf("load subscription: %w", err)
+		}
+		if sub.CreemSubscriptionID != "" && sub.CreemSeats != max(1, len(members)) {
+			// A previous sync failed (Creem unreachable): heal it now.
+			s.syncTeamSeatsBestEffort(ctx, tenant.ID)
+			if sub, err = s.store.GetTenantSubscription(ctx, tenant.ID); err != nil {
+				return BillingView{}, fmt.Errorf("load subscription: %w", err)
+			}
+		}
+		billed = sub.CreemSeats
+	}
 	return BillingView{
+		BilledSeats: billed,
 		Plan:        tenant.Plan,
 		Usage:       BillingUsage{Repos: repos, StorageBytes: storage, PipelineMinutes: minutes},
 		Limits:      limitsForPlan(tenant.Plan),
@@ -499,10 +518,17 @@ func (s *Service) ProcessCreemWebhook(ctx context.Context, body []byte, signatur
 		return CreemResult{}, fmt.Errorf("record creem ids: %w", err)
 	}
 	if tenant.Plan == paidPlan {
+		if paidPlan == PlanTeam {
+			s.syncTeamSeatsBestEffort(ctx, tenant.ID)
+		}
 		return CreemResult{TenantSlug: tenant.Slug, Plan: paidPlan}, nil
 	}
 	if _, err := s.SetTenantPlan(ctx, Actor{IsAdmin: true}, tenant.Slug, paidPlan); err != nil {
 		return CreemResult{}, err
+	}
+	if paidPlan == PlanTeam {
+		// Members may have joined between checkout and payment.
+		s.syncTeamSeatsBestEffort(ctx, tenant.ID)
 	}
 	s.logger.Info("creem webhook: plan upgraded", "tenant", tenant.Slug, "plan", paidPlan, "event", evt.Type, "product", evt.ProductID, "customer", evt.CustomerID)
 	return CreemResult{TenantSlug: tenant.Slug, Plan: paidPlan, Upgraded: true}, nil

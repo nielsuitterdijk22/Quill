@@ -78,6 +78,9 @@ type Service struct {
 
 	// clock is the time source for trial windows; tests move it forward.
 	clock func() time.Time
+
+	// seatLocks holds a *sync.Mutex per tenant for Creem seat syncs.
+	seatLocks sync.Map
 	// gitCache is the engine's hydration cache (B4 browse reads hydrate a
 	// bare repo from the bucket; nil unless WithGitCache was called).
 	gitCache *gitengine.RepoCache

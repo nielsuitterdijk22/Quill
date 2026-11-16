@@ -21,6 +21,7 @@ type billingResponse struct {
 	TrialEndsAt *time.Time     `json:"trialEndsAt,omitempty"`
 	Locked      bool           `json:"locked"`
 	Seats       int            `json:"seats"`
+	BilledSeats int            `json:"billedSeats"`
 }
 
 type billingUsage struct {
@@ -59,6 +60,7 @@ func handleBillingGet(s *Server) http.HandlerFunc {
 			TrialEndsAt: view.TrialEndsAt,
 			Locked:      view.Locked,
 			Seats:       view.Seats,
+			BilledSeats: view.BilledSeats,
 		}
 		if view.Limits != nil {
 			resp.Limits = &billingLimits{
@@ -191,6 +193,7 @@ func (s *Server) handleMyBilling(w http.ResponseWriter, r *http.Request) {
 		TrialEndsAt: view.TrialEndsAt,
 		Locked:      view.Locked,
 		Seats:       view.Seats,
+		BilledSeats: view.BilledSeats,
 	}
 	if view.Limits != nil {
 		resp.Limits = &billingLimits{

@@ -233,6 +233,7 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actor Actor, orgSlug stri
 	if err := s.store.RemoveTenantMember(ctx, db.RemoveTenantMemberParams{TenantID: tenant.ID, UserID: targetUserID}); err != nil {
 		return fmt.Errorf("remove member: %w", err)
 	}
+	s.syncTeamSeatsBestEffort(ctx, tenant.ID)
 	return nil
 }
 
@@ -422,6 +423,7 @@ func (s *Service) AcceptInvite(ctx context.Context, actor Actor, rawToken string
 	if err != nil {
 		return "", fmt.Errorf("accept invite: %w", err)
 	}
+	s.syncTeamSeatsBestEffort(ctx, tenant.ID)
 	return tenant.Slug, nil
 }
 

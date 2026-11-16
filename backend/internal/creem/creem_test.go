@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -182,5 +183,60 @@ func TestParseEvent(t *testing.T) {
 
 	if _, err := ParseEvent([]byte(`not json`)); err == nil {
 		t.Fatal("malformed body must error")
+	}
+}
+
+func TestSubscriptionSeats(t *testing.T) {
+	var gotMethod, gotPath, gotQuery string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
+		if r.Header.Get("x-api-key") != "sk_test" {
+			http.Error(w, "no key", http.StatusUnauthorized)
+			return
+		}
+		if r.Method == http.MethodPost {
+			gotBody = nil
+			_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		}
+		// Shape from docs.creem.io/features/seat-based-billing.
+		fmt.Fprint(w, `{"id":"sub_2O4LbygGkNJJ6VrStIZz21","items":[{"object":"subscription_item","id":"sitem_3l8jhRR2jWWhIBbJrKLwPT","product_id":"prod_team","units":10,"created_at":"2025-01-10T08:49:13.790Z"}],"status":"active"}`)
+	}))
+	defer srv.Close()
+	c := New(Config{APIKey: "sk_test", BaseURL: srv.URL})
+
+	sub, err := c.GetSubscription(context.Background(), "sub_2O4LbygGkNJJ6VrStIZz21")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/v1/subscriptions" || gotQuery != "subscription_id=sub_2O4LbygGkNJJ6VrStIZz21" {
+		t.Fatalf("get request: %s %s?%s", gotMethod, gotPath, gotQuery)
+	}
+	if sub.Status != "active" || len(sub.Items) != 1 || sub.Items[0].ID != "sitem_3l8jhRR2jWWhIBbJrKLwPT" || sub.Items[0].Units != 10 || sub.Items[0].ProductID != "prod_team" {
+		t.Fatalf("subscription = %+v", sub)
+	}
+
+	if err := c.UpdateSubscriptionUnits(context.Background(), sub.ID, sub.Items[0], 15); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/v1/subscriptions/sub_2O4LbygGkNJJ6VrStIZz21" {
+		t.Fatalf("update request: %s %s", gotMethod, gotPath)
+	}
+	items, _ := gotBody["items"].([]any)
+	line, _ := items[0].(map[string]any)
+	if len(items) != 1 || line["id"] != "sitem_3l8jhRR2jWWhIBbJrKLwPT" || line["units"] != float64(15) || line["product_id"] != "prod_team" || gotBody["update_behavior"] != "proration-charge" {
+		t.Fatalf("update body = %v", gotBody)
+	}
+	// A price id, when known, is the preferred validation reference.
+	_ = c.UpdateSubscriptionUnits(context.Background(), sub.ID, SubscriptionItem{ID: "sitem_1", ProductID: "prod_team", PriceID: "pprice_1"}, 2)
+	items, _ = gotBody["items"].([]any)
+	line, _ = items[0].(map[string]any)
+	if line["price_id"] != "pprice_1" || line["product_id"] != nil {
+		t.Fatalf("price-id body = %v", gotBody)
+	}
+
+	// Errors surface with status.
+	if _, err := New(Config{APIKey: "bad", BaseURL: srv.URL}).GetSubscription(context.Background(), "sub_x"); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("want 401 error, got %v", err)
 	}
 }
