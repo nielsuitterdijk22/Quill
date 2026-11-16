@@ -49,6 +49,21 @@ const nextConfig = {
   },
   // Emit a self-contained server bundle for small production images.
   output: "standalone",
+  // Organization settings open their first section with a real 307 (a
+  // redirect() from the page would arrive as a client-side refresh after the
+  // settings layout has started streaming). The Creem checkout return lands on
+  // billing.
+  async redirects() {
+    return [
+      {
+        source: "/orgs/:org/settings",
+        has: [{ type: "query", key: "upgraded" }],
+        destination: "/orgs/:org/settings/billing?upgraded=1",
+        permanent: false,
+      },
+      { source: "/orgs/:org/settings", destination: "/orgs/:org/settings/members", permanent: false },
+    ];
+  },
   async rewrites() {
     // Proxy browser calls to the Go backend so the frontend never needs CORS or
     // a public API URL baked in at build time. Server components can also call
