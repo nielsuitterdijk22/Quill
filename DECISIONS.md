@@ -692,3 +692,14 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   value objects with dotted keys, `members[value eq "…"]` removal, `excludedAttributes=members`.
   Unknown user attributes are accepted and ignored. Audit rows are written as actor `scim`.
 - Not done yet: SSO login routing (next PR), SCIM nested groups (IdP groups are flat, depth 1).
+
+## 2026-11-16 — Short-URL rewrite derives its reserved routes from the app directory
+
+- `/orgs/{org}/settings` 404'd for every org: the `/{owner}/{repo}/…` → `/projects/…/repos/…`
+  rewrite runs before dynamic routes, and its hand-written reserved list lacked `orgs` (and
+  `invite`, `onboarding`), so the URL became "repo {org} of owner orgs". The list is now read
+  from `app/` at build time (static top-level route dirs, including inside route groups), and
+  reserved names match whole segments only (the old lookahead also blocked owners merely
+  starting with a reserved word, e.g. `apiary`). The backend reserves `orgs`, `invite`,
+  `onboarding` as slugs/usernames so no namespace can claim them. Live test
+  `TestOrgSettingsPageRenders` failed against production before the fix.

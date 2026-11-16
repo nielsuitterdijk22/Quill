@@ -462,6 +462,7 @@ var reservedUsernames = map[string]bool{
 	"new": true, "edit": true, "settings": true, "api": true,
 	"projects": true, "repositories": true, "pulls": true, "pipelines": true,
 	"admin": true, "sign-in": true, "sign-up": true, "login": true, "register": true,
+	"orgs": true, "invite": true, "onboarding": true, "sbom": true,
 }
 
 // deriveUsername builds a clean Quill username from the IdP-provided handle,

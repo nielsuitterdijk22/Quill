@@ -72,6 +72,9 @@ var reservedSlugs = map[string]bool{
 	"sign-up":      true,
 	"login":        true,
 	"register":     true,
+	"orgs":         true,
+	"invite":       true,
+	"onboarding":   true,
 }
 
 // normalizeSlug lowercases and trims a candidate slug.

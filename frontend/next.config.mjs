@@ -1,3 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+
 // Derive the Zitadel origin from the configured issuer so the CSP can allow the
 // browser's OIDC discovery fetch (used on RP-initiated logout) without
 // hardcoding the instance host.
@@ -12,6 +17,29 @@ function zitadelOrigin() {
 }
 
 /** @type {import('next').NextConfig} */
+// reservedTopLevelRoutes lists every static first path segment the app
+// serves: route directories directly under app/ and under its (group)
+// folders that contain a page or route handler, skipping dynamic ([param])
+// and private (_x) folders, plus "api".
+function reservedTopLevelRoutes() {
+  const appDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "app");
+  const hasRoute = (dir) =>
+    fs.readdirSync(dir, { withFileTypes: true }).some((e) =>
+      e.isDirectory() ? hasRoute(path.join(dir, e.name)) : /^(page|route)\.(tsx?|jsx?)$/.test(e.name),
+    );
+  const names = new Set(["api"]);
+  const visit = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(dir, e.name);
+      if (e.name.startsWith("(") && e.name.endsWith(")")) visit(full);
+      else if (!e.name.startsWith("[") && !e.name.startsWith("_") && hasRoute(full)) names.add(e.name);
+    }
+  };
+  visit(appDir);
+  return [...names].sort().map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+}
+
 const nextConfig = {
   reactStrictMode: true,
   // Emit a self-contained server bundle for small production images.
@@ -21,9 +49,12 @@ const nextConfig = {
     // a public API URL baked in at build time. Server components can also call
     // the backend directly via QUILL_API_BASE_URL.
     const api = process.env.QUILL_API_BASE_URL || "http://localhost:8080";
-    // Top-level app routes that must not be treated as owner namespaces.
-    const reserved =
-      "projects|settings|admin|repositories|pulls|pipelines|sbom|sign-in|sign-up|login|register|api";
+    // Top-level app routes must not be treated as owner namespaces. These
+    // rewrites run before dynamic routes, so a missing entry silently turns
+    // e.g. /orgs/{org}/settings into "repo {org} of owner orgs" (a 404 —
+    // happened until 2026-11-16). Derive the list from the app directory so a
+    // new top-level route can't be shadowed again.
+    const reserved = reservedTopLevelRoutes().join("|");
     return [
       // /api/backend/* is served by the app/api/backend/[...path] route
       // handler (auth-aware proxy). A rewrite here SHADOWS it — Next serves
@@ -33,12 +64,12 @@ const nextConfig = {
       // Lets /{owner}/{repo}/... resolve via the existing /projects/[project]/repos/[repo]/...
       // pages without duplicating every page file.
       {
-        source: `/:owner((?!${reserved})[^/]+)/:repo/:path+`,
+        source: `/:owner((?!(?:${reserved})(?![^/]))[^/]+)/:repo/:path+`,
         destination: "/projects/:owner/repos/:repo/:path*",
       },
       // Short namespace URL root: /{owner}/{repo} (no trailing path)
       {
-        source: `/:owner((?!${reserved})[^/]+)/:repo`,
+        source: `/:owner((?!(?:${reserved})(?![^/]))[^/]+)/:repo`,
         destination: "/projects/:owner/repos/:repo",
       },
     ];

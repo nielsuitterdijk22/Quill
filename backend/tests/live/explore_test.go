@@ -239,3 +239,24 @@ func TestMergeGateTwoUsers(t *testing.T) {
 		t.Errorf("double merge: %d, want 409 (or 200 idempotent)", st)
 	}
 }
+
+// TestOrgSettingsPageRenders guards the short-URL rewrite: /orgs/{org}/settings
+// was rewritten to "repo {org} of owner orgs" and 404'd for every org (the
+// rewrite's reserved-route list lacked "orgs"; fixed 2026-11-16 by deriving
+// it from the app directory). The signed-in page must render the org's
+// settings, including the SCIM provisioning section.
+func TestOrgSettingsPageRenders(t *testing.T) {
+	requireLive(t)
+	token := login(t)
+	org := fmt.Sprintf("e2e-orgpage-%d", time.Now().UnixNano()%1e9)
+	if st, b := apiCall(t, token, http.MethodPost, "/orgs", map[string]any{"slug": org, "name": "E2E Org Page"}); st != 200 && st != 201 {
+		t.Fatalf("create org: %d %s", st, b)
+	}
+	c := webSession(t)
+	st, _, body := get(t, c, appURL+"/orgs/"+org+"/settings", nil)
+	page := string(body)
+	if st != 200 || strings.Contains(page, "<title>404") || !strings.Contains(page, "E2E Org Page settings") || !strings.Contains(page, "Provisioning (SCIM)") {
+		t.Fatalf("org settings page: %d (title 404=%v, heading=%v, scim=%v)", st,
+			strings.Contains(page, "<title>404"), strings.Contains(page, "E2E Org Page settings"), strings.Contains(page, "Provisioning (SCIM)"))
+	}
+}
