@@ -21,7 +21,13 @@ dump_one() { # dump_one <name> <postgres-uri>
   name="$1"; url="$2"
   echo "[backup] dumping ${name} at ${STAMP}"
   tmp="/tmp/${name}-${STAMP}.sql.gz"
-  pg_dump "$url" --no-owner | gzip -9 > "$tmp"
+  # Dump to a plain file first, THEN compress: in `pg_dump | gzip` a failing
+  # pg_dump is invisible to `set -e` (no pipefail in sh), so a dead database
+  # produced an empty .gz that was uploaded and reported as a success.
+  pg_dump "$url" --no-owner > "${tmp}.sql"
+  [ -s "${tmp}.sql" ] || { echo "[backup] ${name}: dump is empty, refusing to upload" >&2; exit 1; }
+  gzip -9 -c "${tmp}.sql" > "$tmp"
+  rm -f "${tmp}.sql"
   aws s3 cp "$tmp" "s3://${BACKUP_BUCKET}/postgres/${name}/${name}-${STAMP}.sql.gz" \
     --endpoint-url "$S3_ENDPOINT"
   rm -f "$tmp"

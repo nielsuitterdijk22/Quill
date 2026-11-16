@@ -825,3 +825,12 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   made since the cutover). `sdb_user`/`sdb_password` variables are now unused for DB access.
 - **Operator access:** `terraform output -json db_urls` (the operator recipe in AGENTS.md was
   updated). The e2e `purge-e2e` and local debugging runs now hit the managed instance.
+
+## 2026-11-16 — Nightly backups no longer succeed when the dump fails
+
+- `backup-pg.sh` ran `pg_dump | gzip` under `set -eu` (plain sh, no pipefail): a failing pg_dump
+  was invisible, an empty .gz was uploaded and the job reported success — reproduced with a fake
+  failing pg_dump. Found while verifying the backup job against the new managed database (its
+  real uploads were fine: 2.0 MB quill, 330 KB zitadel).
+- Fix: dump to a file first, refuse an empty dump, then compress. A failed dump now exits 1
+  without touching the bucket.
