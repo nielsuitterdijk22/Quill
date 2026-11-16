@@ -763,3 +763,18 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - The sidebar's reserved-route list (a third hand-kept copy) now comes from the same build-time
   directory scan as the rewrite (`NEXT_PUBLIC_RESERVED_ROUTES`); it had shown a bogus
   "orgs / {org}" repo context on org settings.
+
+## 2026-11-16 — Egress: empty connections are not refusals
+
+- Every deploy from #23 on stopped in `npm ci` with "(no hostname):443 refused 6 times". The
+  worker binary, Go version (1.26.11) and Node image were identical to the last passing run, and
+  the proxy parses Node 22's ClientHello fine. Those refusals were connections that sent nothing
+  (closed or idle before a ClientHello — e.g. clients racing parallel connection attempts and
+  dropping the losers). Under allow-all they were already dropped silently, and npm succeeded,
+  which shows nothing needed them. Counting them toward the 6-refusal abort was wrong: a
+  connection with no bytes cannot carry anything out.
+- Fix: a connection that sends no bytes is not checked or counted. Refusals that did send bytes
+  without a hostname are labelled ("TLS without server name", "not TLS, N bytes") instead of a
+  bare "(no hostname)", so the run log is diagnosable next time.
+- Interim (#25–#28): the owner's personal egress policy was set to allow-all for the length of
+  each deploy and restored to the same 54-host allowlist afterwards.

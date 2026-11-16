@@ -176,7 +176,7 @@ func TestProxyTLSSNI(t *testing.T) {
 	if !slices.Equal(dialed, []string{"cdn.ok.example:443"}) {
 		t.Fatalf("dialed %v", dialed)
 	}
-	if !slices.Equal(blocked, []string{"evil.example", ""}) {
+	if !slices.Equal(blocked, []string{"evil.example", "(no hostname: TLS without server name)"}) {
 		t.Fatalf("blocked %v", blocked)
 	}
 	// Allow-all lets anything through.
@@ -184,6 +184,43 @@ func TestProxyTLSSNI(t *testing.T) {
 	hello("evil.example")
 	if dialed, _ := f.state(); !slices.Contains(dialed, "evil.example:443") {
 		t.Fatalf("allow-all did not forward: %v", dialed)
+	}
+}
+
+// TestProxyEmptyConnectionsAreNotRefusals: a connection that closes (or goes
+// idle) before sending a byte never tried to reach anything — clients racing
+// parallel connection attempts drop the losers this way — so it must not
+// count toward the refusal limit that stops a run (it stopped every deploy's
+// npm ci on 2026-11-16). Bytes without a hostname still count, labelled.
+func TestProxyEmptyConnectionsAreNotRefusals(t *testing.T) {
+	f := newProxyFixture(t)
+	for i := 0; i < 10; i++ {
+		c, err := net.Dial("tcp", f.tlsAddr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
+	}
+	c, err := net.Dial("tcp", f.tlsAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.SetDeadline(time.Now().Add(5 * time.Second))
+	io.WriteString(c, "SSH-2.0-OpenSSH_9.6\r\n")
+	c.(*net.TCPConn).CloseWrite()
+	_, _ = io.ReadAll(c)
+	c.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		_, blocked := f.state()
+		if len(blocked) > 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // let any stray empty-connection handler finish
+	if _, blocked := f.state(); !slices.Equal(blocked, []string{"(no hostname: not TLS, 21 bytes)"}) {
+		t.Fatalf("blocked %v, want only the non-TLS connection", blocked)
 	}
 }
 

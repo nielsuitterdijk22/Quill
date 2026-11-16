@@ -95,9 +95,18 @@ func (p *Proxy) handle(c net.Conn, port int, peek func(io.Reader) (string, error
 	var seen bytes.Buffer
 	host, err := peek(io.TeeReader(c, &seen))
 	if err != nil || host == "" {
-		// No hostname (IP-literal TLS, garbage, ECH without outer SNI…):
-		// nothing to match an allowlist against.
-		p.check("", port)
+		if seen.Len() == 0 {
+			// Closed (or idle past the deadline) before sending a byte —
+			// e.g. a client racing parallel connection attempts and
+			// dropping the losers. Nothing tried to leave, so it is not a
+			// refusal; counting these stopped deploys whose npm ci was
+			// otherwise fine (2026-11-16).
+			return
+		}
+		// Bytes but no hostname (IP-literal TLS, garbage, ECH without an
+		// outer SNI…): nothing to match an allowlist against. The label is
+		// only for the run's refusal report.
+		p.check(unnamedLabel(port, seen.Bytes()), port)
 		return
 	}
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
@@ -143,6 +152,19 @@ func pipe(a, b net.Conn) {
 }
 
 var errPeeked = errors.New("peeked")
+
+// unnamedLabel describes a refused connection that carried no hostname, so
+// the run log says what it was instead of a bare "(no hostname)".
+func unnamedLabel(port int, b []byte) string {
+	switch {
+	case port == 443 && len(b) > 0 && b[0] == 0x16:
+		return "(no hostname: TLS without server name)"
+	case port == 443:
+		return fmt.Sprintf("(no hostname: not TLS, %d bytes)", len(b))
+	default:
+		return fmt.Sprintf("(no hostname: no HTTP Host, %d bytes)", len(b))
+	}
+}
 
 // peekSNI reads a TLS ClientHello and returns its server name.
 func peekSNI(r io.Reader) (string, error) {
