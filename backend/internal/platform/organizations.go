@@ -33,6 +33,11 @@ type OrganizationSummary struct {
 	Slug string
 	Name string
 	Role string
+	// Plan, trial window and lock state, so every page can tell people when
+	// their organization is on a trial or locked (members see it too).
+	Plan        string
+	TrialEndsAt *time.Time
+	Locked      bool
 }
 
 // CreateOrganization provisions a new organization for the actor: a dedicated
@@ -128,7 +133,14 @@ func (s *Service) ListOrganizations(ctx context.Context, actor Actor) ([]Organiz
 	}
 	out := make([]OrganizationSummary, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, OrganizationSummary{Slug: r.Slug, Name: r.Name, Role: r.MemberRole})
+		sum := OrganizationSummary{Slug: r.Slug, Name: r.Name, Role: r.MemberRole}
+		if t, err := s.store.GetTenantBySlug(ctx, r.Slug); err == nil {
+			sum.Plan = t.Plan
+			if locked, ends, err := s.tenantLocked(ctx, t); err == nil {
+				sum.Locked, sum.TrialEndsAt = locked, ends
+			}
+		}
+		out = append(out, sum)
 	}
 	return out, nil
 }

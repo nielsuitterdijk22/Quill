@@ -31,7 +31,9 @@ func TestDeployGate(t *testing.T) {
 	const wf = ".github/workflows/gated.yml"
 	content := "on: [workflow_dispatch]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    environment: " + env + "\n    steps:\n      - run: echo deployed\n"
 	pushBranch(t, token, proj, repo, "main", wf, content)
-	pushBranch(t, token, proj, repo, "feature", wf, content)
+	// The feature branch needs its own commit (the clone starts from main,
+	// where the identical file already exists — "nothing to commit").
+	pushBranch(t, token, proj, repo, "feature", wf, content+"# feature branch\n")
 
 	trigger := func(ref string) int {
 		st, b := apiCall(t, token, http.MethodPost, rb+"/pipelines", map[string]any{"workflow": wf, "ref": ref})

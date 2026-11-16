@@ -79,6 +79,11 @@ func TestEnginePullLifecycle(t *testing.T) {
 	if repo.Slug != "pr-repo" || dto.Number != 1 || dto.Title != "Add docs" {
 		t.Fatalf("pull dto = %+v", dto)
 	}
+	// The author is identified by account id (the login is a display name),
+	// so the PR page can hide the review form from the author.
+	if dto.User == nil || dto.User.QuillUserID != act.UserID.String() {
+		t.Fatalf("author id = %+v, want %s", dto.User, act.UserID)
+	}
 	if dto.State != "open" || dto.Merged {
 		t.Fatalf("fresh pull state = %+v", dto)
 	}

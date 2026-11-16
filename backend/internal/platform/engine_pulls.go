@@ -182,7 +182,7 @@ func (s *Service) enginePullDTO(ctx context.Context, repo db.Repository, be gitB
 		Body:      pr.Body,
 		State:     pr.State,
 		Merged:    pr.Merged,
-		User:      &forgejo.User{Login: pr.CreatedByName, FullName: pr.CreatedByName, Type: "User"},
+		User:      &forgejo.User{Login: pr.CreatedByName, FullName: pr.CreatedByName, Type: "User", QuillUserID: uuidString(pr.CreatedBy)},
 		Head:      forgejo.PRRef{Label: pr.HeadRef, Ref: pr.HeadRef, SHA: pr.HeadSHA},
 		Base:      forgejo.PRRef{Label: pr.BaseRef, Ref: pr.BaseRef, SHA: pr.BaseSHA},
 		CreatedAt: pr.CreatedAt,
@@ -621,4 +621,11 @@ func haveMergeBase(dir, a, b string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("git merge-base: %w", err)
+}
+
+func uuidString(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }

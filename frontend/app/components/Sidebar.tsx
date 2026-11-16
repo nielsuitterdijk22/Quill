@@ -70,6 +70,11 @@ const ORG_ADMIN_NAV: NavItem[] = [
   { href: "/admin/users", label: "Users", icon: "user" },
 ];
 
+// trialDaysLeft is the whole days until a trial ends (0 on the last day).
+function trialDaysLeft(iso: string): number {
+  return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
+}
+
 // Top-level paths that are app routes, not owner namespaces. Derived from the
 // app directory at build time (next.config.mjs) — a hand-kept list here once
 // missed "orgs", so org settings showed a bogus "orgs / {org}" repo context.
@@ -411,14 +416,21 @@ export function Sidebar({
             {orgs.map((o) => (
               <Link
                 key={o.slug}
-                href={`/orgs/${encodeURIComponent(o.slug)}/settings`}
+                href={`/orgs/${encodeURIComponent(o.slug)}/settings${o.locked || o.plan === "trial" ? "/billing" : ""}`}
                 className={
                   isActive(pathname, `/orgs/${o.slug}`) ? "active" : ""
                 }
+                title={o.locked ? "Subscription needed — new repositories, pipelines and invites are paused" : undefined}
               >
                 <Icon name="briefcase" className="nav-icon" />
                 {o.name}
-                {o.role === "admin" && <span className="tag">admin</span>}
+                {o.locked ? (
+                  <span className="tag tag-danger">locked</span>
+                ) : o.plan === "trial" && o.trialEndsAt ? (
+                  <span className="tag tag-warn">trial · {trialDaysLeft(o.trialEndsAt)}d</span>
+                ) : (
+                  o.role === "admin" && <span className="tag">admin</span>
+                )}
               </Link>
             ))}
           </nav>

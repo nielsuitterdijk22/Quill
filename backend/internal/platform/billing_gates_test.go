@@ -242,8 +242,16 @@ func TestNewOrgStartsTrialThenLocks(t *testing.T) {
 		t.Fatalf("invite during trial: %v", err)
 	}
 
+	// The org list (sidebar) tells members about the trial.
+	if orgs, err := svc.ListOrganizations(ctx, founder); err != nil || len(orgs) != 1 || orgs[0].Plan != PlanTrial || orgs[0].TrialEndsAt == nil || orgs[0].Locked {
+		t.Fatalf("org list during trial = %+v err=%v", orgs, err)
+	}
+
 	// After the window: locked.
 	now = now.Add((TrialDays*24 + 1) * time.Hour)
+	if orgs, _ := svc.ListOrganizations(ctx, founder); len(orgs) != 1 || !orgs[0].Locked {
+		t.Fatalf("org list after trial = %+v, want locked", orgs)
+	}
 	view, _ = svc.GetBilling(ctx, founder, "trialorg")
 	if !view.Locked {
 		t.Fatalf("expired trial not locked: %+v", view)

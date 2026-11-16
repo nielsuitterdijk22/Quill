@@ -161,7 +161,19 @@ export default async function PullDetailPage({
       <div className="pr-meta">
         <PullStateBadge pull={pull} />
         <span className="subtle">
-          <b>{pull.author?.login ?? "unknown"}</b> wants to merge{" "}
+          {pull.merged ? (
+            <>
+              <b>{pull.mergedBy?.login ?? pull.author?.login ?? "unknown"}</b> merged{" "}
+            </>
+          ) : pull.state === "closed" ? (
+            <>
+              <b>{pull.author?.login ?? "unknown"}</b> proposed merging{" "}
+            </>
+          ) : (
+            <>
+              <b>{pull.author?.login ?? "unknown"}</b> wants to merge{" "}
+            </>
+          )}
           <span className="mono">{pull.head.ref}</span> into{" "}
           <span className="mono">{pull.base.ref}</span> · {pull.changedFiles}{" "}
           file{pull.changedFiles === 1 ? "" : "s"} changed

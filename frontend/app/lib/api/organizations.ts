@@ -18,6 +18,9 @@ export type Organization = {
   slug: string;
   name: string;
   role: string; // 'admin' | 'member'
+  plan?: string; // 'trial' | 'team' | 'lapsed' | 'enterprise' | 'internal' | …
+  trialEndsAt?: string;
+  locked?: boolean; // trial over / subscription ended: new work paused
 };
 
 export type OrgMember = {

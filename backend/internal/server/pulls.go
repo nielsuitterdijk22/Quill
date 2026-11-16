@@ -94,6 +94,13 @@ func (s *Server) viewerIsAuthor(ctx context.Context, actor platform.Actor, pr fo
 	if pr.User == nil {
 		return false
 	}
+	// Engine PRs (all repos since the Forgejo cutover) carry the author's
+	// Quill id; the login there is a display name and accounts created after
+	// the cutover have no Forgejo username, so the login check below never
+	// matched and authors were offered a review form for their own PR.
+	if pr.User.QuillUserID != "" {
+		return pr.User.QuillUserID == actor.UserID.String()
+	}
 	user, err := s.store.GetUserByID(ctx, actor.UserID)
 	if err != nil || !user.ForgejoUsername.Valid {
 		return false

@@ -5447,3 +5447,12 @@ button.sbom-chip:hover {
 .group-inline-form select + select {
   flex: 0 0 130px;
 }
+/* Sidebar org badges: trial countdown / locked (2026-11-16). */
+.tag.tag-warn {
+  color: var(--amber);
+  border-color: color-mix(in oklab, var(--amber) 40%, transparent);
+}
+.tag.tag-danger {
+  color: var(--red);
+  border-color: color-mix(in oklab, var(--red) 40%, transparent);
+}

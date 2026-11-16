@@ -22,6 +22,9 @@ type User struct {
 	// GET /users/{name} resolves orgs too, which once caused a re-registered user to
 	// be linked to a leftover org row instead of a fresh user.
 	Type string `json:"type"`
+	// QuillUserID is set for engine-backed records (never serialized): the
+	// Quill account behind Login, which for engine PRs is a display name.
+	QuillUserID string `json:"-"`
 }
 
 // Org is a Forgejo organization. The REST API exposes the handle as both "name"
