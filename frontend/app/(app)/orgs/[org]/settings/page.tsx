@@ -124,9 +124,11 @@ export default async function OrgSettingsPage({
           <div className="settings-head">
             <h2 className="settings-title">Single sign-on</h2>
             <p className="subtle">
-              Configure how members of this organization authenticate. The client
-              secret is stored encrypted and never shown again. Routing logins by
-              email domain is applied by the identity provider.
+              Let people sign in with your company identity provider (Okta, Microsoft
+              Entra ID, Google Workspace, …). Once your email domain is verified,
+              anyone signing in with an address on it goes straight to your company
+              login and joins this organization. The client secret is stored
+              encrypted and never shown again.
             </p>
           </div>
           <OrgSSO org={org.slug} config={sso} />

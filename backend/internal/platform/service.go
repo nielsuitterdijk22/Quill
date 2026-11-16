@@ -81,6 +81,12 @@ type Service struct {
 
 	// seatLocks holds a *sync.Mutex per tenant for Creem seat syncs.
 	seatLocks sync.Map
+
+	// sso applies org SSO to the identity provider (nil: config-only).
+	sso SSOBackend
+	// samlFetch / txtLookup override network lookups in tests.
+	samlFetch func(ctx context.Context, url string) ([]byte, error)
+	txtLookup func(ctx context.Context, name string) ([]string, error)
 	// gitCache is the engine's hydration cache (B4 browse reads hydrate a
 	// bare repo from the bucket; nil unless WithGitCache was called).
 	gitCache *gitengine.RepoCache

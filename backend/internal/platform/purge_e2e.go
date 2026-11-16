@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/nielsuitterdijk22/quill/internal/policy"
+
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -63,6 +65,8 @@ func (s *Service) PurgeE2eDebris(ctx context.Context) (PurgeReport, error) {
 		if remaining > 0 {
 			continue // leave the tenant so a later run can retry its leftovers
 		}
+		// Test orgs' SSO identity orgs (and the accounts JIT-created in them).
+		s.teardownSSOOrgs(ctx, []uuid.UUID{tenant.ID})
 		if err := s.store.DeleteTenant(ctx, tenant.ID); err != nil {
 			s.logger.Warn("purge-e2e: tenant delete failed", "tenant", tenant.Slug, "error", err)
 			continue

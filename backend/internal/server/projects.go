@@ -317,7 +317,11 @@ func (s *Server) writePlatformError(w http.ResponseWriter, err error, fallback s
 	case errors.Is(err, platform.ErrInvalidInput):
 		httpx.Error(w, http.StatusBadRequest, "invalid_input", err.Error())
 	case errors.Is(err, platform.ErrConflict):
-		httpx.Error(w, http.StatusConflict, "conflict", "a resource with that slug already exists")
+		msg := "a resource with that slug already exists"
+		if err != platform.ErrConflict { // wrapped with a specific reason
+			msg = err.Error()
+		}
+		httpx.Error(w, http.StatusConflict, "conflict", msg)
 	case errors.Is(err, platform.ErrNotFound):
 		httpx.Error(w, http.StatusNotFound, "not_found", "resource not found")
 	case errors.Is(err, platform.ErrForbidden):

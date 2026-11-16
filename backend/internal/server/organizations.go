@@ -285,6 +285,19 @@ type ssoResponse struct {
 	Enabled     bool      `json:"enabled"`
 	HasSecret   bool      `json:"hasSecret"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+
+	DomainVerified    bool   `json:"domainVerified"`
+	VerifyRecordName  string `json:"verifyRecordName,omitempty"`
+	VerifyRecordValue string `json:"verifyRecordValue,omitempty"`
+	Active            bool   `json:"active"`
+	Routing           bool   `json:"routing"`
+	RedirectURI       string `json:"redirectUri,omitempty"`
+	SAMLEntityID      string `json:"samlEntityId,omitempty"`
+	SAMLACSURL        string `json:"samlAcsUrl,omitempty"`
+	ZitadelOrgID      string `json:"identityOrgId,omitempty"`
+	LastError         string `json:"lastError,omitempty"`
+	Available         bool   `json:"available"`
+	PlanAllowsSSO     bool   `json:"planAllowsSso"`
 }
 
 type setSSORequest struct {
@@ -306,7 +319,30 @@ func newSSOResponse(v platform.SSOConfigView) ssoResponse {
 		Enabled:     v.Enabled,
 		HasSecret:   v.HasSecret,
 		UpdatedAt:   v.UpdatedAt,
+
+		DomainVerified: v.DomainVerified, VerifyRecordName: v.VerifyRecordName, VerifyRecordValue: v.VerifyRecordValue,
+		Active: v.Active, Routing: v.Routing, RedirectURI: v.RedirectURI, SAMLEntityID: v.SAMLEntityID,
+		SAMLACSURL: v.SAMLACSURL, ZitadelOrgID: v.ZitadelOrgID, LastError: v.LastError,
+		Available: v.Available, PlanAllowsSSO: v.PlanAllowsSSO,
 	}
+}
+
+// handleVerifyOrgSSODomain checks the org's DNS TXT record and, when it
+// matches, routes the domain's sign-ins to the org's identity provider.
+func (s *Server) handleVerifyOrgSSODomain(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	slug := chi.URLParam(r, "slug")
+	view, err := s.platform.VerifyOrgSSODomain(r.Context(), actor, slug)
+	if err != nil {
+		s.writePlatformError(w, err, "could not verify the domain")
+		return
+	}
+	s.logAudit(r, "org.sso.domain_verified", "tenant", slug, map[string]any{"org": slug, "domain": view.EmailDomain})
+	httpx.JSON(w, http.StatusOK, newSSOResponse(view))
 }
 
 // handleGetOrgSSO returns an organization's SSO configuration (admin only, never

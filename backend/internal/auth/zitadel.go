@@ -273,6 +273,7 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 				return Identity{}, err
 			}
 		}
+		v.joinSSOOrg(ctx, user.ID, orgID)
 		return Identity{
 			UserID:   user.ID,
 			Username: user.Username,
@@ -287,6 +288,16 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 	if err != nil {
 		v.logger.Error("zitadel userinfo fetch failed", "userID", userID, "error", err)
 		return Identity{}, ErrInvalidCredentials
+	}
+
+	// A company SSO sign-in for an address on the company's verified domain
+	// claims the existing Quill account with that email.
+	if id, ok, err := v.linkSSOAccount(ctx, userID, orgID, profile); err != nil {
+		v.logger.Error("sso account link failed", "userID", userID, "error", err)
+		return Identity{}, ErrInvalidCredentials
+	} else if ok {
+		v.joinSSOOrg(ctx, id.UserID, orgID)
+		return id, nil
 	}
 
 	id, err := v.provisionUser(ctx, userID, profile)
@@ -304,6 +315,8 @@ func (v *ZitadelVerifier) resolveIdentity(ctx context.Context, rawToken, userID,
 		}
 		id.TenantID = tenantID
 	}
+
+	v.joinSSOOrg(ctx, id.UserID, orgID)
 
 	// Best-effort Forgejo provisioning, off the login path.
 	if v.forgejo != nil && v.forgejo.Enabled() {
@@ -566,19 +579,48 @@ func (v *ZitadelVerifier) DeleteUser(ctx context.Context, subject string) error 
 // existing person's account can never be taken over by email alone. The
 // account gets its per-account tenant here, as a regular signup would.
 func (v *ZitadelVerifier) linkProvisioned(ctx context.Context, subject string, info zitadelUserInfo) (Identity, bool, error) {
+	return v.linkByEmail(ctx, subject, info, false)
+}
+
+// linkSSOAccount links a first sign-in through an organization's SSO to the
+// existing account with the same email — only when the email is verified and
+// sits on the domain that organization proved it owns (DNS TXT), so the
+// company IdP is authoritative for it.
+func (v *ZitadelVerifier) linkSSOAccount(ctx context.Context, subject, zitadelOrgID string, info zitadelUserInfo) (Identity, bool, error) {
+	domain, ok, err := v.store.SSOVerifiedDomain(ctx, zitadelOrgID)
+	if err != nil || !ok {
+		return Identity{}, false, err
+	}
+	email := strings.ToLower(strings.TrimSpace(info.Email))
+	if !strings.HasSuffix(email, "@"+strings.ToLower(domain)) {
+		return Identity{}, false, nil
+	}
+	return v.linkByEmail(ctx, subject, info, true)
+}
+
+// linkByEmail attaches subject to the account with info's verified email.
+// Without allowExisting, only accounts that have never had a sign-in
+// identity qualify (SCIM-provisioned ones).
+func (v *ZitadelVerifier) linkByEmail(ctx context.Context, subject string, info zitadelUserInfo, allowExisting bool) (Identity, bool, error) {
 	email := strings.TrimSpace(info.Email)
 	if email == "" || !info.EmailVerified {
 		return Identity{}, false, nil
 	}
-	user, err := v.store.GetUserByEmail(ctx, strings.ToLower(email))
+	byEmail, err := v.store.GetUserByEmail(ctx, strings.ToLower(email))
 	if err != nil {
 		return Identity{}, false, nil // not found (or unreadable): regular provisioning
+	}
+	// GetUserByEmail doesn't select tenant_id (hand-curated sqlc output);
+	// reload by id so an existing account tenant is reused, not duplicated.
+	user, err := v.store.GetUserByID(ctx, byEmail.ID)
+	if err != nil {
+		return Identity{}, false, err
 	}
 	idents, err := v.store.ListAuthIdentitiesForUser(ctx, user.ID)
 	if err != nil {
 		return Identity{}, false, err
 	}
-	if len(idents) > 0 || !user.IsActive {
+	if (len(idents) > 0 && !allowExisting) || !user.IsActive {
 		return Identity{}, false, nil
 	}
 	// The account tenant's slug mirrors the username; an org may already own
@@ -613,4 +655,27 @@ func (v *ZitadelVerifier) linkProvisioned(ctx context.Context, subject string, i
 	}
 	v.logger.Info("linked first sign-in to a provisioned account", "user", user.ID, "username", user.Username)
 	return Identity{UserID: user.ID, Username: user.Username, Email: user.Email, IsAdmin: user.IsAdmin, TenantID: tenantID}, true, nil
+}
+
+// joinSSOOrg makes a person who signed in through an organization's SSO (their
+// Zitadel account lives in that org's identity org) a member of the Quill org.
+// Existing roles are never changed. Best-effort: a failure is logged and the
+// sign-in proceeds (an admin can still add them).
+func (v *ZitadelVerifier) joinSSOOrg(ctx context.Context, userID uuid.UUID, zitadelOrgID string) {
+	tenantID, ok, err := v.store.TenantForSSOLogin(ctx, zitadelOrgID)
+	if err != nil {
+		v.logger.Warn("sso org lookup failed", "org", zitadelOrgID, "error", err)
+		return
+	}
+	if !ok {
+		return
+	}
+	added, err := v.store.AddTenantMemberIfAbsent(ctx, tenantID, userID)
+	if err != nil {
+		v.logger.Warn("sso join failed", "tenant", tenantID, "user", userID, "error", err)
+		return
+	}
+	if added {
+		v.logger.Info("joined org through SSO", "tenant", tenantID, "user", userID)
+	}
 }

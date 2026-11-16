@@ -140,7 +140,9 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// service. Idle unless both the issuer and a management token are configured;
 	// when absent, orgs are Quill-only and invites use shareable accept links.
 	if cfg.Zitadel.Issuer != "" && cfg.Zitadel.ManagementToken != "" {
-		platformSvc.WithOrgProvisioner(zitadel.NewClient(cfg.Zitadel.Issuer, cfg.Zitadel.ManagementToken))
+		zc := zitadel.NewClient(cfg.Zitadel.Issuer, cfg.Zitadel.ManagementToken)
+		platformSvc.WithOrgProvisioner(zc)
+		platformSvc.WithSSO(zc)
 	}
 	// Creem merchant-of-record integration for plan upgrades. With empty
 	// credentials (the default) upgrade requests answer 501 not_configured
@@ -548,6 +550,7 @@ func (s *Server) setupRoutes() {
 				r.Get("/sso", s.handleGetOrgSSO)
 				r.Put("/sso", s.handleSetOrgSSO)
 				r.Delete("/sso", s.handleDeleteOrgSSO)
+				r.Post("/sso/verify-domain", s.handleVerifyOrgSSODomain)
 				r.Get("/scim/tokens", s.handleListSCIMTokens)
 				r.Post("/scim/tokens", s.handleCreateSCIMToken)
 				r.Delete("/scim/tokens/{id}", s.handleRevokeSCIMToken)

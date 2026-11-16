@@ -15,6 +15,7 @@ import {
   setGroupProjectRole,
   setOrgMemberRole,
   setOrgSSO,
+  verifyOrgSSODomain,
   type SetSSOInput,
 } from "../../lib/api";
 import { getToken } from "../../lib/session";
@@ -161,6 +162,15 @@ export async function revokeSCIMTokenAction(org: string, id: string): Promise<Ac
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
   const res = await revokeOrgSCIMToken(token, org, id);
   if (!res.ok) return res;
+  revalidate(org);
+  return { ok: true };
+}
+
+export async function verifySSODomainAction(org: string): Promise<ActionResult> {
+  const token = await getToken();
+  if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
+  const res = await verifyOrgSSODomain(token, org);
+  if (!res.ok) return { ok: false, error: res.error };
   revalidate(org);
   return { ok: true };
 }

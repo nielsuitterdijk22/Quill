@@ -703,3 +703,34 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   starting with a reserved word, e.g. `apiary`). The backend reserves `orgs`, `invite`,
   `onboarding` as slugs/usernames so no namespace can claim them. Live test
   `TestOrgSettingsPageRenders` failed against production before the fix.
+
+## 2026-11-16 — Org single sign-on through per-org Zitadel identity orgs
+
+- Saving an org's SSO (OIDC issuer + client, or a SAML metadata URL that Quill fetches and
+  passes on as XML) creates a dedicated Zitadel org "Quill SSO · {slug}" with the customer IdP
+  (auto-create, auto-update), an SSO-only login policy (no passwords, no self-registration) and
+  an org-scoped username policy. The last is required: on our instance usernames are unique
+  instance-wide, and an SSO account whose username (usually the email) already exists anywhere
+  stops on Zitadel's "User already exists" link-or-register page instead of being created.
+  The live test found this; the test now fails if that page ever appears.
+- Domain routing (Zitadel domain discovery) is gated on Quill's own DNS TXT check
+  (`_quill-verification.{domain}` = `quill-verification={token}`): this Zitadel does not validate
+  org domains (verified live: an added domain is "verified" instantly), so without the check any
+  org could capture another company's or gmail.com's logins. Public mailbox domains are refused,
+  and a verified domain belongs to exactly one org (partial unique index). Disabling SSO,
+  changing the domain or removing SSO stops routing first, before anything else can fail.
+- Sign-ins whose Zitadel account lives in an org's identity org join that Quill org (roles never
+  changed). A first SSO sign-in claims an existing Quill account with the same verified email
+  only when the email is on the org's verified domain (the company proved it owns it);
+  otherwise accounts are never linked by email.
+- Removing SSO keeps the link to the identity org: its accounts belong to the org, and setting
+  SSO up again must reuse it instead of orphaning them. Purge-e2e deletes test orgs' identity
+  orgs (the CLI needs ZITADEL_ISSUER + ZITADEL_MANAGEMENT_TOKEN for that).
+- Failures while applying are stored (`last_error`) and shown in the UI; saving again retries
+  and converges on the same identity org.
+- Live coverage: `TestSSOLogin` uses our Zitadel as the "company IdP" (fixture OIDC app + user,
+  Secret Manager `app-e2e-sso-upstream`) and an org-scoped authorize, since a test can't publish
+  the DNS record domain discovery needs. Domain discovery itself is covered by unit tests only.
+- Rejected: Zitadel's per-org domain validation (instance setting off, and turning it on changes
+  every org); one shared org for all SSO users (login policies and IdPs are per org); Zitadel
+  v2 SAML metadata-URL fetching (v2.65 needs the XML itself).

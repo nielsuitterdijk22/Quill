@@ -111,6 +111,18 @@ export type SSOConfig = {
   enabled: boolean;
   hasSecret: boolean;
   updatedAt: string;
+  domainVerified?: boolean;
+  verifyRecordName?: string;
+  verifyRecordValue?: string;
+  active?: boolean; // the IdP is live
+  routing?: boolean; // the email domain sends sign-ins to it
+  redirectUri?: string; // OIDC: register at the IdP
+  samlEntityId?: string;
+  samlAcsUrl?: string;
+  identityOrgId?: string;
+  lastError?: string;
+  available?: boolean;
+  planAllowsSso?: boolean;
 };
 
 export type SetSSOInput = {
@@ -132,6 +144,10 @@ export function setOrgSSO(
   input: SetSSOInput,
 ): Promise<DataResult<SSOConfig>> {
   return sendData<SSOConfig>(token, "PUT", `/api/v1/orgs/${org}/sso`, input);
+}
+
+export function verifyOrgSSODomain(token: string, org: string): Promise<DataResult<SSOConfig>> {
+  return postData<SSOConfig>(token, `/api/v1/orgs/${org}/sso/verify-domain`, {});
 }
 
 export function deleteOrgSSO(token: string, org: string): Promise<SimpleResult> {

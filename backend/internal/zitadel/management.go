@@ -119,7 +119,7 @@ func (c *Client) do(ctx context.Context, method, path, orgID string, body, out a
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("zitadel %s %s returned %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(snippet)))
+		return classify(resp.StatusCode, fmt.Errorf("zitadel %s %s returned %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(snippet))))
 	}
 	if out != nil {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {

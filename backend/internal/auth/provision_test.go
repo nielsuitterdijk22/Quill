@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/store"
@@ -166,5 +167,85 @@ func TestProvisionedAccountLinksOnFirstSignIn(t *testing.T) {
 	}
 	if _, err := st.GetAuthIdentity(ctx, db.GetAuthIdentityParams{Provider: ProviderZitadel, Subject: "sub-attacker"}); err == nil {
 		t.Fatal("attacker identity recorded")
+	}
+}
+
+// TestSSOSignInJoinsOrgAndLinksVerifiedDomain: a sign-in whose Zitadel account
+// lives in an org's SSO identity org joins that Quill org (roles untouched),
+// and a first SSO sign-in claims the existing account with the same email —
+// only on the org's verified domain, never for other domains or when SSO is
+// off.
+func TestSSOSignInJoinsOrgAndLinksVerifiedDomain(t *testing.T) {
+	st := provisionTestStore(t)
+	v := NewZitadelVerifier(config.ZitadelConfig{Issuer: "https://auth.example.test"}, st, slog.Default())
+	ctx := context.Background()
+
+	tenant, err := st.CreateOrgTenant(ctx, db.CreateOrgTenantParams{Slug: "ssoco", Name: "SSO Co"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertTenantSSO(ctx, db.UpsertTenantSSOParams{TenantID: tenant.ID, Protocol: "oidc", Issuer: "https://login.ssoco.test", ClientID: "c", EmailDomain: "ssoco.test", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := st.SetSSOState(ctx, tenant.ID, store.SSOState{ZitadelOrgID: "zorg-ssoco", ZitadelIdPID: "idp", DomainVerifyToken: "tok", DomainVerifiedAt: &now, RoutedDomain: "ssoco.test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// An existing account (signed up with a password before SSO).
+	existing, err := v.provisionUser(ctx, "sub-password", zitadelUserInfo{Email: "dana@ssoco.test", EmailVerified: true, PreferredUsername: "dana"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Through a non-SSO org (or unverified email / other domain): no link.
+	for _, c := range []struct {
+		org  string
+		info zitadelUserInfo
+	}{
+		{"zorg-other", zitadelUserInfo{Email: "dana@ssoco.test", EmailVerified: true}},
+		{"zorg-ssoco", zitadelUserInfo{Email: "dana@ssoco.test", EmailVerified: false}},
+		{"zorg-ssoco", zitadelUserInfo{Email: "dana@elsewhere.test", EmailVerified: true}},
+	} {
+		if _, ok, err := v.linkSSOAccount(ctx, "sub-sso", c.org, c.info); err != nil || ok {
+			t.Fatalf("link %+v: ok=%v err=%v", c, ok, err)
+		}
+	}
+
+	// The company IdP on the verified domain claims the account.
+	id, ok, err := v.linkSSOAccount(ctx, "sub-sso", "zorg-ssoco", zitadelUserInfo{Email: "Dana@SSOCo.test", EmailVerified: true})
+	if err != nil || !ok || id.UserID != existing.UserID || id.TenantID != existing.TenantID {
+		t.Fatalf("sso link: %+v ok=%v err=%v (want user %s)", id, ok, err, existing.UserID)
+	}
+	idents, _ := st.ListAuthIdentitiesForUser(ctx, existing.UserID)
+	if len(idents) != 2 {
+		t.Fatalf("identities = %d, want password + sso", len(idents))
+	}
+
+	// Joining: SSO org sign-in adds membership; existing roles stay.
+	v.joinSSOOrg(ctx, existing.UserID, "zorg-ssoco")
+	m, err := st.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenant.ID, UserID: existing.UserID})
+	if err != nil || m.Role != "member" {
+		t.Fatalf("membership after sso sign-in: %+v err=%v", m, err)
+	}
+	if err := st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: tenant.ID, UserID: existing.UserID, Role: "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	v.joinSSOOrg(ctx, existing.UserID, "zorg-ssoco")
+	if m, _ := st.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenant.ID, UserID: existing.UserID}); m.Role != "admin" {
+		t.Fatalf("role changed to %q", m.Role)
+	}
+	// Other orgs' sign-ins join nothing; disabled SSO joins nothing.
+	other, _ := v.provisionUser(ctx, "sub-other", zitadelUserInfo{Email: "eve@other.test", EmailVerified: true, PreferredUsername: "eve"})
+	v.joinSSOOrg(ctx, other.UserID, "zorg-other")
+	if _, err := st.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenant.ID, UserID: other.UserID}); err == nil {
+		t.Fatal("non-SSO sign-in joined the org")
+	}
+	if _, err := st.UpsertTenantSSO(ctx, db.UpsertTenantSSOParams{TenantID: tenant.ID, Protocol: "oidc", Issuer: "https://login.ssoco.test", ClientID: "c", EmailDomain: "ssoco.test", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	v.joinSSOOrg(ctx, other.UserID, "zorg-ssoco")
+	if _, err := st.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenant.ID, UserID: other.UserID}); err == nil {
+		t.Fatal("disabled SSO still joins")
 	}
 }

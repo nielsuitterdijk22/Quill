@@ -19,6 +19,7 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/objectstore"
 	"github.com/nielsuitterdijk22/quill/internal/platform"
 	"github.com/nielsuitterdijk22/quill/internal/store"
+	"github.com/nielsuitterdijk22/quill/internal/zitadel"
 )
 
 func main() {
@@ -160,6 +161,10 @@ func runPurgeE2e(args []string) error {
 			AccessKey: cfg.GitEngine.S3AccessKey,
 			SecretKey: cfg.GitEngine.S3SecretKey,
 		})))
+	}
+	if cfg.Zitadel.Issuer != "" && cfg.Zitadel.ManagementToken != "" {
+		// Test orgs' SSO identity orgs live in Zitadel: delete them too.
+		svc = svc.WithSSO(zitadel.NewClient(cfg.Zitadel.Issuer, cfg.Zitadel.ManagementToken))
 	}
 	report, err := svc.PurgeE2eDebris(ctx)
 	if err != nil {

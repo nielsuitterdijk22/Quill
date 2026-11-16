@@ -254,7 +254,8 @@ func TestOrgSettingsPageRenders(t *testing.T) {
 	}
 	c := webSession(t)
 	st, _, body := get(t, c, appURL+"/orgs/"+org+"/settings", nil)
-	page := string(body)
+	// React separates adjacent text nodes with <!-- --> in server HTML.
+	page := strings.ReplaceAll(string(body), "<!-- -->", "")
 	if st != 200 || strings.Contains(page, "<title>404") || !strings.Contains(page, "E2E Org Page settings") || !strings.Contains(page, "Provisioning (SCIM)") {
 		t.Fatalf("org settings page: %d (title 404=%v, heading=%v, scim=%v)", st,
 			strings.Contains(page, "<title>404"), strings.Contains(page, "E2E Org Page settings"), strings.Contains(page, "Provisioning (SCIM)"))

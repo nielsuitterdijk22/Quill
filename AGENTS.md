@@ -181,7 +181,9 @@ API, git clone/push, PRs, pipelines. Run:
 Skipped unless `QUILL_LIVE_TEST=1`, so `./check`/CI never run them. **After each live round, clean up the test debris:**
 `QUILL_DATABASE_URL=<sdb dsn> FORGEJO_BASE_URL=https://git.black-tulip.nl FORGEJO_ADMIN_TOKEN=<token> ZITADEL_ISSUER=https://auth.black-tulip.nl QUILL_SECRET_ENCRYPTION_KEY=<key> QUILL_ENV=production go run ./cmd/quill admin purge-e2e --confirm`
 (re-run until counts are zero; it deletes `e2e-`-prefixed orgs/projects/repos only —
-never users, personal projects, or real content).
+never users, personal projects, or real content). Add `ZITADEL_MANAGEMENT_TOKEN` (Secret Manager
+`app-zitadel-management-token`) so test orgs' SSO identity orgs in Zitadel are deleted too.
+SSO live test: `QUILL_E2E_SSO_UPSTREAM` = Secret Manager `app-e2e-sso-upstream` (JSON fixture).
 
 **Agent credentials recipe** (agents can and should run the live suite + signed-in
 web-session verification themselves):
