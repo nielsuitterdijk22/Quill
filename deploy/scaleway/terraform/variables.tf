@@ -312,3 +312,9 @@ variable "git_host_on_api" {
   type        = bool
   default     = true
 }
+
+variable "rdb_node_type" {
+  description = "Managed PostgreSQL node type (db-dev-s = 2 vCPU / 2 GB / local SSD)."
+  type        = string
+  default     = "db-dev-s"
+}

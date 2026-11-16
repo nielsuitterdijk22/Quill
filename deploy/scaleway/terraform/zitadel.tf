@@ -62,10 +62,9 @@ resource "scaleway_container" "zitadel" {
     # Safe as a constant: max_scale=1 means only one instance ever exists.
     POD_IP = "10.0.0.1"
 
-    ZITADEL_DATABASE_POSTGRES_HOST = local.sdb_host["zitadel"]
-    ZITADEL_DATABASE_POSTGRES_PORT = local.sdb_port["zitadel"]
-    # The SDB IAM user is both the app and the admin (same credentials model
-    # as the quill SDB; no per-role users on SDBs).
+    ZITADEL_DATABASE_POSTGRES_HOST = local.db_host
+    ZITADEL_DATABASE_POSTGRES_PORT = local.db_port
+    # The instance's admin user is both the app and the admin user.
     ZITADEL_DATABASE_POSTGRES_DATABASE       = "zitadel"
     ZITADEL_DATABASE_POSTGRES_USER_USERNAME  = local.db_user
     ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE  = "require"
@@ -128,8 +127,8 @@ resource "scaleway_job_definition" "zitadel_setup" {
   # when secret-references work (track in DECISIONS.md).
   env = {
     ZITADEL_MASTERKEY                        = random_password.zitadel_masterkey.result
-    ZITADEL_DATABASE_POSTGRES_HOST           = local.sdb_host["zitadel"]
-    ZITADEL_DATABASE_POSTGRES_PORT           = local.sdb_port["zitadel"]
+    ZITADEL_DATABASE_POSTGRES_HOST           = local.db_host
+    ZITADEL_DATABASE_POSTGRES_PORT           = local.db_port
     ZITADEL_DATABASE_POSTGRES_DATABASE       = "zitadel"
     ZITADEL_DATABASE_POSTGRES_USER_USERNAME  = local.db_user
     ZITADEL_DATABASE_POSTGRES_USER_PASSWORD  = local.db_password

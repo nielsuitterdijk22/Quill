@@ -19,26 +19,18 @@ locals {
   # points it at the api container, the api host's /git mount until then.
   git_public_url = var.git_host_on_api ? "https://${local.git_host}" : "https://${local.api_host}/git"
 
-  # Serverless SQL databases: quill (platform metadata) + zitadel (C1: the
-  # zitadel SERVERLESS CONTAINER drops its connection pool when scaled to
-  # zero, so its SDB scales to zero too — unlike Forgejo, whose always-on pool
-  # kept the old "forgejo" SDB at ~0.22 vCPU 24/7). Forgejo's database still
-  # runs on the VM in the forgejo-db container.
+  # Databases on the managed instance (managed_db.tf): quill (platform metadata)
+  # and zitadel. (They ran on Serverless SQL until 2026-11-16 — see managed_db.tf.)
   sdb_names = ["quill", "zitadel"]
 
-  # SDB endpoint is a full postgres:// URI (postgres://host:port/db?sslmode=require).
-  sdb_addr = { for n, db in scaleway_sdb_sql_database.dbs : n => split("/", db.endpoint)[2] } # host:port
-  sdb_host = { for n, a in local.sdb_addr : n => split(":", a)[0] }
-  sdb_port = { for n, a in local.sdb_addr : n => split(":", a)[1] }
-
-  # SDB credentials: IAM user id (username) + one of its API key secrets
-  # (password), supplied via var.sdb_user / var.sdb_password.
-  db_user     = var.sdb_user
-  db_password = var.sdb_password
+  db_host     = scaleway_rdb_instance.main.load_balancer[0].ip
+  db_port     = scaleway_rdb_instance.main.load_balancer[0].port
+  db_user     = scaleway_rdb_instance.main.user_name
+  db_password = random_password.rdb.result
 
   db_url = {
     for n in local.sdb_names :
-    n => "postgresql://${local.db_user}:${local.db_password}@${local.sdb_host[n]}:${local.sdb_port[n]}/${n}?sslmode=require"
+    n => "postgresql://${local.db_user}:${local.db_password}@${local.db_host}:${local.db_port}/${n}?sslmode=require"
   }
 
   registry = scaleway_registry_namespace.quill.endpoint

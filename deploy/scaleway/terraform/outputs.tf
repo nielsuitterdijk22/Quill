@@ -7,7 +7,13 @@ output "region" {
   value = var.region
 }
 
-# ---- serverless DBs ----
+# ---- databases ----
+output "rdb_endpoint" {
+  description = "Managed PostgreSQL public endpoint (host:port); user is the instance admin (see db_urls)."
+  value       = "${scaleway_rdb_instance.main.load_balancer[0].ip}:${scaleway_rdb_instance.main.load_balancer[0].port}"
+}
+
+# Legacy serverless databases, kept (idle, storage only) until the owner approves deleting them.
 output "sdb_endpoints" {
   description = "Serverless SQL database endpoints (host[:port]) per database."
   value       = { for n, db in scaleway_sdb_sql_database.dbs : n => db.endpoint }

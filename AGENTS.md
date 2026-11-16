@@ -161,14 +161,15 @@ rules (tenant isolation, no credential leaks) remain hard constraints regardless
 ### Debugging production 500s
 
 Container logs are not reachable via the scw CLI. Fastest path: run the api **locally**
-against the live SDB + live Forgejo — env recipe (never commit):
-`QUILL_DATABASE_URL` from `terraform output sdb_endpoints` + `sdb_user`/`sdb_password`
+against the live database + live Forgejo — env recipe (never commit):
+`QUILL_DATABASE_URL` from `terraform output -json db_urls` (key `quill`; the managed instance
+`quill-pg`, since 2026-11-16 — it was Serverless SQL before; `terraform output rdb_endpoint`)
 from tfvars, `FORGEJO_BASE_URL=https://git.black-tulip.nl`, `FORGEJO_ADMIN_TOKEN` from
 Secret Manager (`/quill/app/app-forgejo-admin-token`), `ZITADEL_ISSUER=https://auth.black-tulip.nl`,
 `QUILL_ENV=production`, plus any `QUILL_JWT_SECRET`/`QUILL_SECRET_ENCRYPTION_KEY`.
 Then point tests at `QUILL_E2E_API_URL=http://localhost:18080` and read real errors in
 the local log.
-**Careful: a local build applies its migrations to the live SDB at startup.** If it carries a
+**Careful: a local build applies its migrations to the live database at startup.** If it carries a
 migration production doesn't have yet, deployed api instances used to crash on every cold start
 ("no migration found for version N") — a ~15-minute outage on 2026-11-16. Since then the api
 tolerates a schema that is ahead, but still: only run a local build with new migrations against
@@ -186,7 +187,7 @@ login page inline with 200 or redirect to it — the helper accepts both), then 
 API, git clone/push, PRs, pipelines. Run:
 `QUILL_LIVE_TEST=1 QUILL_E2E_CLIENT_ID=<zitadel client id> QUILL_E2E_PROJECT_ID=<project id> QUILL_E2E_USER=<email> QUILL_E2E_PASSWORD=<pw> go test ./tests/live/ -v`
 Skipped unless `QUILL_LIVE_TEST=1`, so `./check`/CI never run them. **After each live round, clean up the test debris:**
-`QUILL_DATABASE_URL=<sdb dsn> FORGEJO_BASE_URL=https://git.black-tulip.nl FORGEJO_ADMIN_TOKEN=<token> ZITADEL_ISSUER=https://auth.black-tulip.nl QUILL_SECRET_ENCRYPTION_KEY=<key> QUILL_ENV=production go run ./cmd/quill admin purge-e2e --confirm`
+`QUILL_DATABASE_URL=<db dsn> FORGEJO_BASE_URL=https://git.black-tulip.nl FORGEJO_ADMIN_TOKEN=<token> ZITADEL_ISSUER=https://auth.black-tulip.nl QUILL_SECRET_ENCRYPTION_KEY=<key> QUILL_ENV=production go run ./cmd/quill admin purge-e2e --confirm`
 (re-run until counts are zero; it deletes `e2e-`-prefixed orgs/projects/repos only —
 never users, personal projects, or real content). Add `ZITADEL_MANAGEMENT_TOKEN` (Secret Manager
 `app-zitadel-management-token`) so test orgs' SSO identity orgs in Zitadel are deleted too.
@@ -220,9 +221,11 @@ web-session verification themselves):
 
 ### Cost watch
 
-Current drivers (billing via `scw billing consumption list`): DEV1-S VM (fixed, required
-for git/CI), `quill` Serverless SQL DB CPU (billed only while the api container is scaled
-up — api has `min_scale=0`), containers mostly inside the free tier. The stale pending
+Current drivers (billing via `scw billing consumption list`): the managed PostgreSQL `quill-pg`
+(db-dev-s, flat ≈€11.4/month since 2026-11-16 — it replaced Serverless SQL databases that billed
+≈€50/month at the November rate — most likely because Zitadel's background queries kept them awake, not verified; heavy agent testing contributed), Serverless Containers (≈€15 CPU + €3.4 memory month-to-date on 2026-11-16 — the next biggest
+line; the cause is not yet investigated), and the DEV1-S CI worker instances (billed per run).
+The stale pending
 Scaleway zone `quill.black-tulip.nl` costs ~€0.36/mo and cannot be deleted via API
 (root-zone protection) — inert. Don't leave cron watch-loops running (they kept the api
 container hot and burned SDB CPU); cancel them (`cron list` / `cron cancel` in the agent
