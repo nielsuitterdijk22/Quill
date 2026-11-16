@@ -66,6 +66,8 @@ type TriggerInput struct {
 	// secrets). Empty means no environment — the run gets project + repo secrets
 	// only. Webhook-triggered runs never set it.
 	EnvironmentSlug string
+	// PullRequest is set for pull_request runs (event payload + base/head refs).
+	PullRequest *pipeline.PullRequestInfo
 }
 
 // ---- listing ---------------------------------------------------------------
@@ -251,6 +253,12 @@ func (s *Service) TriggerWebhook(ctx context.Context, repo db.Repository, owner,
 // triggerEvent runs every workflow in src whose `on:` listens for event at
 // ref — the shared body of the Forgejo webhook and the engine's post-receive.
 func (s *Service) triggerEvent(ctx context.Context, repo db.Repository, src pipelineSource, event, ref string) ([]db.PipelineRun, error) {
+	return s.triggerEventFor(ctx, repo, src, event, ref, nil)
+}
+
+// triggerEventFor is triggerEvent with the pull request a pull_request run
+// belongs to (nil for every other event).
+func (s *Service) triggerEventFor(ctx context.Context, repo db.Repository, src pipelineSource, event, ref string, pr *pipeline.PullRequestInfo) ([]db.PipelineRun, error) {
 	files, err := s.listWorkflows(ctx, src, ref)
 	if err != nil {
 		return nil, err
@@ -270,6 +278,12 @@ func (s *Service) triggerEvent(ctx context.Context, repo db.Repository, src pipe
 		if !match {
 			continue
 		}
+		// pull_request: `types` and the base-branch filters.
+		if event == "pull_request" && pr != nil {
+			if ok, err := pipeline.MatchesPullRequest(yaml, pr.BaseRef, pr.Action); err != nil || !ok {
+				continue
+			}
+		}
 		// Push filters (branches / tags, + their -ignore forms).
 		if event == "push" {
 			if ok, err := pipeline.MatchesPushRef(yaml, ref); err != nil || !ok {
@@ -280,6 +294,7 @@ func (s *Service) triggerEvent(ctx context.Context, repo db.Repository, src pipe
 			WorkflowPath: f.Path,
 			Ref:          ref,
 			Event:        event,
+			PullRequest:  pr,
 		}, uuid.NullUUID{})
 		if err != nil {
 			s.logger.Warn("event workflow run failed", "repo", src.label(), "workflow", f.Path, "error", err)
@@ -391,6 +406,7 @@ func (s *Service) runWorkflow(ctx context.Context, repo db.Repository, src pipel
 		Token:           cloneAuth.Token,
 		RepoFullName:    src.fullName(),
 		Secrets:         secrets,
+		PullRequest:     in.PullRequest,
 	})
 
 	return run, nil

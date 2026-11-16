@@ -5456,3 +5456,8 @@ button.sbom-chip:hover {
   color: var(--red);
   border-color: color-mix(in oklab, var(--red) 40%, transparent);
 }
+.ob-trial {
+  text-align: left;
+  line-height: 1.55;
+  margin: 0 0 16px;
+}

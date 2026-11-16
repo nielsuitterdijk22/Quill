@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/nielsuitterdijk22/quill/internal/pipeline"
+	"github.com/nielsuitterdijk22/quill/internal/store"
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
@@ -73,8 +76,47 @@ func (s *Service) HandleEnginePush(ctx context.Context, repoID uuid.UUID, update
 			continue
 		}
 		runs = append(runs, rs...)
+
+		// A push to the source branch of open pull requests updates them:
+		// run the workflows that listen for pull_request (synchronize).
+		if branch, ok := strings.CutPrefix(u.Ref, "refs/heads/"); ok {
+			prs, err := s.store.ListOpenPullsByHeadRef(ctx, repo.ID, branch)
+			if err != nil {
+				s.logger.Warn("list open pulls for push failed", "repo", src.label(), "branch", branch, "error", err)
+				continue
+			}
+			for _, pr := range prs {
+				rs, err := s.triggerEventFor(ctx, repo, src, "pull_request", u.Ref, &pipeline.PullRequestInfo{
+					Number: pr.Number, BaseRef: pr.BaseRef, HeadRef: pr.HeadRef, Action: "synchronize",
+				})
+				if err != nil {
+					s.logger.Warn("engine pull_request trigger failed", "repo", src.label(), "pull", pr.Number, "error", err)
+					continue
+				}
+				runs = append(runs, rs...)
+			}
+		}
 	}
 	return runs, nil
+}
+
+// triggerPullRequestRuns starts the pull_request workflows for a pull request
+// that was just opened or reopened. Best-effort: a failure is logged and never
+// fails the pull request operation. Like a push-triggered run it builds the
+// head commit.
+func (s *Service) triggerPullRequestRuns(ctx context.Context, repo db.Repository, pr store.PullRequest, action string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	src, err := s.pipelineSourceFor(ctx, repo)
+	if err != nil {
+		s.logger.Warn("pull_request trigger: pipeline source failed", "repo", repo.Slug, "pull", pr.Number, "error", err)
+		return
+	}
+	if _, err := s.triggerEventFor(ctx, repo, src, "pull_request", "refs/heads/"+pr.HeadRef, &pipeline.PullRequestInfo{
+		Number: pr.Number, BaseRef: pr.BaseRef, HeadRef: pr.HeadRef, Action: action,
+	}); err != nil {
+		s.logger.Warn("pull_request trigger failed", "repo", src.label(), "pull", pr.Number, "error", err)
+	}
 }
 
 // withdrawRefRuns cancels the waiting push runs on ref (logged, best-effort).

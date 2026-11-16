@@ -101,6 +101,10 @@ export default async function PullDetailPage({
   const allReviews = reviewsRes.ok ? reviewsRes.data.reviews : [];
   const gate = reviewsRes.ok ? reviewsRes.data.gate : NO_GATE;
   const commits = commitsRes.ok ? commitsRes.data.commits : [];
+  // A failed request must not read as "0 commits" (a transient api error once
+  // showed an empty Commits tab for a PR with two): show the count only when
+  // it was actually loaded, and say so in the tab.
+  const commitsFailed = !commitsRes.ok;
   const lineComments = lineCommentsRes.ok ? lineCommentsRes.data.comments : [];
   // Runs for the PR's head commit — used for the Checks section in the conversation.
   const headRuns: PipelineRun[] = runsRes.ok
@@ -137,9 +141,9 @@ export default async function PullDetailPage({
   const base = `${repoBase(params.project, params.repo)}/pulls/${number}`;
   const tabHref = (t: Tab) =>
     t === "conversation" ? base : `${base}?tab=${t}`;
-  const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: "conversation", label: "Conversation", count: comments.length },
-    { key: "commits", label: "Commits", count: commits.length },
+  const tabs: { key: Tab; label: string; count?: number }[] = [
+    { key: "conversation", label: "Conversation", count: commentsRes.ok ? comments.length : undefined },
+    { key: "commits", label: "Commits", count: commitsFailed ? undefined : commits.length },
     { key: "files", label: "Files changed", count: pull.changedFiles },
   ];
 
@@ -217,7 +221,7 @@ export default async function PullDetailPage({
             href={tabHref(t.key)}
             className={t.key === tab ? "active" : ""}
           >
-            {t.label} <span className="tag">{t.count}</span>
+            {t.label} {t.count !== undefined && <span className="tag">{t.count}</span>}
           </Link>
         ))}
       </nav>
@@ -393,7 +397,11 @@ export default async function PullDetailPage({
 
       {tab === "commits" && (
         <div className="panel">
-          {commits.length === 0 ? (
+          {commitsFailed ? (
+            <div className="empty">
+              Couldn&rsquo;t load the commits just now. <a href="">Reload</a> to try again.
+            </div>
+          ) : commits.length === 0 ? (
             <div className="empty">No commits in this pull request.</div>
           ) : (
             commits.map((c) => (

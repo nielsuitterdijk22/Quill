@@ -168,3 +168,56 @@ func globMatch(pattern, name string) bool {
 	globCache.Store(pattern, re)
 	return re.MatchString(name)
 }
+
+// pullRequestDefaultTypes are the activity types a pull_request workflow
+// reacts to when it lists none (GitHub semantics).
+var pullRequestDefaultTypes = []string{"opened", "synchronize", "reopened"}
+
+// MatchesPullRequest reports whether a workflow's pull_request trigger fires
+// for a pull request targeting baseBranch with the given activity (action:
+// "opened", "synchronize", "reopened"). It applies `types` (default: opened,
+// synchronize, reopened) and the `branches` / `branches-ignore` filters,
+// which — as on GitHub — match the pull request's BASE branch. `paths`
+// filters are not evaluated.
+func MatchesPullRequest(workflowYAML, baseBranch, action string) (bool, error) {
+	var wf struct {
+		On yaml.Node `yaml:"on"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowYAML), &wf); err != nil {
+		return false, err
+	}
+	pr, ok := eventNode(&wf.On, "pull_request")
+	if !ok {
+		return false, nil
+	}
+	types := pullRequestDefaultTypes
+	filters := map[string][]string{}
+	if pr != nil && pr.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(pr.Content); i += 2 {
+			k, v := pr.Content[i].Value, pr.Content[i+1]
+			switch k {
+			case "types":
+				types = stringList(v)
+			case "branches", "branches-ignore":
+				filters[k] = stringList(v)
+			}
+		}
+	}
+	allowed := false
+	for _, t := range types {
+		if t == action {
+			allowed = true
+		}
+	}
+	if !allowed {
+		return false, nil
+	}
+	base := strings.TrimPrefix(baseBranch, "refs/heads/")
+	if _, has := filters["branches"]; has {
+		return filterMatch(filters["branches"], base), nil
+	}
+	if _, has := filters["branches-ignore"]; has {
+		return !filterMatch(filters["branches-ignore"], base), nil
+	}
+	return true, nil
+}

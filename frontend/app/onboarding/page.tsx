@@ -69,6 +69,18 @@ function IconSpinner() {
   );
 }
 
+// TrialNotice tells the creator of a new organization what they just started:
+// organizations are paid, with a 14-day Team trial first.
+function TrialNotice({ org }: { org: string | null }) {
+  return (
+    <div className="banner ob-trial">
+      <b>{org ? `${org} is on a 14-day Team trial.` : "Your organization is on a 14-day Team trial."}</b> Everything is
+      unlocked while it runs. Subscribe any time under Settings → Billing (€5 per seat per month); when the trial ends,
+      creating repositories, running pipelines and inviting members pause until you do. Existing code stays readable.
+    </div>
+  );
+}
+
 export default function OnboardingPage() {
   const searchParams = useSearchParams();
   const { getToken } = useQuillAuth();
@@ -561,6 +573,7 @@ export default function OnboardingPage() {
             <p className="ob-sub">Import from GitHub — or skip and create repos manually.</p>
           </div>
 
+          {accountType === "org" && <TrialNotice org={projectSlug ?? requestedProject} />}
           {error && <div className="ob-error">{error}</div>}
           {githubError && (
             <div className="ob-error">
@@ -688,6 +701,7 @@ export default function OnboardingPage() {
             <IconCheck />
           </div>
           <h1 className="ob-title">You&apos;re all set!</h1>
+          {accountType === "org" && <TrialNotice org={projectSlug ?? requestedProject} />}
           {succeeded.length > 0 && (
             <p className="ob-sub">
               Successfully imported {succeeded.length} repo{succeeded.length !== 1 ? "s" : ""}.

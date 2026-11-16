@@ -379,3 +379,25 @@ func (s *Store) SetPullState(ctx context.Context, pullID uuid.UUID, state string
 		WHERE id = $1 AND NOT merged
 		RETURNING `+pullColumns, pullID, state))
 }
+
+// ListOpenPullsByHeadRef returns the open pull requests of a repo whose source
+// branch is headRef (a branch name, no refs/heads/ prefix): the pulls a push
+// to that branch updates.
+func (s *Store) ListOpenPullsByHeadRef(ctx context.Context, repoID uuid.UUID, headRef string) ([]PullRequest, error) {
+	rows, err := s.pool.Query(ctx,
+		"SELECT "+pullColumns+" FROM pull_requests WHERE repo_id = $1 AND state = 'open' AND head_ref = $2 ORDER BY number",
+		repoID, headRef)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PullRequest
+	for rows.Next() {
+		pr, err := scanPull(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pr)
+	}
+	return out, rows.Err()
+}

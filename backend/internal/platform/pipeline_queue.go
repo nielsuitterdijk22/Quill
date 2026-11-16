@@ -159,6 +159,7 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 		RepoFullName:    fullName,
 		Secrets:         secrets,
 		Egress:          egressPolicy,
+		PullRequest:     in.PullRequest,
 	}
 	// CI secret scope: an isolated CI instance only ever serves runs that
 	// draw the same secrets (repository + environment).

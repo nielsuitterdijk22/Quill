@@ -279,3 +279,128 @@ func TestEnginePushHonoursBranchFilters(t *testing.T) {
 		t.Fatalf("main push started %d runs, want 2", n)
 	}
 }
+
+// pull_request workflows run on Quill's own git engine (they never did before
+// 2026-11-16: only pushes triggered anything, so a repo with `on:
+// pull_request` CI got no checks on its pull requests): when the PR is opened,
+// and again when its source branch is pushed to. `types` and the base-branch
+// filters apply, and the run builds the head commit with the PR in its event.
+func TestEnginePullRequestTriggersPipelines(t *testing.T) {
+	svc, act, slug, _, repoID, gitURL := enginePipelineRepoURL(t, "engpipe-pr")
+	ctx := context.Background()
+
+	work := t.TempDir()
+	if out, err := exec.Command("git", "clone", "-q", gitURL+"/"+slug+"/app", work).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	wf := func(name, on string) {
+		body := "name: " + name + "\non:\n" + on + "\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo " + name + "\n"
+		if err := os.WriteFile(filepath.Join(work, ".github/workflows/"+name+".yml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wf("pr-any", "  pull_request:")
+	wf("pr-main", "  pull_request:\n    branches: [main]")
+	wf("pr-develop", "  pull_request:\n    branches: [develop]")
+	wf("pr-opened-only", "  pull_request:\n    types: [opened]")
+	browseGit(t, work, "add", "-A")
+	browseGit(t, work, "commit", "-qm", "pr workflows")
+	if out, err := browseGitPush(t, work, "origin", "main"); err != nil {
+		t.Fatalf("push main: %v\n%s", err, out)
+	}
+
+	commit := func(file string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(work, file), []byte(file+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		browseGit(t, work, "add", "-A")
+		browseGit(t, work, "commit", "-qm", file)
+		return browseGit(t, work, "rev-parse", "HEAD")
+	}
+	browseGit(t, work, "checkout", "-q", "-b", "feature")
+	head1 := commit("one.txt")
+	if out, err := browseGitPush(t, work, "origin", "feature"); err != nil {
+		t.Fatalf("push feature: %v\n%s", err, out)
+	}
+
+	// A push before any PR exists starts no pull_request run.
+	if _, err := svc.HandleEnginePush(ctx, repoID, []platform.EngineRefUpdate{{Ref: "refs/heads/feature", New: head1}}); err != nil {
+		t.Fatal(err)
+	}
+	prRuns := func() map[string]int {
+		t.Helper()
+		_, runs, paths, err := svc.ListRuns(ctx, act, slug, "app")
+		if err != nil {
+			t.Fatalf("ListRuns: %v", err)
+		}
+		out := map[string]int{}
+		for _, r := range runs {
+			if r.Event == "pull_request" {
+				out[strings.TrimSuffix(filepath.Base(paths[r.PipelineID]), ".yml")]++
+			}
+		}
+		return out
+	}
+	if got := prRuns(); len(got) != 0 {
+		t.Fatalf("pull_request runs before any PR: %v", got)
+	}
+
+	// Opening the PR runs the matching workflows once each (develop-only is
+	// filtered out by the base branch).
+	if _, _, err := svc.CreatePull(ctx, act, slug, "app", platform.CreatePullInput{Title: "Feature", Head: "feature", Base: "main"}); err != nil {
+		t.Fatalf("CreatePull: %v", err)
+	}
+	want := map[string]int{"pr-any": 1, "pr-main": 1, "pr-opened-only": 1}
+	if got := prRuns(); !mapsEqual(got, want) {
+		t.Fatalf("runs after opening = %v, want %v", got, want)
+	}
+	// The run builds the head commit and carries the PR in its spec.
+	_, runs, paths, _ := svc.ListRuns(ctx, act, slug, "app")
+	var prAny platform.QueuedJob
+	for _, r := range runs {
+		if r.Event == "pull_request" && strings.HasSuffix(paths[r.PipelineID], "pr-any.yml") {
+			if r.CommitSha != head1 || !strings.HasSuffix(r.Ref, "feature") {
+				t.Fatalf("pr run = %+v, want head %s on feature", r, head1)
+			}
+			prAny = *claimRunJob(t, svc, r.ID)
+		}
+	}
+	if pr := prAny.Spec.PullRequest; pr == nil || pr.Number != 1 || pr.BaseRef != "main" || pr.HeadRef != "feature" || pr.Action != "opened" {
+		t.Fatalf("spec pull request = %+v", prAny.Spec.PullRequest)
+	}
+
+	// Pushing to the source branch re-runs them as "synchronize" — except
+	// the opened-only workflow.
+	head2 := commit("two.txt")
+	if out, err := browseGitPush(t, work, "origin", "feature"); err != nil {
+		t.Fatalf("push feature 2: %v\n%s", err, out)
+	}
+	if _, err := svc.HandleEnginePush(ctx, repoID, []platform.EngineRefUpdate{{Ref: "refs/heads/feature", New: head2}}); err != nil {
+		t.Fatal(err)
+	}
+	want = map[string]int{"pr-any": 2, "pr-main": 2, "pr-opened-only": 1}
+	if got := prRuns(); !mapsEqual(got, want) {
+		t.Fatalf("runs after push = %v, want %v", got, want)
+	}
+
+	// A push to the BASE branch updates no PR.
+	if _, err := svc.HandleEnginePush(ctx, repoID, []platform.EngineRefUpdate{{Ref: "refs/heads/main", New: head2}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := prRuns(); !mapsEqual(got, want) {
+		t.Fatalf("runs after a base push = %v, want unchanged %v", got, want)
+	}
+}
+
+func mapsEqual(a, b map[string]int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}

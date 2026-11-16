@@ -778,3 +778,23 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   bare "(no hostname)", so the run log is diagnosable next time.
 - Interim (#25–#28): the owner's personal egress policy was set to allow-all for the length of
   each deploy and restored to the same 54-host allowlist afterwards.
+
+## 2026-11-16 — pull_request workflows on the own engine, PR page and onboarding fixes
+
+- **`on: pull_request` never ran on engine repos** (only pushes triggered anything), so GitHub-style
+  PR CI produced no checks. Now: opening a PR runs the matching workflows ("opened"); a push to
+  the source branch of open PRs runs them again ("synchronize"); a push to the base branch
+  updates nothing. `types` (default opened/synchronize/reopened) and `branches` /
+  `branches-ignore` apply — against the PR's BASE branch, as on GitHub; `paths` filters are not
+  evaluated (as for push). The run builds the HEAD commit (there is no refs/pull/N/merge
+  ref, so github.sha is the head, not a merge commit — a deliberate difference), and the event
+  payload carries `pull_request.{number,head,base}`, `action` and `number`. Same trust model as
+  push runs: engine PRs are same-repo branches, so there are no fork secrets to protect.
+  Not done: `reopened` (reopening a PR doesn't re-run), `closed`/`labeled`, merge-ref checkout.
+- A PR's author is identified by Quill account id for engine PRs (the login there is a display
+  name, and accounts created after the cutover have no Forgejo username, so the old comparison
+  never matched and authors saw a review form for their own PR).
+- A failed Commits request on the PR page no longer shows "0 commits"; the tab drops the count
+  and says it couldn't load. (The transient failure itself was not reproduced.)
+- The org list carries plan/trial/locked, so the sidebar shows "trial · Nd" or "locked" for every
+  member and the onboarding screens tell the creator about the 14-day trial.

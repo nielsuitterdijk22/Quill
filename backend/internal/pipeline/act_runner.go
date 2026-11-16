@@ -393,6 +393,15 @@ func writeEventFile(spec JobSpec) (string, func(), error) {
 		"after":       spec.CommitSHA,
 		"head_commit": map[string]any{"id": spec.CommitSHA},
 	}
+	if pr := spec.PullRequest; pr != nil {
+		payload["action"] = pr.Action
+		payload["number"] = pr.Number
+		payload["pull_request"] = map[string]any{
+			"number": pr.Number,
+			"head":   map[string]any{"ref": pr.HeadRef, "sha": spec.CommitSHA},
+			"base":   map[string]any{"ref": pr.BaseRef},
+		}
+	}
 	if owner, name, ok := splitFullName(spec.RepoFullName); ok {
 		payload["repository"] = map[string]any{
 			"full_name":      spec.RepoFullName,

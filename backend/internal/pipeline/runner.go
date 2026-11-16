@@ -84,6 +84,9 @@ type JobSpec struct {
 	// environment) before dispatch. They travel to the dispatcher in the JobSpec
 	// JSON, so the dispatcher process must be trusted; they must never be logged.
 	Secrets map[string]string
+	// PullRequest is set for pull_request runs: it fills the event payload
+	// (github.event.pull_request, github.base_ref / head_ref).
+	PullRequest *PullRequestInfo `json:",omitempty"`
 	// Egress is the run's resolved network policy (organization policy +
 	// repository extras), enforced by the CI worker. Nil = no restriction
 	// (runs enqueued before egress controls existed).
@@ -91,6 +94,17 @@ type JobSpec struct {
 	// LogSink is called for each raw output line during execution. It is omitted
 	// from JSON serialisation so it survives only in the dispatching process.
 	LogSink LogSink `json:"-"`
+}
+
+// PullRequestInfo describes the pull request a pull_request run belongs to.
+// Quill builds the PR's head commit (there is no merge ref), so
+// github.sha is the head and Number/BaseRef/HeadRef come from here.
+type PullRequestInfo struct {
+	Number  int
+	BaseRef string // branch name, e.g. "main"
+	HeadRef string // branch name, e.g. "feat/x"
+	// Action is "opened", "synchronize" or "reopened".
+	Action string
 }
 
 // LogStreamer is an optional interface that Runner implementations may satisfy

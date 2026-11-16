@@ -348,6 +348,8 @@ func (s *Service) engineCreatePull(ctx context.Context, repo db.Repository, be g
 	if err != nil {
 		return forgejo.PullRequest{}, err
 	}
+	// Workflows that listen for pull_request run for the new pull request.
+	s.triggerPullRequestRuns(ctx, repo, pr, "opened")
 	dto, err := s.enginePullDTO(ctx, repo, be, dir, pr, true)
 	return dto, err
 }
