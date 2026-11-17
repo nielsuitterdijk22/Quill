@@ -98,7 +98,7 @@ export default async function RepoHomePage({
               <CloneButton httpUrl={httpUrl} />
             </div>
             <pre className="setup-cmds">{`git clone ${httpUrl}
-cd ${name}
+cd ${repo.slug}
 # … add files …
 git add .
 git commit -m "Initial commit"
