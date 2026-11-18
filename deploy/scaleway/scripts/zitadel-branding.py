@@ -25,11 +25,12 @@ TOKEN = os.environ["ZITADEL_MANAGEMENT_TOKEN"]
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
-# Quill's dark palette (frontend/app/globals.css).
+# Quill's dark palette, aligned with the landing page (blacktulipweb): near-black
+# base, blue accent. The glows / card come from cloudflare/zitadel-login.css.
 PALETTE = {
-    "primaryColor": "#4f8ff0",   # --accent
-    "backgroundColor": "#121315",  # --bg
-    "fontColor": "#f2f2f3",      # --text
+    "primaryColor": "#4f8ff0",   # accent
+    "backgroundColor": "#0b0b0e",  # landing --bg
+    "fontColor": "#eceae7",      # landing --text-hi
     "warnColor": "#f0506e",      # --red
 }
 
@@ -39,19 +40,10 @@ LOGIN_TEXTS = {
         "title": "Sign in to Quill",
         "description": "Use your Quill account or your company login.",
         "loginNameLabel": "Email or username",
-        "registerButtonText": "Create account",
     },
     "passwordText": {
         "title": "Welcome back",
         "description": "Enter your password to continue.",
-    },
-    "registrationOptionText": {
-        "title": "Create your Quill account",
-        "description": "Choose how you want to register.",
-    },
-    "registrationUserText": {
-        "title": "Create your Quill account",
-        "descriptionOrgRegister": "Tell us a little about you.",
     },
 }
 
@@ -126,8 +118,11 @@ def main() -> int:
     if st == 200:
         pol = {k: v for k, v in cur["policy"].items() if k not in ("details", "isDefault")}
         pol["mfaInitSkipLifetime"] = "315360000s"
+        # Accounts are created by Quill's own sign-up form (handle + email + password);
+        # Zitadel's registration page (first/last name, no username) is turned off.
+        pol["allowRegister"] = False
         st, out = call("PUT", "/admin/v1/policies/login", pol)
-        print("login policy (mfa skip):", "ok" if st == 200 else ("unchanged" if st == 400 else f"{st} {out}"))
+        print("login policy (mfa skip, no self-registration):", "ok" if st == 200 else ("unchanged" if st == 400 else f"{st} {out}"))
     return 0
 
 

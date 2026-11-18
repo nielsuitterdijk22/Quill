@@ -897,3 +897,25 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   `e2e-tester@black-tulip.nl`) become `inactive` after this deploys; give them `beta`/`internal`
   via Admin → Analytics, or the live suite's repo-creating tests will hit the lock.
 
+## 2026-11-18 — Quill-owned sign-up form + Cloudflare skin for Zitadel's login
+
+- Zitadel 2.65's hosted registration needs first/last name and has no username field. Sign-up is now
+  Quill's own page (`/sign-up`: handle + email + password, like GitHub — no names; organizations are
+  created after sign-in). `POST /api/v1/auth/signup` (public, 5/min/IP, same answer for a taken
+  username or email) validates the handle with `ValidHandle`, then creates the account via Zitadel
+  `POST /v2/users/human` with the management token (username = handle, given/family name = handle,
+  Zitadel emails the verification code). Quill derives its username from the Zitadel username at
+  first sign-in, so the handle carries through; onboarding's handle step stays as confirm-or-change.
+  `zitadel-branding.py` now sets `allowRegister=false` on the instance login policy (SSO orgs
+  already had it off), so Zitadel's registration page is unreachable. Sign-in, password reset, MFA
+  offer and SSO stay on Zitadel's pages.
+- Look: palette retuned to the landing page (`#0b0b0e`, blue accent, `#eceae7`), plus
+  `deploy/scaleway/cloudflare/zitadel-login.css` injected by a Cloudflare Worker (HTMLRewriter) on
+  `auth.black-tulip.nl/ui/login/*` — glows, frosted card, restyled inputs/buttons. Needs the owner
+  to deploy the Worker (`build-zitadel-worker.sh` → paste into Cloudflare, add the route); removing
+  it restores Zitadel's default look. Selectors target Zitadel's v1 markup and were written without
+  rendering the pages — adjust after the first look.
+- Rejected: Zitadel "nextgen" (a pre-release rebuild of the identity server, not a login UI); a full
+  custom login on the Session API (rebuilds MFA/reset/SSO on the auth path — revisit later); running
+  Login V2 as an extra container.
+

@@ -1,0 +1,93 @@
+/* Quill skin for Zitadel's hosted login (v1 UI, Zitadel 2.65). Injected into
+   /ui/login/* pages by cloudflare/zitadel-login-worker.js — Zitadel's label policy
+   can only set colours, logo and font, so the glows and card live here.
+   Palette follows the landing page (blacktulipweb): --bg #0B0B0E, blue accent,
+   gold glyph. Selectors target Zitadel's markup (body.lgn-app-background,
+   .lgn-max-width-wrapper, .content-container …); re-check after a Zitadel upgrade. */
+:root {
+  --q-bg: #0b0b0e;
+  --q-surface: #111118;
+  --q-line: #1e1e2c;
+  --q-text: #eceae7;
+  --q-muted: #8a8a9e;
+  --q-accent: #4f8ff0;
+  --q-gold: #e8b95a;
+}
+
+html, body.lgn-app-background {
+  min-height: 100vh;
+  background-color: var(--q-bg) !important;
+  color: var(--q-text);
+}
+body.lgn-app-background {
+  background-image:
+    radial-gradient(55% 60% at 22% 18%, rgba(79, 143, 240, 0.22), transparent 70%),
+    radial-gradient(45% 55% at 82% 12%, rgba(232, 185, 90, 0.14), transparent 70%),
+    radial-gradient(60% 50% at 50% 110%, rgba(79, 143, 240, 0.10), transparent 70%) !important;
+  background-attachment: fixed !important;
+}
+
+/* The card: header (logo) + content in one frosted panel. */
+.lgn-max-width-wrapper {
+  max-width: 420px !important;
+  margin: 8vh auto 0 !important;
+  padding: 36px 34px 30px !important;
+  background: rgba(17, 17, 24, 0.72) !important;
+  border: 1px solid var(--q-line) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.lgn-header { margin-bottom: 8px; }
+.lgn-logo { margin: 0 auto 6px; }
+
+.lgn-head h1 {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  color: var(--q-text) !important;
+}
+.lgn-head p, .lgn-head .lgn-error, p { color: var(--q-muted); }
+
+/* Inputs */
+input[type="text"], input[type="password"], input[type="email"], input[type="number"], select {
+  background: rgba(11, 11, 14, 0.7) !important;
+  border: 1px solid var(--q-line) !important;
+  border-radius: 10px !important;
+  color: var(--q-text) !important;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+input:focus, select:focus {
+  outline: none !important;
+  border-color: var(--q-accent) !important;
+  box-shadow: 0 0 0 3px rgba(79, 143, 240, 0.22) !important;
+}
+label, .lgn-label { color: var(--q-muted) !important; }
+
+/* Buttons: primary = accent, secondary = ghost. */
+button.lgn-raised-button.lgn-primary, .lgn-raised-button.lgn-primary {
+  background: var(--q-accent) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 6px 20px rgba(79, 143, 240, 0.28) !important;
+}
+button.lgn-raised-button.lgn-primary:hover { filter: brightness(1.08); }
+.lgn-stroked-button, button.lgn-stroked-button {
+  border: 1px solid var(--q-line) !important;
+  border-radius: 10px !important;
+  color: var(--q-text) !important;
+  background: transparent !important;
+}
+a { color: var(--q-accent); }
+
+/* Errors */
+.lgn-error, .lgn-error-message { color: #f0506e !important; }
+
+footer { display: none; }
+
+@media (max-width: 520px) {
+  .lgn-max-width-wrapper { margin: 0 !important; min-height: 100vh; border-radius: 0 !important; border: none !important; }
+}

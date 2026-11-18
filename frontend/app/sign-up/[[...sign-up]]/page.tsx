@@ -1,7 +1,11 @@
-import { ZitadelSignInButton } from "../../components/auth/ZitadelSignInButton";
+import { redirect } from "next/navigation";
 
-// Zitadel registration is handled by the IdP (and SSO/SCIM in orgs), so sign-up
-// opens the hosted registration form directly.
-export default function SignUpPage() {
-  return <ZitadelSignInButton label="Create account" register />;
+import { SignUpForm } from "../../components/auth/SignUpForm";
+import { getSession } from "../../lib/session";
+
+// Quill's own sign-up form (handle + email + password). Signing in stays on
+// Zitadel's hosted pages; the account itself is created through the backend.
+export default async function SignUpPage() {
+  if (await getSession()) redirect("/");
+  return <SignUpForm />;
 }

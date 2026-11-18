@@ -94,6 +94,10 @@ func validSlug(s string) bool {
 		!strings.HasSuffix(s, ".git") && !strings.HasSuffix(s, ".atom")
 }
 
+// ValidHandle reports whether s (already lowercase) is an acceptable username:
+// the same rule as every slug, so the handle can be a URL namespace.
+func ValidHandle(s string) bool { return validSlug(s) }
+
 var slugJunkRe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 // SlugFromName derives a valid slug from free text (the UI never asks people

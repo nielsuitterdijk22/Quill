@@ -37,13 +37,16 @@ const Version = "0.1.0"
 
 // Server is the root HTTP handler for the Quill backend.
 type Server struct {
-	cfg          *config.Config
-	logger       *slog.Logger
-	store        *store.Store
-	auth         *auth.Service
-	verifier     auth.TokenVerifier
-	forgejo      *forgejo.Client
-	platform     *platform.Service
+	cfg      *config.Config
+	logger   *slog.Logger
+	store    *store.Store
+	auth     *auth.Service
+	verifier auth.TokenVerifier
+	forgejo  *forgejo.Client
+	platform *platform.Service
+	// signup creates accounts in Zitadel for the Quill sign-up form (nil when
+	// Zitadel management is not configured).
+	signup       *zitadel.Client
 	projectSync  *projectsync.Dispatcher
 	workItemRefs *workitemrefs.Dispatcher
 	router       chi.Router
@@ -139,10 +142,12 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 	// Org provisioning + member invites through Zitadel's Management API and mail
 	// service. Idle unless both the issuer and a management token are configured;
 	// when absent, orgs are Quill-only and invites use shareable accept links.
+	var signupClient *zitadel.Client
 	if cfg.Zitadel.Issuer != "" && cfg.Zitadel.ManagementToken != "" {
 		zc := zitadel.NewClient(cfg.Zitadel.Issuer, cfg.Zitadel.ManagementToken)
 		platformSvc.WithOrgProvisioner(zc)
 		platformSvc.WithSSO(zc)
+		signupClient = zc
 	}
 	// Creem merchant-of-record integration for plan upgrades. With empty
 	// credentials (the default) upgrade requests answer 501 not_configured
@@ -208,6 +213,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		verifier:     verifier,
 		forgejo:      fj,
 		platform:     platformSvc,
+		signup:       signupClient,
 		projectSync:  projectSync,
 		workItemRefs: workItemRefs,
 		router:       chi.NewRouter(),
@@ -452,6 +458,8 @@ func (s *Server) setupRoutes() {
 				r.With(authLimiter.middleware()).Post("/register", s.handleRegister)
 				r.With(authLimiter.middleware()).Post("/login", s.handleLogin)
 			}
+			// Public sign-up form (handle + email + password) -> Zitadel account.
+			r.With(newIPRateLimiter(5, time.Minute).middleware()).Post("/signup", s.handleSignup)
 			// GitHub OAuth for onboarding repo import (no Quill auth required —
 			// the user is redirected from the frontend during onboarding).
 			r.Get("/github", s.handleGitHubOAuthRedirect)

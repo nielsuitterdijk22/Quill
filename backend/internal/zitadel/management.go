@@ -91,6 +91,24 @@ func (c *Client) InviteUser(ctx context.Context, orgID, email, displayName strin
 	return c.do(ctx, http.MethodPost, "/management/v1/users/human/_import", orgID, body, nil)
 }
 
+// CreateAccount registers a person in the instance's default organization with
+// a password and sends Zitadel's email-verification code. Quill's sign-up form
+// collects only a handle, an email and a password; Zitadel insists on a first
+// and last name, so both are set to the handle (nobody ever sees them). The
+// handle is the Zitadel username, which Quill derives its own username from at
+// first sign-in. ErrConflict means the username or email is already taken.
+func (c *Client) CreateAccount(ctx context.Context, username, email, password string) error {
+	if !c.Enabled() {
+		return fmt.Errorf("zitadel management client not configured")
+	}
+	return c.do(ctx, http.MethodPost, "/v2/users/human", "", map[string]any{
+		"username": username,
+		"profile":  map[string]any{"givenName": username, "familyName": username, "displayName": username},
+		"email":    map[string]any{"email": email, "sendCode": map[string]any{}},
+		"password": map[string]any{"password": password, "changeRequired": false},
+	}, nil)
+}
+
 // do performs a JSON request against the Management API. orgID, when non-empty,
 // scopes the call to that organization via the x-zitadel-orgid header. out, when
 // non-nil, receives the decoded response body.
