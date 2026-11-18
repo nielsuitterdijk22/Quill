@@ -222,7 +222,7 @@ func (s *Server) handleMyBillingCheckout(w http.ResponseWriter, r *http.Request)
 	if req.Plan == "" {
 		req.Plan = platform.PlanPro
 	}
-	successURL := "/settings?upgraded=1"
+	successURL := "/subscribe?upgraded=1"
 	if len(s.cfg.CORSAllowedOrigins) > 0 && s.cfg.CORSAllowedOrigins[0] != "" {
 		successURL = s.cfg.CORSAllowedOrigins[0] + successURL
 	}

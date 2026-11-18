@@ -24,7 +24,9 @@ export default {
     const rewriter = new HTMLRewriter().on("head", {
       element(el) { el.append(`<style id="quill-skin"${nonce}>${CSS}</style>`, { html: true }); },
     });
-    if (path.endsWith("/loginname")) {
+    // Entry steps only: the login-name form, and the account picker Zitadel
+    // shows instead when a browser session already exists.
+    if (/\/(loginname|userselection|login)$/.test(path)) {
       rewriter.on(".content-container", {
         element(el) {
           el.append(

@@ -5531,3 +5531,7 @@ button.sbom-chip:hover {
 .pw-rules li.ok {
   color: var(--green, #3ecf8e);
 }
+
+.paywall-card {
+  max-width: 860px;
+}

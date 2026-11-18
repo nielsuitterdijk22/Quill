@@ -7,6 +7,7 @@ import { KeyboardShortcuts } from "../components/KeyboardShortcuts";
 import { getSessionState } from "../lib/session";
 import { authGet } from "../lib/api/client";
 import { listOrgs } from "../lib/api/organizations";
+import { needsPlan } from "../lib/paywall";
 import type { Organization } from "../lib/api/organizations";
 import type { MyProject } from "../lib/api/types";
 import { CURRENT_PROJECT_COOKIE } from "../lib/projects";
@@ -75,6 +76,10 @@ export default async function AppLayout({
   let projects: MyProject[] = [];
   let orgs: Organization[] = [];
   if (token) {
+    // Paid only: an account with no plan and no organization sees nothing but
+    // the plan picker (the backend independently refuses new work while locked).
+    orgs = await listOrgs(token);
+    if (await needsPlan(token, orgs)) redirect("/subscribe");
     const res = await authGet<{ projects?: MyProject[] }>(token, "/api/v1/me/projects");
     if (res.ok) {
       projects = res.data.projects ?? [];
@@ -84,7 +89,6 @@ export default async function AppLayout({
     }
     // If !res.ok (401, network error, etc.) we fall through with an empty list
     // rather than wrongly redirecting the user back to onboarding.
-    orgs = await listOrgs(token);
   }
 
   const cookieSlug = cookies().get(CURRENT_PROJECT_COOKIE)?.value ?? null;

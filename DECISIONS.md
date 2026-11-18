@@ -927,3 +927,9 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - **Password rules** mirror the instance policy (8+, upper, lower, number, symbol): live checklist in `SignUpForm`, same check in `passwordProblem()` server-side. Change all three together with the Zitadel policy.
 - **Login skin:** Zitadel's CSP only allows styles carrying its per-request nonce, so the Worker copies the nonce onto the injected `<style>`; it also injects the "Create account" link on the login-name step.
 - **Rejected:** creating accounts with the email pre-verified (lets anyone claim any address); redirecting `/ui/console` in the Worker (hides the cause).
+
+## 2026-11-18 — Hard paywall at first sign-in
+
+- **Decision:** a signed-in account whose personal plan is `inactive` and that belongs to no organization is redirected from the whole `(app)` shell to `/subscribe` (Starter €4 / Pro €9 / Team €11 per user). Creem's success URL is now `/subscribe?upgraded=1`, which refreshes until the webhook sets the plan. Members of any org are not gated (they work under the org's plan; an unpaid org is locked by the backend and pays from its billing page). Lapsed accounts are not gated, so their repos stay readable.
+- **Why:** accounts were created `inactive` and locked by the backend, but people could still browse the product, which read as a free account. The backend lock (`enforceTenantActive`) stays the real enforcement; this is the UX gate.
+- **Alternatives rejected:** gating lapsed accounts (hides their own readable repos); gating in the onboarding layout (it cannot read the query, and the Team path must pass through it).
