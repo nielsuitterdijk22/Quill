@@ -134,6 +134,7 @@ jobs:
             -var "letsencrypt_email=info@black-tulip.nl" \
             -var "create_dns_zone=false" \
             -var "brevo_smtp_from=info@black-tulip.nl" \
+            -var "creem_starter_product_id=prod_6Mt4xyUxCZbc5VULkqSYhd" \
             -var "creem_pro_product_id=prod_1DLhjZE8dsNwtheT4wHD8H" \
             -var "creem_team_product_id=prod_7lBOuo7Sq1fahYN6DpQvP"
 

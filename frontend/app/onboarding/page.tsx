@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 
 import { useQuillAuth } from "@/components/auth/context";
 import { AppTile } from "@/components/icons/AppMarks";
+import { isValidHandle, slugify } from "../lib/slug";
 
 type GitHubRepo = {
   id: number;
@@ -15,7 +16,7 @@ type GitHubRepo = {
   cloneUrl: string;
 };
 
-type Step = "choose" | "org-setup" | "import" | "importing" | "done";
+type Step = "handle" | "choose" | "org-setup" | "import" | "importing" | "done";
 
 const githubErrorMessages: Record<string, string> = {
   not_configured:
@@ -75,7 +76,7 @@ function PlanNotice({ org }: { org: string | null }) {
   return (
     <div className="banner ob-trial">
       <b>{org ? `${org} needs a Team Pro subscription.` : "Your organization needs a Team Pro subscription."}</b>{" "}
-      Quill has no free plan: subscribe under Settings → Billing (€9 per user per month, VAT included). Until then,
+      Quill has no free plan: subscribe under Settings → Billing (€11 per user per month, VAT included). Until then,
       creating repositories, running pipelines and inviting members are paused. Existing code stays readable.
     </div>
   );
@@ -86,7 +87,7 @@ export default function OnboardingPage() {
   const { getToken } = useQuillAuth();
 
   const [step, setStep] = useState<Step>(
-    searchParams.get("step") === "import" ? "import" : "choose",
+    searchParams.get("step") === "import" ? "import" : "handle",
   );
   // Project explicitly requested via ?project=<slug> (e.g. from the project
   // picker on the repositories page for users with more than one project).
@@ -95,9 +96,9 @@ export default function OnboardingPage() {
   // redirects back here instead of showing a raw JSON error page).
   const githubError = searchParams.get("github_error");
   const [accountType, setAccountType] = useState<"individual" | "org" | null>(null);
-  const [orgSlug, setOrgSlug] = useState("");
   const [orgName, setOrgName] = useState("");
   const [username, setUsername] = useState("");
+  const [handle, setHandle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -136,9 +137,10 @@ export default function OnboardingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run once on mount
 
-  // The backend derives a handle from the IdP profile at first sign-in; there is
-  // no "pick a username" step any more (it was a third screen after the login) —
-  // it is shown on the first screen below and can be changed in Settings.
+  // Sign-in happens in Zitadel; the backend derives a provisional handle from the
+  // IdP profile at first sign-in. The first onboarding screen lets the person
+  // confirm or change it (PATCH /auth/me/username), before anything is created
+  // under it. Existing accounts with a project skip straight past it (see above).
   useEffect(() => {
     getToken().then(async (token) => {
       if (!token) return;
@@ -148,7 +150,10 @@ export default function OnboardingPage() {
         });
         if (!res.ok) return;
         const me = (await res.json()) as { username?: string };
-        if (me.username) setUsername((cur) => cur || me.username!);
+        if (me.username) {
+          setUsername((cur) => cur || me.username!);
+          setHandle((cur) => cur || me.username!.toLowerCase());
+        }
       } catch { /* leave blank */ }
     });
   }, [getToken]);
@@ -184,6 +189,37 @@ export default function OnboardingPage() {
     });
   }, [step, getToken]);
 
+  function saveHandle() {
+    const next = handle.trim().toLowerCase();
+    if (!isValidHandle(next)) {
+      setError("Use 1–63 lowercase letters, digits, '.', '_' or '-', starting with a letter or digit.");
+      return;
+    }
+    setError(null);
+    if (next === username.toLowerCase()) {
+      setStep("choose");
+      return;
+    }
+    startTransition(async () => {
+      const token = await getToken();
+      const res = await fetch("/api/backend/auth/me/username", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ username: next }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { message?: string } | null;
+        setError(body?.message ?? "Could not set your username.");
+        return;
+      }
+      setUsername(next);
+      setStep("choose");
+    });
+  }
+
   function handleChoose(type: "individual" | "org") {
     setError(null);
     if (type === "org") {
@@ -213,8 +249,9 @@ export default function OnboardingPage() {
   }
 
   function createOrgProject() {
-    if (!orgSlug.trim()) {
-      setError("Slug is required.");
+    const orgSlug = slugify(orgName);
+    if (!orgSlug || !isValidHandle(orgSlug)) {
+      setError("Give your organization a name with at least one letter or digit.");
       return;
     }
     startTransition(async () => {
@@ -230,8 +267,8 @@ export default function OnboardingPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          slug: orgSlug.trim(),
-          name: orgName.trim() || orgSlug.trim(),
+          slug: orgSlug,
+          name: orgName.trim(),
         }),
       });
       if (!res.ok) {
@@ -239,7 +276,7 @@ export default function OnboardingPage() {
         setError(body?.message ?? "Could not create organization.");
         return;
       }
-      setProjectSlug(orgSlug.trim());
+      setProjectSlug(orgSlug);
       setStep("import");
     });
   }
@@ -323,6 +360,60 @@ export default function OnboardingPage() {
     });
   }
 
+  // ── handle ──────────────────────────────────────────────────────────────────
+
+  if (step === "handle") {
+    const clean = handle.trim().toLowerCase();
+    return (
+      <div className="ob-shell">
+        <header className="ob-header">
+          <div className="ob-brand">
+            <AppTile app="quill" size={24} />
+            Quill
+          </div>
+          <span className="ob-step-label">Step 1 of 3</span>
+        </header>
+
+        <main className="ob-main ob-main--narrow">
+          <div className="ob-headline">
+            <h1 className="ob-title">Pick your handle</h1>
+            <p className="ob-sub">
+              Your username is your personal namespace and appears in every URL and commit you make.
+              You can change it later in Settings.
+            </p>
+          </div>
+
+          {error && <div className="ob-error">{error}</div>}
+
+          <div className="ob-org-form">
+            <div className="ob-field">
+              <label className="ob-label">Username</label>
+              <input
+                className="ob-input"
+                value={handle}
+                onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))}
+                placeholder="your-handle"
+                maxLength={63}
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && saveHandle()}
+              />
+              {clean && (
+                <span className="ob-preview">
+                  Your repositories will live at <code>{clean}/repo-name</code>
+                </span>
+              )}
+            </div>
+            <div className="ob-import-actions">
+              <button className="ob-btn-primary" onClick={saveHandle} disabled={pending || !clean}>
+                {pending ? <><IconSpinner /> Saving…</> : "Continue →"}
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // ── choose ──────────────────────────────────────────────────────────────────
 
   if (step === "choose") {
@@ -333,7 +424,7 @@ export default function OnboardingPage() {
             <AppTile app="quill" size={24} />
             Quill
           </div>
-          <span className="ob-step-label">Step 1 of 2</span>
+          <span className="ob-step-label">Step 2 of 3</span>
         </header>
 
         <main className="ob-main">
@@ -396,13 +487,13 @@ export default function OnboardingPage() {
               <div className="ob-card-body">
                 <strong className="ob-card-title">Organization</strong>
                 <p className="ob-card-desc">
-                  A shared workspace for a team or company — custom slug, shared access, unified policies.
+                  A shared workspace for a team or company — shared access, unified policies.
                 </p>
                 <ul className="ob-card-bullets">
-                  <li>Custom org slug</li>
+                  <li>Its own namespace</li>
                   <li>Role-based member access</li>
                   <li>Org-wide branch policies</li>
-                  <li>Team Pro: €9 per user/month</li>
+                  <li>Team Pro: €11 per user/month</li>
                 </ul>
               </div>
               <div className="ob-card-footer">
@@ -425,15 +516,15 @@ export default function OnboardingPage() {
             <AppTile app="quill" size={24} />
             Quill
           </div>
-          <span className="ob-step-label">Step 2 of 3</span>
+          <span className="ob-step-label">Step 3 of 4</span>
         </header>
 
         <main className="ob-main ob-main--narrow">
           <div className="ob-headline">
             <h1 className="ob-title">Set up your organization</h1>
             <p className="ob-sub">
-              Choose a unique slug — it becomes part of every repository URL. Quill has no free plan — subscribe to
-              Team Pro from the organization&apos;s billing settings (€9 per user/month).
+              The name becomes part of every repository URL. Quill has no free plan — subscribe to
+              Team Pro from the organization&apos;s billing settings (€11 per user/month).
             </p>
           </div>
 
@@ -441,30 +532,20 @@ export default function OnboardingPage() {
 
           <div className="ob-org-form">
             <div className="ob-field">
-              <label className="ob-label">Slug <span className="ob-label-hint">— becomes part of every URL</span></label>
-              <input
-                className="ob-input"
-                value={orgSlug}
-                onChange={(e) => setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                placeholder="acme"
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && createOrgProject()}
-              />
-              {orgSlug && (
-                <span className="ob-preview">
-                  Repos will live at <code>{orgSlug}/repo-name</code>
-                </span>
-              )}
-            </div>
-            <div className="ob-field">
-              <label className="ob-label">Display name <span className="ob-label-hint">— optional</span></label>
+              <label className="ob-label">Organization name</label>
               <input
                 className="ob-input"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
                 placeholder="Acme Inc."
+                autoFocus
                 onKeyDown={(e) => e.key === "Enter" && createOrgProject()}
               />
+              {slugify(orgName) && (
+                <span className="ob-preview">
+                  Repos will live at <code>{slugify(orgName)}/repo-name</code>
+                </span>
+              )}
             </div>
             <div className="ob-import-actions">
               <button
@@ -494,7 +575,7 @@ export default function OnboardingPage() {
             <AppTile app="quill" size={24} />
             Quill
           </div>
-          <span className="ob-step-label">{accountType === "org" ? "Step 3 of 3" : "Step 2 of 2"}</span>
+          <span className="ob-step-label">{accountType === "org" ? "Step 4 of 4" : "Step 3 of 3"}</span>
         </header>
 
         <main className="ob-main ob-main--narrow">

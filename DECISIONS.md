@@ -871,7 +871,7 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   Regression test `TestGroupGrantCannotCrossTenants` fails without the fix. Follow-up: audit
   production `group_project_roles` for rows whose group and project tenants differ.
 
-## 2026-11-18 — Paid only: no free tier, no trial; Starter €4 / Pro €9 / Team Pro €9 per user
+## 2026-11-18 — Paid only: no free tier, no trial; Starter €4 / Pro €9 / Team Pro €11 per user
 
 - Owner decision (pricing page copy: "No free tier. Starter at €4. Pro at €9."). Plans are now
   `starter`, `pro`, `team` (shown as Team Pro), `enterprise`, `internal`, plus `beta`; the old
@@ -891,7 +891,7 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - Creem: new `CREEM_STARTER_PRODUCT_ID` (terraform `creem_starter_product_id`, default `"unset"` =
   not configured, checkout answers 501 truthfully). The existing `creem_pro_product_id` /
   `creem_team_product_id` values in the deploy workflows still point at the OLD products and must be
-  replaced with the new €9 products once they exist. Cancel/expire of any paid plan now lapses
+  (done 2026-11-18: owner supplied starter prod_6Mt4xyUxCZbc5VULkqSYhd; pro and team ids unchanged). Cancel/expire of any paid plan now lapses
   (locks) the tenant; there is no free tier to fall back to.
 - Consequence for ops: existing personal accounts on `free` (e.g. the e2e fixture
   `e2e-tester@black-tulip.nl`) become `inactive` after this deploys; give them `beta`/`internal`

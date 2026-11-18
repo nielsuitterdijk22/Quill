@@ -29,17 +29,9 @@ export function NewProjectForm() {
             <span>Name</span>
             <input name="name" autoFocus required placeholder="Acme Corp" />
           </label>
-          <label className="field">
-            <span>Slug</span>
-            <input
-              name="slug"
-              placeholder="acme"
-              pattern="[A-Za-z0-9._\-]+"
-            />
-          </label>
           <p className="hint">
-            Used in URLs and mirrored to Forgejo. Leave blank to derive it from
-            the name.
+            The URL is derived from the name (lowercase letters, digits, - _ .)
+            and mirrored to Forgejo.
           </p>
           <label className="field">
             <span>Description</span>

@@ -84,8 +84,35 @@ func normalizeSlug(s string) string {
 }
 
 // validSlug reports whether a normalized slug is well-formed and not reserved.
+// Beyond slugRe it rejects what git hosting trips over: a trailing '.', '..',
+// and the ".git"/".atom" suffixes Forgejo reserves.
 func validSlug(s string) bool {
-	return slugRe.MatchString(s) && !reservedSlugs[s]
+	if !slugRe.MatchString(s) || reservedSlugs[s] {
+		return false
+	}
+	return !strings.HasSuffix(s, ".") && !strings.Contains(s, "..") &&
+		!strings.HasSuffix(s, ".git") && !strings.HasSuffix(s, ".atom")
+}
+
+var slugJunkRe = regexp.MustCompile(`[^a-z0-9._-]+`)
+
+// SlugFromName derives a valid slug from free text (the UI never asks people
+// to type slugs): lowercase, runs of other characters become '-', separators
+// trimmed from the ends, at most 63 chars. It may return "" or a reserved word
+// for hopeless input; callers still run validSlug.
+func SlugFromName(name string) string {
+	s := slugJunkRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-")
+	for strings.Contains(s, "..") {
+		s = strings.ReplaceAll(s, "..", ".")
+	}
+	if len(s) > 63 {
+		s = s[:63]
+	}
+	s = strings.Trim(s, "-._")
+	for _, suffix := range []string{".git", ".atom"} {
+		s = strings.Trim(strings.TrimSuffix(s, suffix), "-._")
+	}
+	return s
 }
 
 func validVisibility(v string) bool {

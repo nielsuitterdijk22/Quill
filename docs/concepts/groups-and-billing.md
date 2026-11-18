@@ -29,7 +29,7 @@ beta users. Each tenant has a **plan**:
 | --- | --- | --- | --- |
 | `starter` | individuals | €4 / month | 5 GB git storage, 100 CI min/mo |
 | `pro` | individuals | €9 / month | 10 GB git storage, 500 CI min/mo |
-| `team` ("Team Pro") | organizations | €9 / user / month | none (usage-based) |
+| `team` ("Team Pro") | organizations | €11 / user / month | none (usage-based) |
 | `beta` | hand-picked users | free | same as `pro` |
 | `enterprise`, `internal` | vendor-provisioned | custom / none | none |
 | `inactive` | every new account or org | — | **locked** |

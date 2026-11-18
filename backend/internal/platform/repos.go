@@ -78,8 +78,11 @@ func (s *Service) CreateRepo(ctx context.Context, actor Actor, projectSlug strin
 		return db.Repository{}, err
 	}
 
-	slug := normalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)
+	if strings.TrimSpace(in.Slug) == "" {
+		in.Slug = SlugFromName(name)
+	}
+	slug := normalizeSlug(in.Slug)
 	if !validSlug(slug) {
 		return db.Repository{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 	}

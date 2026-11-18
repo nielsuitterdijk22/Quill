@@ -45,8 +45,11 @@ type OrganizationSummary struct {
 // ownership stay identical to a normal project. On project failure the org tenant
 // is rolled back so no orphan org remains.
 func (s *Service) CreateOrganization(ctx context.Context, actor Actor, slug, name string) (db.Tenant, db.Project, error) {
-	slug = normalizeSlug(slug)
 	name = strings.TrimSpace(name)
+	if strings.TrimSpace(slug) == "" {
+		slug = SlugFromName(name)
+	}
+	slug = normalizeSlug(slug)
 	if !validSlug(slug) {
 		return db.Tenant{}, db.Project{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 	}

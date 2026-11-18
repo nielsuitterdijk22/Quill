@@ -37,8 +37,8 @@ function UsageRow({
   );
 }
 
-// Team Pro is priced per user: EUR 9 per month, VAT included.
-const TEAM_SEAT_EUR = 9;
+// Team Pro is priced per user: EUR 11 per user per month, VAT included.
+const TEAM_SEAT_EUR = 11;
 
 // OrgBilling is the billing surface for an organization: the plan, metered
 // usage against the plan's limits, and the Team Pro subscription call to

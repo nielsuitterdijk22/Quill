@@ -36,14 +36,9 @@ export function NewRepoForm({ project }: { project: string }) {
               placeholder="Widget Service"
             />
           </label>
-          <label className="field">
-            <span>Slug</span>
-            <input name="slug" placeholder="widget" pattern="[A-Za-z0-9._\-]+" />
-          </label>
           <p className="hint">
-            Leave blank to derive it from the name. The git repository is created
-            in Forgejo with a README and a <span className="mono">main</span>{" "}
-            branch.
+            The URL is derived from the name. The git repository is created
+            with a README and a <span className="mono">main</span> branch.
           </p>
           <label className="field">
             <span>Description</span>

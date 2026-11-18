@@ -158,6 +158,7 @@ jobs:
             -var "github_client_secret=${{ secrets.GH_CLIENT_SECRET || secrets.GH_OAUTH_CLIENT_SECRET || secrets.GH_OAUTH_CLIENTSECRET || secrets.GH_APP_CLIENT_SECRET || 'unset' }}" \
             -var "creem_api_key=${{ secrets.CREEM_API_KEY }}" \
             -var "creem_webhook_secret=${{ secrets.CREEM_WEBHOOK_SECRET }}" \
+            -var "creem_starter_product_id=prod_6Mt4xyUxCZbc5VULkqSYhd" \
             -var "creem_pro_product_id=prod_1DLhjZE8dsNwtheT4wHD8H" \
             -var "creem_team_product_id=prod_7lBOuo7Sq1fahYN6DpQvP"
 

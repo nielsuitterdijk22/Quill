@@ -54,6 +54,6 @@ backup_bucket_name = "quill-mvp-backups-<random-suffix>"
 # product exist; the Upgrade button then reports "not activated".
 # creem_api_key         = ""
 # creem_webhook_secret  = ""   # webhook URL: https://api.black-tulip.nl/api/v1/webhooks/creem
-# creem_team_product_id    = ""   # org upgrades (Team Pro, EUR 9 per user)
+# creem_team_product_id    = ""   # org upgrades (Team Pro, EUR 11 per user)
 # creem_starter_product_id = ""   # personal Starter (EUR 4)
 # creem_pro_product_id     = ""   # personal Pro (EUR 9)

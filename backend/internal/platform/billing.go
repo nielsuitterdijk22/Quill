@@ -16,7 +16,7 @@ import (
 // account pays, except hand-selected beta users.
 //
 //   - 'starter' (EUR 4) and 'pro' (EUR 9) are the individual paid plans, with
-//     hard storage / CI-minute caps; 'team' (EUR 9 per user) is the
+//     hard storage / CI-minute caps; 'team' (EUR 11 per user) is the
 //     organization plan, and 'enterprise' / 'internal' are vendor-provisioned
 //     without caps.
 //   - 'beta' is granted by the vendor (a beta invite link or the admin plan

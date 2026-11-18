@@ -28,8 +28,11 @@ type CreateProjectInput struct {
 // creator's membership in one Postgres transaction; if that transaction fails
 // the Forgejo org is deleted so the two systems don't drift.
 func (s *Service) CreateProject(ctx context.Context, actor Actor, in CreateProjectInput) (db.Project, error) {
-	slug := normalizeSlug(in.Slug)
 	name := strings.TrimSpace(in.Name)
+	if strings.TrimSpace(in.Slug) == "" {
+		in.Slug = SlugFromName(name)
+	}
+	slug := normalizeSlug(in.Slug)
 	if !validSlug(slug) {
 		return db.Project{}, fmt.Errorf("%w: slug must be 1-63 chars of lowercase letters, digits, '-', '_' or '.', start alphanumeric, and not be a reserved word", ErrInvalidInput)
 	}
