@@ -1,22 +1,23 @@
 # Groups and billing
 
-## Groups (nested departments & teams)
+## Groups
 
-Inside an organization you can model departments and teams as a **group tree**
-(max depth 5). A root group is a department; each child group is a team (or a
-sub-department).
+A **group** is a named set of people inside an organization (a department, a
+team, an identity-provider group). Groups are flat: they do not nest, and they
+have no powers of their own. A project grants a role to a group, and exactly
+that group's members receive it.
 
 - Create groups under **Organization settings → Groups** (org admins only), or
-  `POST /api/v1/orgs/{org}/groups` with `{slug, name, parentSlug}`.
-- Add members with `POST .../groups/{group}/members` `{userId}`.
+  `POST /api/v1/orgs/{org}/groups` with `{slug, name}`.
+- Add members with `POST .../groups/{group}/members` `{userId}`. Only members
+  of the organization can join its groups.
 - Grant a group a role on a project with
   `PUT .../groups/{group}/projects/{project}` `{role: "owner" | "member"}`.
 
-**Inheritance:** a member of a group is effectively a member of all its
-ancestor groups, and the group's project roles apply to all of them. So granting
-the *department* group `owner` on a project gives every team beneath it owner
-access. Your effective role on a project is the strongest of your direct
-membership and your inherited group roles (`owner` > `member`).
+Your effective role on a project is the strongest of your direct membership,
+the roles granted to your groups and your organization membership
+(`owner` > `member`), and only while you are a current member of the
+organization.
 
 Every mutation is written to the audit log (`group.*` actions).
 

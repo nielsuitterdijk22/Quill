@@ -96,7 +96,7 @@ func TestProjectAccessMatrix(t *testing.T) {
 	})
 
 	t.Run("group grant needs org membership", func(t *testing.T) {
-		if _, err := svc.CreateGroup(ctx, founder, "resolver", "plat", "Platform", ""); err != nil {
+		if _, err := svc.CreateGroup(ctx, founder, "resolver", "plat", "Platform"); err != nil {
 			t.Fatal(err)
 		}
 		if err := svc.SetGroupProjectRole(ctx, founder, "resolver", "plat", "resolver", "owner"); err != nil {
@@ -165,7 +165,7 @@ func TestAddGroupMemberRequiresOrgMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateGroup(ctx, founder, "gm-org", "g", "G", ""); err != nil {
+	if _, err := svc.CreateGroup(ctx, founder, "gm-org", "g", "G"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,7 +205,7 @@ func TestOffboardingRemovesAccess(t *testing.T) {
 			if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: project.ID, UserID: alice, Role: "owner"}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := svc.CreateGroup(ctx, founder, "off-org", "g", "G", ""); err != nil {
+			if _, err := svc.CreateGroup(ctx, founder, "off-org", "g", "G"); err != nil {
 				t.Fatal(err)
 			}
 			if err := svc.AddGroupMember(ctx, founder, "off-org", "g", alice); err != nil {

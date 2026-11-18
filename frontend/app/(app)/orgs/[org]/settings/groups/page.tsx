@@ -24,7 +24,7 @@ export default async function OrgGroupsSettings({
   const groups = groupsRes.ok ? groupsRes.data.groups : [];
   const selected =
     groups.find((g) => g.slug === searchParams.group) ??
-    (searchParams.group ? null : groups.find((g) => !g.parentId) ?? null);
+    (searchParams.group ? null : groups[0] ?? null);
   const [gm, gp] = selected
     ? await Promise.all([getGroupMembers(token, params.org, selected.slug), getGroupProjects(token, params.org, selected.slug)])
     : [null, null];
@@ -33,8 +33,8 @@ export default async function OrgGroupsSettings({
       <div className="settings-head">
         <h2 className="settings-title">Groups</h2>
         <p className="subtle">
-          Departments and teams, nested up to five levels. Grant a group a role on a project and everyone in it — and
-          in its subgroups — inherits that access. Groups pushed by your identity provider (SCIM) appear here too.
+          A group is a named set of people. Grant a group a role on a project and everyone in it gets that access.
+          Groups pushed by your identity provider (SCIM) appear here too.
         </p>
       </div>
       <GroupExplorer

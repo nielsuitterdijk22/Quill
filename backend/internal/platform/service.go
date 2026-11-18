@@ -232,8 +232,8 @@ func (s *Service) forgejoEnabled() bool {
 }
 
 // authorizeProjectMember returns nil when the actor is a platform admin or has
-// any effective role on projectID — direct membership or one inherited from a
-// (nested) group — and ErrForbidden otherwise.
+// any effective role on projectID — direct membership, a group grant or the
+// organization itself — and ErrForbidden otherwise.
 func (s *Service) authorizeProjectMember(ctx context.Context, actor Actor, projectID uuid.UUID) error {
 	role, err := s.effectiveProjectRole(ctx, actor, projectID)
 	if err != nil {

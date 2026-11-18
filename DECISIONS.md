@@ -978,3 +978,22 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   "no access before the grant" assertions check owner level (org members hold an implicit `member`
   role until access becomes explicit, which restores the stricter assertions).
 - Group nesting is untouched here; flattening groups is the next, separate change.
+
+## 2026-11-18 — Groups are flat
+
+- A group is a named set of people; a project grants a role to a group; nothing inherits through a
+  tree. Owner decision (pre-launch, Entra's SCIM only provisions flat groups, nesting was never
+  going to be the customers' model). `project_access()` no longer expands ancestors, the API drops
+  `parentSlug`, `parentId` and `depth`, the group UI is a list, and the depth cap and the nesting
+  tests are gone (the owner said to remove the existing ones).
+- Migration 000044 is lossless: roles granted to a group are copied onto every former descendant
+  (strongest role wins where one already had its own grant), so nobody's access changes. In
+  production that touched the one `acme` grant (engineering → platform, payments); the 3-level
+  `blacktulip` tree had no members or grants. It also clears `parent_id`/`depth`: the
+  self-referencing `ON DELETE CASCADE` would otherwise delete former children with their parent
+  once nesting is invisible. Tested by running the migration SQL over a legacy tree (twice).
+- The `parent_id` and `depth` columns stay for one release (the previous revision still reads them
+  while a deploy rolls out); a follow-up migration drops them. Rejected: dropping them now
+  (old revision errors during the rollout) and keeping nesting but hiding it.
+- `BACKLOG.md` still lists nested-group tasks (T-002, T-003); it is foundry-owned and was not
+  edited — those items are obsolete.

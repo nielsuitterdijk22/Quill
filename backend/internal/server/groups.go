@@ -10,17 +10,14 @@ import (
 )
 
 type groupResponse struct {
-	ID       string  `json:"id"`
-	Slug     string  `json:"slug"`
-	Name     string  `json:"name"`
-	Depth    int32   `json:"depth"`
-	ParentID *string `json:"parentId,omitempty"`
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
 }
 
 type createGroupRequest struct {
-	Slug       string `json:"slug"`
-	Name       string `json:"name"`
-	ParentSlug string `json:"parentSlug,omitempty"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
 }
 
 type updateGroupRequest struct {
@@ -59,12 +56,7 @@ func handleGroupsList(s *Server) http.HandlerFunc {
 		}
 		out := make([]groupResponse, 0, len(groups))
 		for _, g := range groups {
-			resp := groupResponse{ID: g.ID.String(), Slug: g.Slug, Name: g.Name, Depth: g.Depth}
-			if g.ParentID != nil {
-				p := g.ParentID.String()
-				resp.ParentID = &p
-			}
-			out = append(out, resp)
+			out = append(out, groupResponse{ID: g.ID.String(), Slug: g.Slug, Name: g.Name})
 		}
 		httpx.JSON(w, http.StatusOK, map[string]any{"groups": out})
 	}
@@ -82,20 +74,15 @@ func handleGroupsCreate(s *Server) http.HandlerFunc {
 		if !decodeJSON(w, r, &req) {
 			return
 		}
-		group, err := s.platform.CreateGroup(r.Context(), actor, orgSlug, req.Slug, req.Name, req.ParentSlug)
+		group, err := s.platform.CreateGroup(r.Context(), actor, orgSlug, req.Slug, req.Name)
 		if err != nil {
 			s.writePlatformError(w, err, "could not create group")
 			return
 		}
 		s.logAudit(r, "group.created", "group", group.ID.String(), map[string]any{
-			"org": orgSlug, "slug": group.Slug, "parentSlug": req.ParentSlug,
+			"org": orgSlug, "slug": group.Slug,
 		})
-		resp := groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name, Depth: group.Depth}
-		if group.ParentID != nil {
-			p := group.ParentID.String()
-			resp.ParentID = &p
-		}
-		httpx.JSON(w, http.StatusCreated, map[string]any{"group": resp})
+		httpx.JSON(w, http.StatusCreated, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name}})
 	}
 }
 
@@ -120,7 +107,7 @@ func handleGroupsUpdate(s *Server) http.HandlerFunc {
 		s.logAudit(r, "group.updated", "group", group.ID.String(), map[string]any{
 			"org": orgSlug, "slug": group.Slug,
 		})
-		httpx.JSON(w, http.StatusOK, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name, Depth: group.Depth}})
+		httpx.JSON(w, http.StatusOK, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name}})
 	}
 }
 

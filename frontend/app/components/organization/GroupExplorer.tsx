@@ -14,8 +14,6 @@ import {
   setGroupProjectRoleAction,
 } from "./actions";
 
-const MAX_DEPTH = 5;
-
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -26,10 +24,9 @@ function slugify(name: string): string {
 
 type Result = { ok: true } | { ok: false; error: string };
 
-// GroupExplorer is the organization's group management: the group tree on
-// the left; the selected group's members, project access and subgroups on the
-// right, each editable in place. Members of a subgroup inherit every project
-// role granted to its ancestors.
+// GroupExplorer is the organization's group management: the list of groups on
+// the left; the selected group's members and project access on the right, each
+// editable in place.
 export function GroupExplorer({
   org,
   canEdit,
@@ -53,15 +50,12 @@ export function GroupExplorer({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
-  const [subName, setSubName] = useState("");
   const [addUser, setAddUser] = useState("");
   const [grantProject, setGrantProject] = useState("");
   const [grantRole, setGrantRole] = useState("member");
 
   const base = `/orgs/${encodeURIComponent(org)}/settings/groups`;
-  const byId = new Map(groups.map((g) => [g.id, g]));
-  const children = (id: string | null) =>
-    groups.filter((g) => (g.parentId ?? null) === id).sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name));
 
   function run(fn: () => Promise<Result>, after?: () => void) {
     setError(null);
@@ -76,43 +70,20 @@ export function GroupExplorer({
     });
   }
 
-  function create(name: string, parent: string, reset: () => void) {
+  function create(name: string, reset: () => void) {
     const slug = slugify(name);
     if (!slug) {
       setError("Give the group a name.");
       return;
     }
-    run(() => createGroupAction(org, slug, name.trim(), parent), () => {
+    run(() => createGroupAction(org, slug, name.trim()), () => {
       reset();
       router.push(`${base}?group=${encodeURIComponent(slug)}`);
     });
   }
 
-  function Tree({ parent }: { parent: string | null }) {
-    const list = children(parent);
-    if (list.length === 0) return null;
-    return (
-      <ul className="group-tree">
-        {list.map((g) => (
-          <li key={g.id}>
-            <Link
-              href={`${base}?group=${encodeURIComponent(g.slug)}`}
-              className={`group-node${selected?.id === g.id ? " active" : ""}`}
-            >
-              {g.name}
-            </Link>
-            <Tree parent={g.id} />
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  const path: OrgGroup[] = [];
-  for (let g = selected; g; g = g.parentId ? byId.get(g.parentId) ?? null : null) path.unshift(g);
   const memberIds = new Set(selectedMembers.map((m) => m.userId));
   const granted = new Set(selectedProjects.map((p) => p.project));
-  const subgroups = selected ? children(selected.id) : [];
 
   return (
     <div className="group-explorer">
@@ -120,14 +91,25 @@ export function GroupExplorer({
         {groups.length === 0 ? (
           <p className="subtle">No groups yet.</p>
         ) : (
-          <Tree parent={null} />
+          <ul className="group-tree">
+            {sorted.map((g) => (
+              <li key={g.id}>
+                <Link
+                  href={`${base}?group=${encodeURIComponent(g.slug)}`}
+                  className={`group-node${selected?.id === g.id ? " active" : ""}`}
+                >
+                  {g.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
         {canEdit && (
           <form
             className="group-inline-form"
             onSubmit={(e) => {
               e.preventDefault();
-              create(newName, "", () => setNewName(""));
+              create(newName, () => setNewName(""));
             }}
           >
             <input className="ob-input" placeholder="New group (e.g. Engineering)" value={newName} onChange={(e) => setNewName(e.target.value)} />
@@ -142,28 +124,18 @@ export function GroupExplorer({
         {error && <div className="form-error">{error}</div>}
         {!selected ? (
           <p className="subtle">
-            Groups model departments and teams. Grant a group a role on a project and every member — including members
-            of its subgroups — gets that access.
+            A group is a named set of people. Grant a group a role on a project and every member gets that access.
           </p>
         ) : (
           <>
             <div className="group-detail-head">
-              <div>
-                <div className="subtle">
-                  {path.slice(0, -1).map((g) => (
-                    <span key={g.id}>
-                      <Link href={`${base}?group=${encodeURIComponent(g.slug)}`}>{g.name}</Link> ›{" "}
-                    </span>
-                  ))}
-                </div>
-                <h3 className="group-detail-title">{selected.name}</h3>
-              </div>
+              <h3 className="group-detail-title">{selected.name}</h3>
               {canEdit && (
                 <button
                   className="btn danger small"
                   disabled={pending}
                   onClick={() => {
-                    if (!window.confirm(`Delete ${selected.name}${subgroups.length ? " and its subgroups" : ""}?`)) return;
+                    if (!window.confirm(`Delete ${selected.name}?`)) return;
                     run(() => deleteGroupAction(org, selected.slug), () => router.push(base));
                   }}
                 >
@@ -273,36 +245,6 @@ export function GroupExplorer({
                 </select>
                 <button className="btn" type="submit" disabled={pending || !grantProject}>
                   Grant
-                </button>
-              </form>
-            )}
-            {selectedProjects.length > 0 && subgroups.length > 0 && (
-              <p className="subtle">Members of its subgroups inherit this access.</p>
-            )}
-
-            <h4 className="settings-subtitle">Subgroups</h4>
-            {subgroups.length === 0 ? (
-              <p className="subtle">None.</p>
-            ) : (
-              <p>
-                {subgroups.map((g) => (
-                  <Link key={g.id} className="badge" href={`${base}?group=${encodeURIComponent(g.slug)}`}>
-                    {g.name}
-                  </Link>
-                ))}
-              </p>
-            )}
-            {canEdit && selected.depth < MAX_DEPTH && (
-              <form
-                className="group-inline-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  create(subName, selected.slug, () => setSubName(""));
-                }}
-              >
-                <input className="ob-input" placeholder={`New subgroup of ${selected.name}`} value={subName} onChange={(e) => setSubName(e.target.value)} />
-                <button className="btn" type="submit" disabled={pending || !subName.trim()}>
-                  Add subgroup
                 </button>
               </form>
             )}

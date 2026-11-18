@@ -96,17 +96,16 @@ export async function removeSSOAction(org: string): Promise<ActionResult> {
   return { ok: true };
 }
 
-// ---- groups (nested departments/teams) --------------------------------------
+// ---- groups (flat sets of people) --------------------------------------
 
 export async function createGroupAction(
   org: string,
   slug: string,
   name: string,
-  parentSlug: string,
 ): Promise<ActionResult> {
   const token = await getToken();
   if (!token) return { ok: false, error: "Your session has expired. Sign in again." };
-  const res = await createOrgGroup(token, org, slug, name, parentSlug);
+  const res = await createOrgGroup(token, org, slug, name);
   if (!res.ok) return { ok: false, error: res.error };
   revalidate(org);
   return { ok: true };

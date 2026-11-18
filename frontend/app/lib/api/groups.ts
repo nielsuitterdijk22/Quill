@@ -8,15 +8,12 @@ import type { DataResult, Result } from "./types";
 
 type SimpleResult = { ok: true } | { ok: false; error: string };
 
-// OrgGroup is a group (department/team) inside an org tenant. Groups nest via
-// parentId up to depth 5; members of a subgroup inherit the roles granted to
-// its ancestor groups.
+// OrgGroup is a named set of people inside an org tenant. Groups are flat: a
+// project grants a role to the group, and exactly its members receive it.
 export type OrgGroup = {
   id: string;
   slug: string;
   name: string;
-  depth: number;
-  parentId?: string | null;
 };
 
 export type GroupMember = {
@@ -39,12 +36,10 @@ export function createOrgGroup(
   org: string,
   slug: string,
   name: string,
-  parentSlug: string,
 ): Promise<DataResult<{ group: OrgGroup }>> {
   return postData<{ group: OrgGroup }>(token, `/api/v1/orgs/${org}/groups`, {
     slug,
     name,
-    parentSlug,
   });
 }
 

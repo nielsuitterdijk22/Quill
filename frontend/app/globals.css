@@ -5402,7 +5402,7 @@ button.sbom-chip:hover {
   }
 }
 
-/* ---- group explorer: tree + selected group's members/access/subgroups ---- */
+/* ---- group explorer: group list + selected group's members/access ---- */
 .group-explorer {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -5416,11 +5416,6 @@ button.sbom-chip:hover {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-.group-tree .group-tree {
-  padding-left: 14px;
-  border-left: 1px solid var(--line);
-  margin-left: 8px;
 }
 .group-node {
   display: block;

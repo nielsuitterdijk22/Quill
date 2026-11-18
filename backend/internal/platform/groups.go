@@ -10,24 +10,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
-
-// MaxGroupDepth is the deepest allowed nesting for groups inside a tenant
-// (1 = root/department, up to 5). Mirrors the CHECK constraint on groups.depth.
-const MaxGroupDepth = 5
 
 var groupSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // GroupView is the API-facing shape of a group.
 type GroupView struct {
-	ID       uuid.UUID  `json:"id"`
-	Slug     string     `json:"slug"`
-	Name     string     `json:"name"`
-	Depth    int32      `json:"depth"`
-	ParentID *uuid.UUID `json:"parentId,omitempty"`
+	ID   uuid.UUID `json:"id"`
+	Slug string    `json:"slug"`
+	Name string    `json:"name"`
 }
 
 // GroupMember is one user's membership in a group.
@@ -40,12 +33,7 @@ type GroupMember struct {
 }
 
 func groupView(g db.Group) GroupView {
-	v := GroupView{ID: g.ID, Slug: g.Slug, Name: g.Name, Depth: g.Depth}
-	if g.ParentID.Valid {
-		id := uuid.UUID(g.ParentID.Bytes)
-		v.ParentID = &id
-	}
-	return v
+	return GroupView{ID: g.ID, Slug: g.Slug, Name: g.Name}
 }
 
 // resolveGroup loads a group by slug within the org tenant and authorizes the
@@ -68,10 +56,9 @@ func (s *Service) resolveGroup(ctx context.Context, actor Actor, orgSlug, groupS
 	return tenant, group, nil
 }
 
-// CreateGroup creates a group under the org tenant (root when parentSlug is
-// empty, otherwise nested under that parent). Only tenant admins may create
-// groups. Depth is parent.depth+1 and must not exceed MaxGroupDepth.
-func (s *Service) CreateGroup(ctx context.Context, actor Actor, orgSlug, slug, name, parentSlug string) (GroupView, error) {
+// CreateGroup creates a group in the org tenant. Groups are flat: a named set
+// of people that projects grant roles to. Only tenant admins may create groups.
+func (s *Service) CreateGroup(ctx context.Context, actor Actor, orgSlug, slug, name string) (GroupView, error) {
 	tenant, err := s.getTenant(ctx, orgSlug)
 	if err != nil {
 		return GroupView{}, err
@@ -85,29 +72,11 @@ func (s *Service) CreateGroup(ctx context.Context, actor Actor, orgSlug, slug, n
 		return GroupView{}, ErrInvalidInput
 	}
 
-	var parentID pgtype.UUID
-	depth := int32(1)
-	if parentSlug != "" {
-		parent, err := s.store.GetGroupBySlug(ctx, db.GetGroupBySlugParams{TenantID: tenant.ID, Slug: parentSlug})
-		if errors.Is(err, pgx.ErrNoRows) {
-			return GroupView{}, ErrNotFound
-		}
-		if err != nil {
-			return GroupView{}, fmt.Errorf("lookup parent group: %w", err)
-		}
-		depth = parent.Depth + 1
-		if depth > MaxGroupDepth {
-			return GroupView{}, fmt.Errorf("%w: max group depth is %d", ErrInvalidInput, MaxGroupDepth)
-		}
-		parentID = pgtype.UUID{Bytes: [16]byte(parent.ID), Valid: true}
-	}
-
 	group, err := s.store.CreateGroup(ctx, db.CreateGroupParams{
 		TenantID: tenant.ID,
-		ParentID: parentID,
 		Slug:     slug,
 		Name:     name,
-		Depth:    depth,
+		Depth:    1, // legacy column, dropped by a later migration
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -118,8 +87,7 @@ func (s *Service) CreateGroup(ctx context.Context, actor Actor, orgSlug, slug, n
 	return groupView(group), nil
 }
 
-// ListGroups returns the org's whole group tree (flat list with parent links;
-// the UI renders it as a tree).
+// ListGroups returns the org's groups.
 func (s *Service) ListGroups(ctx context.Context, actor Actor, orgSlug string) ([]GroupView, error) {
 	tenant, err := s.getTenant(ctx, orgSlug)
 	if err != nil {
@@ -163,8 +131,7 @@ func (s *Service) UpdateGroup(ctx context.Context, actor Actor, orgSlug, groupSl
 	return groupView(updated), nil
 }
 
-// DeleteGroup removes a group; memberships and project grants cascade. Child
-// groups are deleted by the self-referencing ON DELETE CASCADE.
+// DeleteGroup removes a group; its memberships and project grants cascade.
 func (s *Service) DeleteGroup(ctx context.Context, actor Actor, orgSlug, groupSlug string) error {
 	tenant, group, err := s.resolveGroup(ctx, actor, orgSlug, groupSlug)
 	if err != nil {
@@ -294,8 +261,8 @@ func (s *Service) RemoveGroupProjectRole(ctx context.Context, actor Actor, orgSl
 }
 
 // effectiveProjectRole returns the actor's effective role on a project,
-// combining their direct membership with roles inherited from groups
-// (including ancestor groups). ” means no access.
+// combining their direct membership, the roles granted to their groups and
+// their organization membership — all via project_access. ” means no access.
 func (s *Service) effectiveProjectRole(ctx context.Context, actor Actor, projectID uuid.UUID) (string, error) {
 	if actor.IsAdmin {
 		return "owner", nil

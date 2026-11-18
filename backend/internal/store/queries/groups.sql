@@ -34,7 +34,7 @@ WHERE gm.group_id = $1
 ORDER BY u.username;
 
 -- name: ListGroupsForUser :many
--- Direct memberships only; ancestors are expanded by the recursive query below.
+-- The groups the user belongs to in a tenant.
 SELECT g.* FROM groups g
 JOIN group_members gm ON gm.group_id = g.id
 WHERE gm.user_id = $1 AND g.tenant_id = $2

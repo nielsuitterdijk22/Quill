@@ -13,10 +13,10 @@ import (
 )
 
 // Groups + billing integration tests, gated on QUILL_TEST_DATABASE_URL like the
-// other scope tests: nested group hierarchy with depth cap, group→project role
-// inheritance into the authorization checks, and usage metering / plan changes.
+// other scope tests: flat groups, group→project roles in the authorization
+// checks, and usage metering / plan changes.
 
-func TestNestedGroupHierarchy(t *testing.T) {
+func TestGroupsAreFlat(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 	founder := Actor{UserID: scopeMakeUser(t, st, "gfounder")}
@@ -25,23 +25,14 @@ func TestNestedGroupHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-
-	// Build a chain to the max depth: depth 1..5 succeed.
-	parent := ""
-	for i := 1; i <= MaxGroupDepth; i++ {
-		slug := "level" + string(rune('0'+i))
-		g, err := svc.CreateGroup(ctx, founder, "bank", slug, "Level "+string(rune('0'+i)), parent)
+	for _, slug := range []string{"engineering", "payments", "platform"} {
+		g, err := svc.CreateGroup(ctx, founder, "bank", slug, slug)
 		if err != nil {
-			t.Fatalf("create group depth %d: %v", i, err)
+			t.Fatalf("create group %s: %v", slug, err)
 		}
-		if g.Depth != int32(i) {
-			t.Fatalf("depth %d: got depth %d", i, g.Depth)
+		if g.Slug != slug || g.Name != slug {
+			t.Fatalf("created group = %+v", g)
 		}
-		parent = slug
-	}
-	// Depth 6 is rejected.
-	if _, err := svc.CreateGroup(ctx, founder, "bank", "toodeep", "Too deep", parent); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("depth 6: want ErrInvalidInput, got %v", err)
 	}
 
 	// A non-admin org member cannot create groups.
@@ -49,33 +40,35 @@ func TestNestedGroupHierarchy(t *testing.T) {
 	if err := svc.store.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: tenant.ID, UserID: member.UserID, Role: "member"}); err != nil {
 		t.Fatalf("add tenant member: %v", err)
 	}
-	if _, err := svc.CreateGroup(ctx, member, "bank", "nope", "Nope", ""); !errors.Is(err, ErrForbidden) {
+	if _, err := svc.CreateGroup(ctx, member, "bank", "nope", "Nope"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("member create: want ErrForbidden, got %v", err)
 	}
-	// ...but can read the tree.
-	if groups, err := svc.ListGroups(ctx, member, "bank"); err != nil || len(groups) != MaxGroupDepth {
-		t.Fatalf("member list: want %d groups, got %d (err %v)", MaxGroupDepth, len(groups), err)
+	// ...but can read the list.
+	if groups, err := svc.ListGroups(ctx, member, "bank"); err != nil || len(groups) != 3 {
+		t.Fatalf("member list: want 3 groups, got %d (err %v)", len(groups), err)
 	}
 
 	// Duplicate slug conflicts.
-	if _, err := svc.CreateGroup(ctx, founder, "bank", "level1", "Dup", ""); !errors.Is(err, ErrConflict) {
+	if _, err := svc.CreateGroup(ctx, founder, "bank", "engineering", "Dup"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate slug: want ErrConflict, got %v", err)
 	}
 	// Invalid slug rejected.
-	if _, err := svc.CreateGroup(ctx, founder, "bank", "Bad Slug!", "Bad", ""); !errors.Is(err, ErrInvalidInput) {
+	if _, err := svc.CreateGroup(ctx, founder, "bank", "Bad Slug!", "Bad"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("invalid slug: want ErrInvalidInput, got %v", err)
 	}
 
-	// Deleting the root cascades the whole subtree.
-	if err := svc.DeleteGroup(ctx, founder, "bank", "level1"); err != nil {
-		t.Fatalf("delete root: %v", err)
+	// Deleting a group removes only that group.
+	if err := svc.DeleteGroup(ctx, founder, "bank", "engineering"); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
-	if groups, err := svc.ListGroups(ctx, founder, "bank"); err != nil || len(groups) != 0 {
-		t.Fatalf("after delete: want 0 groups, got %d (err %v)", len(groups), err)
+	if groups, err := svc.ListGroups(ctx, founder, "bank"); err != nil || len(groups) != 2 {
+		t.Fatalf("after delete: want 2 groups, got %d (err %v)", len(groups), err)
 	}
 }
 
-func TestGroupProjectRoleInheritance(t *testing.T) {
+// A group's role on a project reaches exactly that group's members: there is no
+// tree for it to travel along.
+func TestGroupProjectRole(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 	founder := Actor{UserID: scopeMakeUser(t, st, "ifounder")}
@@ -84,18 +77,15 @@ func TestGroupProjectRoleInheritance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-
-	// dept (depth 1) → team (depth 2). The user joins only the subgroup.
-	if _, err := svc.CreateGroup(ctx, founder, "acme", "dept", "Department", ""); err != nil {
-		t.Fatalf("create dept: %v", err)
-	}
-	if _, err := svc.CreateGroup(ctx, founder, "acme", "team", "Team", "dept"); err != nil {
-		t.Fatalf("create team: %v", err)
+	for _, slug := range []string{"dept", "team"} {
+		if _, err := svc.CreateGroup(ctx, founder, "acme", slug, slug); err != nil {
+			t.Fatalf("create %s: %v", slug, err)
+		}
 	}
 	memberID := scopeMakeUser(t, st, "imember")
 	// Group members must belong to the org (AddGroupMember enforces it). Until
 	// access becomes explicit, org members hold an implicit 'member' role, so the
-	// inheritance under test is the OWNER role granted through the group.
+	// effect under test is the OWNER role granted through the group.
 	if err := st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: orgTenant.ID, UserID: memberID, Role: "member"}); err != nil {
 		t.Fatalf("add tenant member: %v", err)
 	}
@@ -109,16 +99,19 @@ func TestGroupProjectRoleInheritance(t *testing.T) {
 		t.Fatalf("before grant: want ErrForbidden, got %v", err)
 	}
 
-	// Grant the *parent* group 'owner' on the project; the subgroup member
-	// inherits it through ancestor expansion.
+	// Granting another group does nothing for this member...
 	if err := svc.SetGroupProjectRole(ctx, founder, "acme", "dept", "acme", "owner"); err != nil {
 		t.Fatalf("set group role: %v", err)
 	}
-	if err := svc.authorizeProjectMember(ctx, member, project.ID); err != nil {
-		t.Fatalf("inherited member: %v", err)
+	if err := svc.authorizeProjectAdmin(ctx, member, project.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("another group's grant must not reach the member: got %v", err)
+	}
+	// ...granting the member's own group does.
+	if err := svc.SetGroupProjectRole(ctx, founder, "acme", "team", "acme", "owner"); err != nil {
+		t.Fatalf("set group role: %v", err)
 	}
 	if err := svc.authorizeProjectAdmin(ctx, member, project.ID); err != nil {
-		t.Fatalf("inherited owner via ancestor group: %v", err)
+		t.Fatalf("own group's owner grant: %v", err)
 	}
 
 	// A stranger still has nothing.
@@ -128,7 +121,7 @@ func TestGroupProjectRoleInheritance(t *testing.T) {
 	}
 
 	// Revoke the grant: owner access is gone again.
-	if err := svc.RemoveGroupProjectRole(ctx, founder, "acme", "dept", "acme"); err != nil {
+	if err := svc.RemoveGroupProjectRole(ctx, founder, "acme", "team", "acme"); err != nil {
 		t.Fatalf("remove group role: %v", err)
 	}
 	if err := svc.authorizeProjectAdmin(ctx, member, project.ID); !errors.Is(err, ErrForbidden) {
@@ -249,7 +242,7 @@ func TestGroupAccessAndOrgProjectsRead(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, admin, "gaorg", "GA Org"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateGroup(ctx, admin, "gaorg", "eng", "Engineering", ""); err != nil {
+	if _, err := svc.CreateGroup(ctx, admin, "gaorg", "eng", "Engineering"); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.SetGroupProjectRole(ctx, admin, "gaorg", "eng", "gaorg", "owner"); err != nil {
@@ -290,7 +283,7 @@ func TestGroupGrantCannotCrossTenants(t *testing.T) {
 	}
 	ta, _ := st.GetTenantBySlug(ctx, "xt-org-a")
 	_ = st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: ta.ID, UserID: insider.UserID, Role: "member"})
-	if _, err := svc.CreateGroup(ctx, adminA, "xt-org-a", "crew", "Crew", ""); err != nil {
+	if _, err := svc.CreateGroup(ctx, adminA, "xt-org-a", "crew", "Crew"); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.AddGroupMember(ctx, adminA, "xt-org-a", "crew", insider.UserID); err != nil {
