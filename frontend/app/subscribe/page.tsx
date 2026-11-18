@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { UpgradeButton } from "../components/organization/UpgradeButton";
 import { AppTile } from "../components/icons/AppMarks";
 import { listOrgs } from "../lib/api/organizations";
+import { PlanPicker } from "./PlanPicker";
 import { needsPlan } from "../lib/paywall";
 import { getToken, requireSession } from "../lib/session";
 
@@ -29,30 +29,12 @@ export default async function SubscribePage({ searchParams }: { searchParams: { 
         </div>
         <h1 className="signin-title">Choose your plan</h1>
         <p className="signin-sub">
-          Quill has no free plan. Pick one to get started — per month, VAT included, cancel any time.
+          Quill has no free plan. Pick one to get started.
         </p>
         {confirming && (
           <div className="banner">Payment received? Confirming it with Creem — this page refreshes by itself.</div>
         )}
-        <div className="plan-actions">
-          <div>
-            <b>Starter · €4</b>
-            <p className="subtle">5 GB git storage, 100 CI minutes, private repositories.</p>
-            <UpgradeButton endpoint="/me/billing/checkout" plan="starter" label="Get Starter" />
-          </div>
-          <div>
-            <b>Pro · €9</b>
-            <p className="subtle">10 GB + 1 GB LFS, 500 CI minutes, self-hosted runners, priority support.</p>
-            <UpgradeButton endpoint="/me/billing/checkout" plan="pro" label="Get Pro" />
-          </div>
-          <div>
-            <b>Team · €11 per user</b>
-            <p className="subtle">For organizations: SSO, member management, org-wide policies.</p>
-            <Link className="btn gold" href="/onboarding">
-              Set up a team
-            </Link>
-          </div>
-        </div>
+        <PlanPicker />
         <p className="signin-foot">
           Have a beta invite? Open your invite link again. <Link href="/api/auth/signout">Sign out</Link>
         </p>
