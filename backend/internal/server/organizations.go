@@ -14,12 +14,11 @@ import (
 // orgResponse is the public JSON shape for an organization (an org-kind tenant)
 // paired with the caller's role in it.
 type orgResponse struct {
-	Slug        string     `json:"slug"`
-	Name        string     `json:"name"`
-	Role        string     `json:"role"`
-	Plan        string     `json:"plan,omitempty"`
-	TrialEndsAt *time.Time `json:"trialEndsAt,omitempty"`
-	Locked      bool       `json:"locked,omitempty"`
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Role   string `json:"role"`
+	Plan   string `json:"plan,omitempty"`
+	Locked bool   `json:"locked,omitempty"`
 }
 
 type createOrgRequest struct {
@@ -43,7 +42,7 @@ func (s *Server) handleListOrganizations(w http.ResponseWriter, r *http.Request)
 	}
 	out := make([]orgResponse, 0, len(orgs))
 	for _, o := range orgs {
-		out = append(out, orgResponse{Slug: o.Slug, Name: o.Name, Role: o.Role, Plan: o.Plan, TrialEndsAt: o.TrialEndsAt, Locked: o.Locked})
+		out = append(out, orgResponse{Slug: o.Slug, Name: o.Name, Role: o.Role, Plan: o.Plan, Locked: o.Locked})
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"organizations": out})
 }

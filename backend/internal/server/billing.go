@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/httpx"
@@ -18,7 +19,6 @@ type billingResponse struct {
 	Plan        string         `json:"plan"`
 	Usage       billingUsage   `json:"usage"`
 	Limits      *billingLimits `json:"limits,omitempty"`
-	TrialEndsAt *time.Time     `json:"trialEndsAt,omitempty"`
 	Locked      bool           `json:"locked"`
 	Seats       int            `json:"seats"`
 	BilledSeats int            `json:"billedSeats"`
@@ -57,7 +57,6 @@ func handleBillingGet(s *Server) http.HandlerFunc {
 		resp := billingResponse{
 			Plan:        view.Plan,
 			Usage:       billingUsage(view.Usage),
-			TrialEndsAt: view.TrialEndsAt,
 			Locked:      view.Locked,
 			Seats:       view.Seats,
 			BilledSeats: view.BilledSeats,
@@ -98,8 +97,8 @@ func handleBillingSetPlan(s *Server) http.HandlerFunc {
 	}
 }
 
-// handleBillingCheckout starts a Creem checkout session for upgrading the org
-// to the Team plan. Returns the hosted-checkout URL the browser should be sent
+// handleBillingCheckout starts a Creem checkout session for the org's Team Pro
+// subscription. Returns the hosted-checkout URL the browser should be sent
 // to; when payments are not configured, a truthful 501 lets the UI say so.
 func handleBillingCheckout(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +189,6 @@ func (s *Server) handleMyBilling(w http.ResponseWriter, r *http.Request) {
 	resp := billingResponse{
 		Plan:        view.Plan,
 		Usage:       billingUsage(view.Usage),
-		TrialEndsAt: view.TrialEndsAt,
 		Locked:      view.Locked,
 		Seats:       view.Seats,
 		BilledSeats: view.BilledSeats,
@@ -205,8 +203,8 @@ func (s *Server) handleMyBilling(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
-// handleMyBillingCheckout starts a Creem checkout session for upgrading the
-// caller's personal account to the Pro plan. 501 when payments aren't
+// handleMyBillingCheckout starts a Creem checkout session for the caller's
+// personal account (Starter or Pro). 501 when payments aren't
 // configured mirrors the org flow.
 func (s *Server) handleMyBillingCheckout(w http.ResponseWriter, r *http.Request) {
 	actor, ok := actorFrom(r.Context())
@@ -214,12 +212,22 @@ func (s *Server) handleMyBillingCheckout(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	// Body is optional ({"plan":"starter"|"pro"}); an empty body means Pro.
+	var req struct {
+		Plan string `json:"plan"`
+	}
+	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Plan == "" {
+		req.Plan = platform.PlanPro
+	}
 	successURL := "/settings?upgraded=1"
 	if len(s.cfg.CORSAllowedOrigins) > 0 && s.cfg.CORSAllowedOrigins[0] != "" {
 		successURL = s.cfg.CORSAllowedOrigins[0] + successURL
 	}
 	requestID := fmt.Sprintf("user-%s-%d", actor.UserID, time.Now().Unix())
-	url, err := s.platform.StartPersonalCheckout(r.Context(), actor, successURL, requestID)
+	url, err := s.platform.StartPersonalCheckout(r.Context(), actor, req.Plan, successURL, requestID)
 	if err != nil {
 		if errors.Is(err, platform.ErrPaymentsNotConfigured) {
 			httpx.Error(w, http.StatusNotImplemented, "not_configured", "Card payments are not activated on this server yet — contact us to upgrade early.")
@@ -232,4 +240,92 @@ func (s *Server) handleMyBillingCheckout(w http.ResponseWriter, r *http.Request)
 		"user": actor.UserID.String(),
 	})
 	httpx.JSON(w, http.StatusOK, map[string]any{"url": url})
+}
+
+// handleRedeemBeta moves the caller's personal account to the beta plan using
+// an invite code from a hand-issued link.
+func (s *Server) handleRedeemBeta(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req struct {
+		Code string `json:"code"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := s.platform.RedeemBetaInvite(r.Context(), actor, req.Code); err != nil {
+		s.writePlatformError(w, err, "could not redeem beta invite")
+		return
+	}
+	s.logAudit(r, "billing.beta_redeemed", "user", actor.UserID.String(), nil)
+	httpx.JSON(w, http.StatusOK, map[string]any{"plan": platform.PlanBeta})
+}
+
+// handleCreateBetaInvite mints a beta invite (platform admin). The code and a
+// ready-to-share link are returned once.
+func (s *Server) handleCreateBetaInvite(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	var req struct {
+		Note    string `json:"note"`
+		MaxUses int    `json:"maxUses"`
+		Days    int    `json:"days"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	inv, code, err := s.platform.CreateBetaInvite(r.Context(), actor, req.Note, req.MaxUses, req.Days)
+	if err != nil {
+		s.writePlatformError(w, err, "could not create beta invite")
+		return
+	}
+	s.logAudit(r, "billing.beta_invite_created", "beta_invite", inv.ID.String(), map[string]any{
+		"note": inv.Note, "maxUses": inv.MaxUses, "expiresAt": inv.ExpiresAt,
+	})
+	link := "/beta/" + code
+	if len(s.cfg.CORSAllowedOrigins) > 0 && s.cfg.CORSAllowedOrigins[0] != "" {
+		link = s.cfg.CORSAllowedOrigins[0] + link
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{"invite": inv, "code": code, "link": link})
+}
+
+// handleListBetaInvites lists beta invites (platform admin).
+func (s *Server) handleListBetaInvites(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	invs, err := s.platform.ListBetaInvites(r.Context(), actor)
+	if err != nil {
+		s.writePlatformError(w, err, "could not list beta invites")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"invites": invs})
+}
+
+// handleRevokeBetaInvite disables a beta invite (platform admin).
+func (s *Server) handleRevokeBetaInvite(w http.ResponseWriter, r *http.Request) {
+	actor, ok := actorFrom(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid_id", "invalid invite id")
+		return
+	}
+	if err := s.platform.RevokeBetaInvite(r.Context(), actor, id); err != nil {
+		s.writePlatformError(w, err, "could not revoke beta invite")
+		return
+	}
+	s.logAudit(r, "billing.beta_invite_revoked", "beta_invite", id.String(), nil)
+	w.WriteHeader(http.StatusNoContent)
 }

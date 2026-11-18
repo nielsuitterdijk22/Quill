@@ -14,16 +14,18 @@ function GoldSubmit({ label }: { label: string }) {
   );
 }
 
-// UpgradeButton starts a Creem checkout (Team for orgs, Pro for personal
-// accounts) through a server action that attaches the session bearer
+// UpgradeButton starts a Creem checkout (Team Pro for orgs, Starter/Pro for
+// personal accounts) through a server action that attaches the session bearer
 // server-side, so it works regardless of the browser-side proxy. On
 // success the browser is redirected to Creem's hosted checkout.
 export function UpgradeButton({
   endpoint,
-  label = "Upgrade to Team",
+  label = "Subscribe to Team Pro",
+  plan,
 }: {
   endpoint: string;
   label?: string;
+  plan?: string;
 }) {
   const [state, action] = useFormState(startUpgradeAction, {});
   useEffect(() => {
@@ -33,6 +35,7 @@ export function UpgradeButton({
   return (
     <form action={action}>
       <input type="hidden" name="endpoint" value={endpoint} />
+      {plan && <input type="hidden" name="plan" value={plan} />}
       <GoldSubmit label={label} />
       {state.error && (
         <p className="subtle" style={{ marginTop: 8 }}>{state.error}</p>

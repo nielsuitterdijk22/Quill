@@ -46,10 +46,11 @@ type SCIMUserInput struct {
 	Active      bool
 }
 
-// scimPlans are the plans that may use SCIM (a running trial counts).
+// scimAllowedPlan reports the plans that may use SCIM (locked ones can still
+// read/configure; writes are refused by enforceTenantActive).
 func scimAllowedPlan(plan string) bool {
 	switch plan {
-	case PlanTeam, PlanTrial, PlanLapsed, PlanEnterprise, PlanInternal:
+	case PlanTeam, PlanInactive, PlanLapsed, PlanEnterprise, PlanInternal, PlanBeta:
 		return true
 	}
 	return false

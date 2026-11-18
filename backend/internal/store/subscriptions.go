@@ -34,25 +34,6 @@ func (s *Store) GetTenantSubscription(ctx context.Context, tenantID uuid.UUID) (
 	return sub, err
 }
 
-// StartTenantTrial puts the tenant on the 'trial' plan until endsAt.
-func (s *Store) StartTenantTrial(ctx context.Context, tenantID uuid.UUID, endsAt time.Time) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `UPDATE tenants SET plan = 'trial', updated_at = now() WHERE id = $1`, tenantID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO tenant_subscriptions (tenant_id, trial_ends_at) VALUES ($1, $2)
-		ON CONFLICT (tenant_id) DO UPDATE SET trial_ends_at = EXCLUDED.trial_ends_at, updated_at = now()`,
-		tenantID, endsAt); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
 // SetTenantCreemIDs records the Creem customer/subscription behind a tenant's
 // plan. Empty values leave the stored ones untouched.
 func (s *Store) SetTenantCreemIDs(ctx context.Context, tenantID uuid.UUID, customerID, subscriptionID string) error {

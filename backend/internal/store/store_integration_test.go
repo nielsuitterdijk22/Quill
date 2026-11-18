@@ -37,7 +37,7 @@ func testStore(t *testing.T) *store.Store {
 
 // TestTenantPlanColumn asserts the tenants.plan column (migration 000019)
 // and migration 000021's freemium default: the seeded default tenant keeps the
-// operator's 'internal' plan, while newly created tenants start on 'free'.
+// operator's 'internal' plan, while newly created tenants start on 'inactive'.
 func TestTenantPlanColumn(t *testing.T) {
 	st := testStore(t)
 	ctx := context.Background()
@@ -65,8 +65,8 @@ func TestTenantPlanColumn(t *testing.T) {
 			t.Logf("cleanup tenant %v: %v", created.ID, err)
 		}
 	})
-	if created.Plan != "free" {
-		t.Fatalf("created tenant plan = %q, want %q", created.Plan, "free")
+	if created.Plan != "inactive" {
+		t.Fatalf("created tenant plan = %q, want %q", created.Plan, "inactive")
 	}
 
 	// Read back by id: the plan must round-trip through GetTenantByID.
@@ -74,8 +74,8 @@ func TestTenantPlanColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get tenant by id: %v", err)
 	}
-	if got.Plan != "free" {
-		t.Fatalf("tenant plan by id = %q, want %q", got.Plan, "free")
+	if got.Plan != "inactive" {
+		t.Fatalf("tenant plan by id = %q, want %q", got.Plan, "inactive")
 	}
 }
 

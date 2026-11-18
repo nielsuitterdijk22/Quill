@@ -70,6 +70,9 @@ func (f *scimFixture) org(slug string) (string, platform.Actor) {
 	if _, _, err := f.srv.platform.CreateOrganization(context.Background(), admin, slug, slug); err != nil {
 		f.t.Fatalf("create org: %v", err)
 	}
+	if _, err := f.srv.platform.SetTenantPlan(context.Background(), platform.Actor{IsAdmin: true}, slug, platform.PlanTeam); err != nil {
+		f.t.Fatalf("activate org: %v", err)
+	}
 	tok, _, err := f.srv.platform.CreateSCIMToken(context.Background(), admin, slug, "okta")
 	if err != nil {
 		f.t.Fatalf("create token: %v", err)

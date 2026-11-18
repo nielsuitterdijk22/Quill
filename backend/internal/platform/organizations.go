@@ -33,11 +33,10 @@ type OrganizationSummary struct {
 	Slug string
 	Name string
 	Role string
-	// Plan, trial window and lock state, so every page can tell people when
-	// their organization is on a trial or locked (members see it too).
-	Plan        string
-	TrialEndsAt *time.Time
-	Locked      bool
+	// Plan and lock state, so every page can tell people when their
+	// organization still needs a subscription (members see it too).
+	Plan   string
+	Locked bool
 }
 
 // CreateOrganization provisions a new organization for the actor: a dedicated
@@ -87,16 +86,9 @@ func (s *Service) CreateOrganization(ctx context.Context, actor Actor, slug, nam
 		return db.Tenant{}, db.Project{}, fmt.Errorf("create organization: %w", err)
 	}
 
-	// Organizations are not free: every new org starts a Team trial.
-	if err := s.startOrgTrial(ctx, tenant.ID); err != nil {
-		cctx, cancel := detachedContext(ctx)
-		defer cancel()
-		if delErr := s.store.DeleteTenant(cctx, tenant.ID); delErr != nil {
-			s.logger.Error("failed to roll back org tenant", "tenant", tenant.ID, "error", delErr)
-		}
-		return db.Tenant{}, db.Project{}, fmt.Errorf("start trial: %w", err)
-	}
-	tenant.Plan = PlanTrial
+	// Organizations are not free: a new org starts 'inactive' (the column
+	// default) and is locked until it subscribes to Team Pro.
+	tenant.Plan = PlanInactive
 
 	// Seed the org's first project under the new tenant by pointing the actor's
 	// tenant at it. CreateProject provisions the Forgejo org and records ownership.
@@ -136,9 +128,7 @@ func (s *Service) ListOrganizations(ctx context.Context, actor Actor) ([]Organiz
 		sum := OrganizationSummary{Slug: r.Slug, Name: r.Name, Role: r.MemberRole}
 		if t, err := s.store.GetTenantBySlug(ctx, r.Slug); err == nil {
 			sum.Plan = t.Plan
-			if locked, ends, err := s.tenantLocked(ctx, t); err == nil {
-				sum.Locked, sum.TrialEndsAt = locked, ends
-			}
+			sum.Locked = planLocked(t.Plan)
 		}
 		out = append(out, sum)
 	}

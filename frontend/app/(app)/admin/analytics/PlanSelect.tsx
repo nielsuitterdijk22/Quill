@@ -4,10 +4,11 @@ import { useState, useTransition } from "react";
 
 import { setPlanAction } from "./actions";
 
-// Personal accounts are free or pro; organizations trial, team, lapsed or
+// No free tier: personal accounts are inactive (locked), starter, pro, or the
+// hand-granted free "beta"; organizations are inactive, team, lapsed, beta or
 // vendor plans. "internal" = no billing at all (our own / test orgs).
-const PERSONAL = ["free", "pro", "internal"];
-const ORG = ["team", "lapsed", "enterprise", "internal"]; // "trial" only when current (it needs a trial window)
+const PERSONAL = ["inactive", "starter", "pro", "beta", "internal"];
+const ORG = ["inactive", "team", "lapsed", "beta", "enterprise", "internal"];
 
 export function PlanSelect({ slug, plan, personal }: { slug: string; plan: string; personal: boolean }) {
   const [value, setValue] = useState(plan);

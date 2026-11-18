@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nielsuitterdijk22/quill/internal/config"
 	"github.com/nielsuitterdijk22/quill/internal/creem"
@@ -40,9 +39,6 @@ func TestCreemWebhookEndpoint(t *testing.T) {
 		t.Fatalf("create tenant: %v", err)
 	}
 	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenant.ID) })
-	if err := st.StartTenantTrial(ctx, tenant.ID, time.Now().Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
 
 	cfg, err := config.Load()
 	if err != nil {

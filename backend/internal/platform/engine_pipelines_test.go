@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nielsuitterdijk22/quill/internal/platform"
+	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
 // D2 cutover: pipelines for own-engine repos read workflows, commit SHAs and
@@ -46,6 +47,9 @@ func enginePipelineRepoURL(t *testing.T, slug string) (*platform.Service, platfo
 		t.Fatalf("tenant: %v", err)
 	}
 	act.TenantID = tenant.ID
+	if err := st.SetTenantPlan(ctx, db.SetTenantPlanParams{ID: tenant.ID, Plan: platform.PlanTeam}); err != nil {
+		t.Fatalf("activate tenant: %v", err)
+	}
 	if _, err := svc.CreateProject(ctx, act, platform.CreateProjectInput{Slug: slug, Name: slug}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}

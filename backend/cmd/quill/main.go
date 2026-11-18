@@ -79,6 +79,7 @@ Commands:
   admin purge-e2e    delete live-e2e debris: tenants/projects/repos whose slug starts with e2e- (never users)
   admin git-maintenance  reconcile engine-repo manifests against the referee, repack past the threshold, GC orphan packs
   admin issue-api-token  mint an API token (Bearer qat_…) acting as a user, written to --out (0600)
+  admin create-beta-invite  mint a temporary, capped beta signup link (free 'beta' plan): --note --uses --days
   admin open-pull        open a PR on an engine repo as a user (an agent hands a pushed branch to review)
   admin migrate-forgejo-to-bucket  D1 migration: mirror each Forgejo repo into the engine bucket (refs + packs + PR history), verify, freeze the repo read-only
 
@@ -96,7 +97,7 @@ Configuration is read from the environment (same variables as the API):
 
 func runAdmin(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, issue-api-token, open-pull, migrate-forgejo-to-bucket, remask-run-logs)")
+		return fmt.Errorf("admin: missing subcommand (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, issue-api-token, open-pull, migrate-forgejo-to-bucket, remask-run-logs, create-beta-invite)")
 	}
 	switch args[0] {
 	case "create-repo":
@@ -121,8 +122,10 @@ func runAdmin(args []string) error {
 		return runForgejoMigrate(args[1:])
 	case "remask-run-logs":
 		return runRemaskRunLogs(args[1:])
+	case "create-beta-invite":
+		return runCreateBetaInvite(args[1:])
 	default:
-		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, issue-api-token, open-pull, migrate-forgejo-to-bucket, remask-run-logs)", args[0])
+		return fmt.Errorf("admin: unknown subcommand %q (create-repo, seed-file, purge-e2e, git-maintenance, git-relocate, set-repo-secret, issue-git-token, issue-api-token, open-pull, migrate-forgejo-to-bucket, remask-run-logs, create-beta-invite)", args[0])
 	}
 }
 

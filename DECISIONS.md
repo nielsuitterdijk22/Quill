@@ -870,3 +870,30 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   org-admin operations go through `tenantProject` (other tenants' projects answer not-found).
   Regression test `TestGroupGrantCannotCrossTenants` fails without the fix. Follow-up: audit
   production `group_project_roles` for rows whose group and project tenants differ.
+
+## 2026-11-18 — Paid only: no free tier, no trial; Starter €4 / Pro €9 / Team Pro €9 per user
+
+- Owner decision (pricing page copy: "No free tier. Starter at €4. Pro at €9."). Plans are now
+  `starter`, `pro`, `team` (shown as Team Pro), `enterprise`, `internal`, plus `beta`; the old
+  `free` and `trial` plans are gone. New tenants (personal and org) start `inactive` — locked
+  exactly like `lapsed` (read-only data, no new repos/pipelines/invites). Migration 000042 moves
+  existing `free`/`trial` tenants to `inactive` (no real customers existed) and sets the column
+  default. The `trial_ends_at` column stays (unused) to avoid a destructive migration.
+- Caps: Starter 5 GiB / 100 CI min, Pro and Beta 10 GiB / 500 CI min, Team uncapped (usage-based,
+  unchanged). Repository counts are no longer capped on any plan. Not enforced yet: Git LFS quota
+  (1 GB on Pro), self-hosted runners, per-member Pro limits for Team Pro.
+- Beta: `beta_invites` (hashed code, note, max uses, expiry, revoke) + `beta_invite_redemptions`.
+  Redeeming moves only an `inactive`/`lapsed` personal account to `beta` (never overwrites a paid
+  or vendor plan; atomic use-count in one transaction). Minted with `quill admin
+  create-beta-invite` or Admin → Beta invites; link is `/beta/<code>`. A beta account that later
+  subscribes simply gets the paid plan from the Creem webhook. Rejected: a beta expiry date on
+  the plan itself (the owner can flip the plan in Admin → Analytics; invites already expire).
+- Creem: new `CREEM_STARTER_PRODUCT_ID` (terraform `creem_starter_product_id`, default `"unset"` =
+  not configured, checkout answers 501 truthfully). The existing `creem_pro_product_id` /
+  `creem_team_product_id` values in the deploy workflows still point at the OLD products and must be
+  replaced with the new €9 products once they exist. Cancel/expire of any paid plan now lapses
+  (locks) the tenant; there is no free tier to fall back to.
+- Consequence for ops: existing personal accounts on `free` (e.g. the e2e fixture
+  `e2e-tester@black-tulip.nl`) become `inactive` after this deploys; give them `beta`/`internal`
+  via Admin → Analytics, or the live suite's repo-creating tests will hit the lock.
+

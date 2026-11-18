@@ -69,14 +69,14 @@ function IconSpinner() {
   );
 }
 
-// TrialNotice tells the creator of a new organization what they just started:
-// organizations are paid, with a 14-day Team trial first.
-function TrialNotice({ org }: { org: string | null }) {
+// PlanNotice tells the creator of a new organization what they just started:
+// Quill has no free tier or trial, so the org starts locked until it subscribes.
+function PlanNotice({ org }: { org: string | null }) {
   return (
     <div className="banner ob-trial">
-      <b>{org ? `${org} is on a 14-day Team trial.` : "Your organization is on a 14-day Team trial."}</b> Everything is
-      unlocked while it runs. Subscribe any time under Settings → Billing (€5 per seat per month); when the trial ends,
-      creating repositories, running pipelines and inviting members pause until you do. Existing code stays readable.
+      <b>{org ? `${org} needs a Team Pro subscription.` : "Your organization needs a Team Pro subscription."}</b>{" "}
+      Quill has no free plan: subscribe under Settings → Billing (€9 per user per month, VAT included). Until then,
+      creating repositories, running pipelines and inviting members are paused. Existing code stays readable.
     </div>
   );
 }
@@ -402,7 +402,7 @@ export default function OnboardingPage() {
                   <li>Custom org slug</li>
                   <li>Role-based member access</li>
                   <li>Org-wide branch policies</li>
-                  <li>14-day free trial, then €5 per seat/month</li>
+                  <li>Team Pro: €9 per user/month</li>
                 </ul>
               </div>
               <div className="ob-card-footer">
@@ -432,8 +432,8 @@ export default function OnboardingPage() {
           <div className="ob-headline">
             <h1 className="ob-title">Set up your organization</h1>
             <p className="ob-sub">
-              Choose a unique slug — it becomes part of every repository URL. Your organization starts a
-              14-day Team trial; subscribe any time from its billing settings (€5 per seat/month).
+              Choose a unique slug — it becomes part of every repository URL. Quill has no free plan — subscribe to
+              Team Pro from the organization&apos;s billing settings (€9 per user/month).
             </p>
           </div>
 
@@ -503,7 +503,7 @@ export default function OnboardingPage() {
             <p className="ob-sub">Import from GitHub — or skip and create repos manually.</p>
           </div>
 
-          {accountType === "org" && <TrialNotice org={projectSlug ?? requestedProject} />}
+          {accountType === "org" && <PlanNotice org={projectSlug ?? requestedProject} />}
           {error && <div className="ob-error">{error}</div>}
           {githubError && (
             <div className="ob-error">
@@ -631,7 +631,7 @@ export default function OnboardingPage() {
             <IconCheck />
           </div>
           <h1 className="ob-title">You&apos;re all set!</h1>
-          {accountType === "org" && <TrialNotice org={projectSlug ?? requestedProject} />}
+          {accountType === "org" && <PlanNotice org={projectSlug ?? requestedProject} />}
           {succeeded.length > 0 && (
             <p className="ob-sub">
               Successfully imported {succeeded.length} repo{succeeded.length !== 1 ? "s" : ""}.

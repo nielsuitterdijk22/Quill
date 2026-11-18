@@ -177,25 +177,25 @@ func TestBillingUsageAndPlan(t *testing.T) {
 		t.Fatalf("finish run: %v", err)
 	}
 
-	// Tenant admin sees plan + usage. Organizations are not free: a new org
-	// runs a Team trial (migration 000038) — no hard caps, not locked.
+	// Tenant admin sees plan + usage. Organizations are not free: a new org is
+	// inactive (locked) until it subscribes.
 	view, err := svc.GetBilling(ctx, founder, "acme2")
 	if err != nil {
 		t.Fatalf("get billing: %v", err)
 	}
-	if view.Plan != PlanTrial || view.Locked || view.Limits != nil || view.TrialEndsAt == nil {
-		t.Fatalf("new org: want an active trial without caps, got %+v", view)
+	if view.Plan != PlanInactive || !view.Locked || view.Limits != nil {
+		t.Fatalf("new org: want inactive and locked, got %+v", view)
 	}
-	// The free plan (still the individual tier) carries the hard limits.
-	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "acme2", PlanFree); err != nil {
-		t.Fatalf("set free plan: %v", err)
+	// The Starter plan carries hard limits.
+	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "acme2", PlanStarter); err != nil {
+		t.Fatalf("set starter plan: %v", err)
 	}
 	view, err = svc.GetBilling(ctx, founder, "acme2")
 	if err != nil {
 		t.Fatalf("get billing: %v", err)
 	}
-	if view.Plan != PlanFree {
-		t.Fatalf("plan: want free, got %q", view.Plan)
+	if view.Plan != PlanStarter {
+		t.Fatalf("plan: want starter, got %q", view.Plan)
 	}
 	if view.Usage.Repos != 1 {
 		t.Fatalf("repos: want 1, got %d", view.Usage.Repos)
@@ -203,8 +203,8 @@ func TestBillingUsageAndPlan(t *testing.T) {
 	if view.Usage.PipelineMinutes < 9.9 || view.Usage.PipelineMinutes > 10.1 {
 		t.Fatalf("pipeline minutes: want ~10, got %f", view.Usage.PipelineMinutes)
 	}
-	if view.Limits == nil || view.Limits.Repos == nil || *view.Limits.Repos != FreeMaxRepos {
-		t.Fatalf("free plan should have hard limits, got %+v", view.Limits)
+	if view.Limits == nil || view.Limits.StorageBytes == nil || *view.Limits.StorageBytes != StarterMaxStorageBytes {
+		t.Fatalf("starter plan should have hard limits, got %+v", view.Limits)
 	}
 
 	// A plain org member may not see billing.
@@ -214,7 +214,7 @@ func TestBillingUsageAndPlan(t *testing.T) {
 	}
 
 	// Only a platform admin may change the plan.
-	if _, err := svc.SetTenantPlan(ctx, founder, "acme2", PlanFree); !errors.Is(err, ErrForbidden) {
+	if _, err := svc.SetTenantPlan(ctx, founder, "acme2", PlanStarter); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("org admin set plan: want ErrForbidden, got %v", err)
 	}
 	admin := Actor{UserID: founderID, IsAdmin: true}

@@ -74,6 +74,7 @@ var reservedSlugs = map[string]bool{
 	"register":     true,
 	"orgs":         true,
 	"invite":       true,
+	"beta":         true,
 	"onboarding":   true,
 }
 

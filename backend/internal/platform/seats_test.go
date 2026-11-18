@@ -93,6 +93,8 @@ func TestTeamSeatsFollowMembership(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, founder, "seatorg", "Seat Org"); err != nil {
 		t.Fatal(err)
 	}
+	// Pre-subscription phase: a beta org is active but never touches Creem.
+	activateOrg(t, svc, "seatorg", PlanBeta)
 	join := func(name string) Actor {
 		t.Helper()
 		a := Actor{UserID: scopeMakeUser(t, st, name)}

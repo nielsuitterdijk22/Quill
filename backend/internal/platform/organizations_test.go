@@ -73,6 +73,8 @@ func TestOrgInvitesAndMembers(t *testing.T) {
 		t.Fatalf("demote last admin: want ErrInvalidInput, got %v", err)
 	}
 
+	activateOrg(t, svc, "acme", PlanTeam)
+
 	// Admin invites a member; the raw token builds the accept link.
 	res, err := svc.CreateInvite(ctx, founder, "acme", "jane@acme.com", "member")
 	if err != nil {
@@ -142,6 +144,8 @@ func TestOrgAdminManagesTenantPolicies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create organization: %v", err)
 	}
+
+	activateOrg(t, svc, "acme", PlanTeam)
 
 	// An org admin may set org-wide (tenant-scoped) branch policies — previously
 	// reserved for platform admins.

@@ -29,11 +29,11 @@ function bytes(n: number): string {
   return `${n} B`;
 }
 
-// Meter shows usage against a free-plan gate (paid plans: no limit).
+// Meter shows usage against a plan cap (uncapped plans: no limit).
 function Meter({ used, limit, free, label }: { used: number; limit: number; free: boolean; label: string }) {
   const pct = free && limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
   return (
-    <div className="an-meter" title={free ? `${Math.round(pct)}% of the free plan` : "no limit on this plan"}>
+    <div className="an-meter" title={free ? `${Math.round(pct)}% of the plan cap` : "no limit on this plan"}>
       <span>{label}</span>
       {free && (
         <span className="an-meter-track">
@@ -204,7 +204,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: { 
 
       <div className="panel">
         <h2>
-          Plan usage <span className="subtle">against the free-plan limits</span>
+          Plan usage <span className="subtle">against each plan&apos;s caps</span>
         </h2>
         <table className="an-table">
           <thead>
@@ -219,7 +219,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: { 
           </thead>
           <tbody>
             {a.tenants.map((t) => {
-              const free = t.plan === "free";
+              const free = t.minuteLimit > 0;
               return (
                 <tr key={t.slug}>
                   <td>
@@ -231,7 +231,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: { 
                   </td>
                   <td className="an-r">{t.personal ? "—" : t.members}</td>
                   <td>
-                    <Meter used={t.repos} limit={t.repoLimit} free={free} label={free ? `${t.repos} / ${t.repoLimit}` : `${t.repos}`} />
+                    <span className="mono">{t.repos}</span>
                   </td>
                   <td>
                     <Meter used={t.minutes} limit={t.minuteLimit} free={free} label={free ? `${Math.round(t.minutes)} / ${t.minuteLimit}` : `${Math.round(t.minutes)}`} />

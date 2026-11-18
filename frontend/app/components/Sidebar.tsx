@@ -63,6 +63,7 @@ const ORG_NAV: NavItem[] = [
 const ADMIN_NAV: NavItem[] = [
   { href: "/admin/analytics", label: "Analytics", icon: "dashboard" },
   { href: "/admin/audit-log", label: "Audit log", icon: "eye" },
+  { href: "/admin/beta", label: "Beta invites", icon: "user" },
 ];
 
 // ORG_ADMIN_NAV holds entries only relevant when org projects exist.
@@ -70,16 +71,11 @@ const ORG_ADMIN_NAV: NavItem[] = [
   { href: "/admin/users", label: "Users", icon: "user" },
 ];
 
-// trialDaysLeft is the whole days until a trial ends (0 on the last day).
-function trialDaysLeft(iso: string): number {
-  return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
-}
-
 // Top-level paths that are app routes, not owner namespaces. Derived from the
 // app directory at build time (next.config.mjs) — a hand-kept list here once
 // missed "orgs", so org settings showed a bogus "orgs / {org}" repo context.
 const RESERVED_TOP_LEVEL = new Set(
-  (process.env.NEXT_PUBLIC_RESERVED_ROUTES || "projects,settings,admin,repositories,pulls,pipelines,sbom,orgs,invite,onboarding,sign-in,sign-up,login,register,api")
+  (process.env.NEXT_PUBLIC_RESERVED_ROUTES || "projects,settings,admin,repositories,pulls,pipelines,sbom,orgs,invite,beta,onboarding,sign-in,sign-up,login,register,api")
     .split(",")
     .filter(Boolean),
 );
@@ -416,7 +412,7 @@ export function Sidebar({
             {orgs.map((o) => (
               <Link
                 key={o.slug}
-                href={`/orgs/${encodeURIComponent(o.slug)}/settings${o.locked || o.plan === "trial" ? "/billing" : ""}`}
+                href={`/orgs/${encodeURIComponent(o.slug)}/settings${o.locked ? "/billing" : ""}`}
                 className={
                   isActive(pathname, `/orgs/${o.slug}`) ? "active" : ""
                 }
@@ -426,8 +422,6 @@ export function Sidebar({
                 {o.name}
                 {o.locked ? (
                   <span className="tag tag-danger">locked</span>
-                ) : o.plan === "trial" && o.trialEndsAt ? (
-                  <span className="tag tag-warn">trial · {trialDaysLeft(o.trialEndsAt)}d</span>
                 ) : (
                   o.role === "admin" && <span className="tag">admin</span>
                 )}

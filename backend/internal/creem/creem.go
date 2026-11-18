@@ -24,11 +24,12 @@ const DefaultBaseURL = "https://api.creem.io"
 
 // Config carries the API credentials for the Quill app.
 type Config struct {
-	APIKey        string
-	WebhookSecret string
-	TeamProductID string
-	ProProductID  string // the individual "Pro" plan product
-	BaseURL       string // overridable for tests; empty = DefaultBaseURL
+	APIKey           string
+	WebhookSecret    string
+	TeamProductID    string // Team Pro (per user)
+	StarterProductID string // the individual "Starter" plan product
+	ProProductID     string // the individual "Pro" plan product
+	BaseURL          string // overridable for tests; empty = DefaultBaseURL
 }
 
 // Client wraps the Creem HTTP API.
@@ -65,6 +66,12 @@ func (c *Client) TeamProductID() string {
 // verification by the platform layer.
 func (c *Client) WebhookSecret() string {
 	return c.cfg.WebhookSecret
+}
+
+// StarterProductID returns the configured product id for Quill's individual
+// Starter plan.
+func (c *Client) StarterProductID() string {
+	return c.cfg.StarterProductID
 }
 
 // ProProductID returns the configured product id for Quill's individual Pro

@@ -38,7 +38,7 @@ func newFakeStore() *fakeStore {
 }
 
 func (f *fakeStore) seedTenant(slug, name string) db.Tenant {
-	t := db.Tenant{ID: uuid.New(), Slug: slug, Name: name, Plan: "free"}
+	t := db.Tenant{ID: uuid.New(), Slug: slug, Name: name, Plan: "starter"}
 	f.tenants[t.ID] = t
 	f.tenantSlugs[slug] = t
 	return t

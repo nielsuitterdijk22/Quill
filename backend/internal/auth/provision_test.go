@@ -74,8 +74,8 @@ func TestProvisionUserCreatesPersonalTenant(t *testing.T) {
 	if tenant.Slug != "alice" {
 		t.Fatalf("tenant slug = %q, want alice", tenant.Slug)
 	}
-	if tenant.Plan != "free" {
-		t.Fatalf("tenant plan = %q, want free", tenant.Plan)
+	if tenant.Plan != "inactive" {
+		t.Fatalf("tenant plan = %q, want inactive", tenant.Plan)
 	}
 
 	// The user row is linked to the tenant, so personal projects attach to it.

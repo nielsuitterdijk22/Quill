@@ -37,38 +37,26 @@ function UsageRow({
   );
 }
 
-// Team is priced per seat (SUITE.md: 5 EUR/seat).
-const TEAM_SEAT_EUR = 5;
-
-function daysLeft(iso?: string): number | null {
-  if (!iso) return null;
-  const ms = new Date(iso).getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / 86_400_000));
-}
+// Team Pro is priced per user: EUR 9 per month, VAT included.
+const TEAM_SEAT_EUR = 9;
 
 // OrgBilling is the billing surface for an organization: the plan, metered
-// usage against the plan's limits, and the Team subscription call to action.
-// Organizations are not free: a new org runs a 14-day Team trial, and a trial
-// that ended (or a canceled subscription) locks the org until it subscribes.
+// usage against the plan's limits, and the Team Pro subscription call to
+// action. There is no free tier or trial: a new org is locked until it
+// subscribes, and so is one whose subscription was canceled.
 export function OrgBilling({ org, billing }: { org: string; billing: BillingView }) {
   const { usage, limits } = billing;
   const seats = Math.max(1, billing.seats ?? 1);
-  const left = daysLeft(billing.trialEndsAt);
-  const canSubscribe = ["free", "trial", "lapsed"].includes(billing.plan);
+  const canSubscribe = ["inactive", "lapsed", "beta"].includes(billing.plan);
   return (
     <div>
       {billing.locked ? (
         <div className="banner danger">
           {billing.plan === "lapsed"
-            ? "This organization's Team subscription has ended."
-            : "This organization's free trial has ended."}{" "}
+            ? "This organization's Team Pro subscription has ended."
+            : "Quill has no free plan: this organization needs a Team Pro subscription."}{" "}
           Repositories stay readable, but creating repositories, running pipelines and inviting
           members is paused until you subscribe.
-        </div>
-      ) : billing.plan === "trial" && left != null ? (
-        <div className="banner">
-          Team trial: {left} {left === 1 ? "day" : "days"} left. Subscribe before it ends to keep
-          building without interruption.
         </div>
       ) : null}
       <p>
@@ -114,12 +102,12 @@ export function OrgBilling({ org, billing }: { org: string; billing: BillingView
       {canSubscribe && (
         <>
           <p className="subtle">
-            Team: €{TEAM_SEAT_EUR} per seat per month · {seats} {seats === 1 ? "member" : "members"} today
+            Team Pro: €{TEAM_SEAT_EUR} per user per month, VAT included · {seats} {seats === 1 ? "member" : "members"} today
             (€{TEAM_SEAT_EUR * seats}/month).
           </p>
           <UpgradeButton
             endpoint={`/orgs/${encodeURIComponent(org)}/billing/checkout`}
-            label={billing.plan === "lapsed" ? "Resubscribe to Team" : "Subscribe to Team"}
+            label={billing.plan === "lapsed" ? "Resubscribe to Team Pro" : "Subscribe to Team Pro"}
           />
         </>
       )}
@@ -133,11 +121,7 @@ export function OrgBilling({ org, billing }: { org: string; billing: BillingView
       <p className="subtle">
         Usage is metered from the Quill database (repos, pipeline run durations)
         and Forgejo repository sizes (git storage).
-        {billing.plan === "free"
-          ? " The free plan is a hard cap — creating repositories and triggering pipelines stops when a limit is reached."
-          : canSubscribe
-            ? ""
-            : " This plan has no hard caps; usage is invoiced monthly."}
+        {limits ? " Plan limits are hard caps — creating repositories and triggering pipelines stops when one is reached." : ""}
       </p>
     </div>
   );

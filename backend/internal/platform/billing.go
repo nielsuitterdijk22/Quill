@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -13,31 +12,36 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
-// Billing plans. 'free' is the individual tier with hard limits; 'team',
-// 'enterprise' and 'internal' are vendor-provisioned plans without hard caps
-// (usage-based invoicing / internal dogfooding). Organizations are not free:
-// a new org runs a 14-day Team 'trial', and an org whose trial ended or whose
-// subscription was canceled is 'lapsed' (locked: data stays readable, new
-// repos/pipelines/invites are refused until it subscribes).
+// Billing plans. Quill has no free tier and no trial (2026-11-18): every
+// account pays, except hand-selected beta users.
+//
+//   - 'starter' (EUR 4) and 'pro' (EUR 9) are the individual paid plans, with
+//     hard storage / CI-minute caps; 'team' (EUR 9 per user) is the
+//     organization plan, and 'enterprise' / 'internal' are vendor-provisioned
+//     without caps.
+//   - 'beta' is granted by the vendor (a beta invite link or the admin plan
+//     switch) and carries Pro's limits at no charge.
+//   - 'inactive' is where every new account starts and 'lapsed' is where a
+//     canceled subscription lands: both are locked (data stays readable; new
+//     repos, pipelines and invites are refused until the account subscribes).
 const (
-	PlanFree       = "free"
-	PlanPro        = "pro" // the individual paid plan: a personal account's upgrade
+	PlanStarter    = "starter"
+	PlanPro        = "pro"
 	PlanTeam       = "team"
 	PlanEnterprise = "enterprise"
 	PlanInternal   = "internal"
-	PlanTrial      = "trial"
+	PlanBeta       = "beta"
+	PlanInactive   = "inactive"
 	PlanLapsed     = "lapsed"
 )
 
-// TrialDays is the length of a new organization's Team trial.
-const TrialDays = 14
-
-// Free-tier limits (individual tier): 50 repos, 1 GiB git storage,
-// 100 pipeline minutes per month.
+// Plan limits (see the pricing page). Repository counts are not capped on any
+// plan; storage and monthly CI minutes are.
 const (
-	FreeMaxRepos           = 50
-	FreeMaxStorageBytes    = 1 << 30 // 1 GiB
-	FreeMaxPipelineMinutes = 100
+	StarterMaxStorageBytes    = 5 << 30  // 5 GiB
+	StarterMaxPipelineMinutes = 100      // per month
+	ProMaxStorageBytes        = 10 << 30 // 10 GiB
+	ProMaxPipelineMinutes     = 500      // per month
 )
 
 // BillingLimits are the hard caps for a plan; nil fields mean unlimited.
@@ -59,10 +63,8 @@ type BillingView struct {
 	Plan   string         `json:"plan"`
 	Usage  BillingUsage   `json:"usage"`
 	Limits *BillingLimits `json:"limits,omitempty"`
-	// TrialEndsAt is set while (or after) the tenant ran a trial.
-	TrialEndsAt *time.Time `json:"trialEndsAt,omitempty"`
-	// Locked reports that the tenant needs a paid subscription before it can
-	// create repositories, run pipelines or invite members.
+	// Locked reports that the tenant needs a subscription (or a beta invite)
+	// before it can create repositories, run pipelines or invite members.
 	Locked bool `json:"locked"`
 	// Seats is the member count a Team checkout charges for.
 	Seats int `json:"seats"`
@@ -71,59 +73,36 @@ type BillingView struct {
 	BilledSeats int `json:"billedSeats"`
 }
 
-// tenantLocked reports whether a tenant's plan currently refuses new work: a
-// lapsed subscription, or a trial whose window has passed (a trial without a
-// recorded window is treated as ended — orgs are not free).
-func (s *Service) tenantLocked(ctx context.Context, tenant db.Tenant) (bool, *time.Time, error) {
+// planLocked reports whether a plan currently refuses new work: an account
+// that never subscribed ('inactive') or whose subscription ended ('lapsed').
+func planLocked(plan string) bool {
+	return plan == PlanInactive || plan == PlanLapsed
+}
+
+// enforceTenantActive refuses new work for a locked (unsubscribed) tenant.
+func (s *Service) enforceTenantActive(_ context.Context, tenant db.Tenant) error {
 	switch tenant.Plan {
 	case PlanLapsed:
-		sub, err := s.store.GetTenantSubscription(ctx, tenant.ID)
-		if err != nil {
-			return false, nil, fmt.Errorf("load subscription: %w", err)
-		}
-		return true, sub.TrialEndsAt, nil
-	case PlanTrial:
-		sub, err := s.store.GetTenantSubscription(ctx, tenant.ID)
-		if err != nil {
-			return false, nil, fmt.Errorf("load subscription: %w", err)
-		}
-		if sub.TrialEndsAt == nil || !s.now().Before(*sub.TrialEndsAt) {
-			return true, sub.TrialEndsAt, nil
-		}
-		return false, sub.TrialEndsAt, nil
+		return fmt.Errorf("%w: this subscription has ended; subscribe again from the billing settings to keep building (existing repositories stay readable)", ErrLimitReached)
+	case PlanInactive:
+		return fmt.Errorf("%w: Quill has no free plan; choose a plan in the billing settings to start building (existing repositories stay readable)", ErrLimitReached)
 	}
-	return false, nil, nil
-}
-
-// enforceTenantActive refuses new work for a locked (unpaid) organization.
-func (s *Service) enforceTenantActive(ctx context.Context, tenant db.Tenant) error {
-	locked, _, err := s.tenantLocked(ctx, tenant)
-	if err != nil {
-		return err
-	}
-	if !locked {
-		return nil
-	}
-	if tenant.Plan == PlanLapsed {
-		return fmt.Errorf("%w: this organization's Team subscription has ended; subscribe again from the organization's billing settings to keep building (existing repositories stay readable)", ErrLimitReached)
-	}
-	return fmt.Errorf("%w: this organization's %d-day Team trial has ended; subscribe from the organization's billing settings to keep building (existing repositories stay readable)", ErrLimitReached, TrialDays)
-}
-
-// StartOrgTrial puts a freshly created organization on a TrialDays trial.
-func (s *Service) startOrgTrial(ctx context.Context, tenantID uuid.UUID) error {
-	return s.store.StartTenantTrial(ctx, tenantID, s.now().Add(TrialDays*24*time.Hour))
+	return nil
 }
 
 // limitsForPlan maps a plan to its hard limits; nil means no hard caps.
 func limitsForPlan(plan string) *BillingLimits {
-	if plan != PlanFree {
+	var storage int64
+	var minutes float64
+	switch plan {
+	case PlanStarter:
+		storage, minutes = StarterMaxStorageBytes, StarterMaxPipelineMinutes
+	case PlanPro, PlanBeta:
+		storage, minutes = ProMaxStorageBytes, ProMaxPipelineMinutes
+	default:
 		return nil
 	}
-	repos := int64(FreeMaxRepos)
-	storage := int64(FreeMaxStorageBytes)
-	minutes := float64(FreeMaxPipelineMinutes)
-	return &BillingLimits{Repos: &repos, StorageBytes: &storage, PipelineMinutes: &minutes}
+	return &BillingLimits{StorageBytes: &storage, PipelineMinutes: &minutes}
 }
 
 // GetBilling returns the tenant's plan and metered usage. Restricted to tenant
@@ -175,10 +154,6 @@ func (s *Service) billingView(ctx context.Context, tenant db.Tenant) (BillingVie
 		return BillingView{}, err
 	}
 
-	locked, trialEnds, err := s.tenantLocked(ctx, tenant)
-	if err != nil {
-		return BillingView{}, err
-	}
 	members, err := s.store.ListTenantMembers(ctx, tenant.ID)
 	if err != nil {
 		return BillingView{}, fmt.Errorf("count members: %w", err)
@@ -203,8 +178,7 @@ func (s *Service) billingView(ctx context.Context, tenant db.Tenant) (BillingVie
 		Plan:        tenant.Plan,
 		Usage:       BillingUsage{Repos: repos, StorageBytes: storage, PipelineMinutes: minutes},
 		Limits:      limitsForPlan(tenant.Plan),
-		TrialEndsAt: trialEnds,
-		Locked:      locked,
+		Locked:      planLocked(tenant.Plan),
 		Seats:       max(1, len(members)),
 	}, nil
 }
@@ -217,9 +191,9 @@ func (s *Service) SetTenantPlan(ctx context.Context, actor Actor, orgSlug, plan 
 		return db.Tenant{}, err
 	}
 	switch plan {
-	case PlanFree, PlanPro, PlanTeam, PlanEnterprise, PlanInternal, PlanTrial, PlanLapsed:
+	case PlanStarter, PlanPro, PlanTeam, PlanEnterprise, PlanInternal, PlanBeta, PlanInactive, PlanLapsed:
 	default:
-		return db.Tenant{}, fmt.Errorf("%w: plan must be one of free|pro|team|enterprise|internal|trial|lapsed", ErrInvalidInput)
+		return db.Tenant{}, fmt.Errorf("%w: plan must be one of starter|pro|team|enterprise|internal|beta|inactive|lapsed", ErrInvalidInput)
 	}
 	tenant, err := s.getTenant(ctx, orgSlug)
 	if err != nil {
@@ -232,33 +206,19 @@ func (s *Service) SetTenantPlan(ctx context.Context, actor Actor, orgSlug, plan 
 	return tenant, nil
 }
 
-// enforceRepoQuota rejects repository creation when the tenant's free-plan repo
-// allotment is used up. Paid plans (team/enterprise/internal) are unlimited, so
-// the gate is a no-op for them.
+// enforceRepoQuota rejects repository creation for a locked tenant. No plan
+// caps the repository count (storage is the cap), so this is the lock check.
 func (s *Service) enforceRepoQuota(ctx context.Context, tenantID uuid.UUID) error {
 	tenant, err := s.store.GetTenantByID(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("lookup tenant: %w", err)
 	}
-	if err := s.enforceTenantActive(ctx, tenant); err != nil {
-		return err
-	}
-	if tenant.Plan != PlanFree {
-		return nil
-	}
-	repos, err := s.store.CountRepositoriesByTenant(ctx, tenant.ID)
-	if err != nil {
-		return fmt.Errorf("count repositories: %w", err)
-	}
-	if repos >= FreeMaxRepos {
-		return fmt.Errorf("%w: the free plan includes %d repositories; contact us or upgrade your plan to add more", ErrLimitReached, FreeMaxRepos)
-	}
-	return nil
+	return s.enforceTenantActive(ctx, tenant)
 }
 
-// enforcePipelineMinutesQuota rejects workflow triggers once the tenant's
-// finished-run minutes this calendar month reach the free-plan allowance.
-// Metering counts finished runs only, matching what GetBilling reports.
+// enforcePipelineMinutesQuota rejects workflow triggers for a locked tenant,
+// or once the finished-run minutes this calendar month reach the plan's CI
+// allowance. Metering counts finished runs only, matching GetBilling.
 func (s *Service) enforcePipelineMinutesQuota(ctx context.Context, tenantID uuid.UUID) error {
 	tenant, err := s.store.GetTenantByID(ctx, tenantID)
 	if err != nil {
@@ -267,15 +227,16 @@ func (s *Service) enforcePipelineMinutesQuota(ctx context.Context, tenantID uuid
 	if err := s.enforceTenantActive(ctx, tenant); err != nil {
 		return err
 	}
-	if tenant.Plan != PlanFree {
+	limits := limitsForPlan(tenant.Plan)
+	if limits == nil || limits.PipelineMinutes == nil {
 		return nil
 	}
 	minutes, err := s.store.SumPipelineMinutesByTenant(ctx, tenant.ID)
 	if err != nil {
 		return fmt.Errorf("sum pipeline minutes: %w", err)
 	}
-	if minutes >= float64(FreeMaxPipelineMinutes) {
-		return fmt.Errorf("%w: the free plan includes %d pipeline minutes per month; contact us or upgrade your plan to keep building", ErrLimitReached, FreeMaxPipelineMinutes)
+	if minutes >= *limits.PipelineMinutes {
+		return fmt.Errorf("%w: the %s plan includes %d CI minutes per month; upgrade your plan to keep building", ErrLimitReached, tenant.Plan, int(*limits.PipelineMinutes))
 	}
 	return nil
 }
@@ -326,30 +287,31 @@ func (s *Service) storageUsage(ctx context.Context, tenantID uuid.UUID) (int64, 
 	return total, nil
 }
 
-// enforceStorageQuota blocks repository creation when the tenant's free-plan
+// enforceStorageQuota blocks repository creation when the tenant's plan
 // storage allotment is used up. The size probe goes through s.storageProbe so
 // tests can override it without a live Forgejo; the production probe is
-// storageUsage (Forgejo-backed, mirroring GetBilling's metering).
+// storageUsage.
 func (s *Service) enforceStorageQuota(ctx context.Context, tenantID uuid.UUID) error {
 	tenant, err := s.store.GetTenantByID(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("lookup tenant: %w", err)
 	}
-	if tenant.Plan != PlanFree {
+	limits := limitsForPlan(tenant.Plan)
+	if limits == nil || limits.StorageBytes == nil {
 		return nil
 	}
 	used, err := s.storageProbe(ctx, tenantID)
 	if err != nil {
 		return fmt.Errorf("measure storage: %w", err)
 	}
-	if used >= FreeMaxStorageBytes {
-		return fmt.Errorf("%w: the free plan includes 1 GiB of git storage; contact us or upgrade your plan to keep growing", ErrLimitReached)
+	if used >= *limits.StorageBytes {
+		return fmt.Errorf("%w: the %s plan includes %d GiB of git storage; upgrade your plan to keep growing", ErrLimitReached, tenant.Plan, *limits.StorageBytes>>30)
 	}
 	return nil
 }
 
 // StartTeamCheckout opens a Creem checkout session for the organization's
-// Team subscription (from a trial, a lapsed plan, or a legacy free org).
+// Team Pro subscription (from an inactive or lapsed organization).
 // Tenant-admin only (mirrors GetBilling), because starting a checkout is a
 // billing action. Team is priced per seat, so the session carries the org's
 // current member count; successURL is where the customer lands after paying.
@@ -399,11 +361,21 @@ func (s *Service) actorEmail(ctx context.Context, actor Actor) string {
 }
 
 // StartPersonalCheckout opens a Creem checkout session to upgrade the caller's
-// personal account to the Pro plan. Self-service by definition: the caller's
+// personal account to the given plan (PlanStarter or PlanPro). Self-service by definition: the caller's
 // own account tenant is the target, so the authenticated actor is the entire
 // authorization. Users whose accounts predate per-account provisioning sit on
 // the legacy shared tenant (already unlimited) and get a clear error.
-func (s *Service) StartPersonalCheckout(ctx context.Context, actor Actor, successURL, requestID string) (string, error) {
+func (s *Service) StartPersonalCheckout(ctx context.Context, actor Actor, plan, successURL, requestID string) (string, error) {
+	var productID string
+	switch {
+	case s.creem == nil:
+	case plan == PlanStarter:
+		productID = s.creem.StarterProductID()
+	case plan == PlanPro:
+		productID = s.creem.ProProductID()
+	default:
+		return "", fmt.Errorf("%w: plan must be %s or %s", ErrInvalidInput, PlanStarter, PlanPro)
+	}
 	user, err := s.store.GetUserByID(ctx, actor.UserID)
 	if err != nil {
 		return "", fmt.Errorf("lookup user: %w", err)
@@ -411,7 +383,7 @@ func (s *Service) StartPersonalCheckout(ctx context.Context, actor Actor, succes
 	if !user.TenantID.Valid {
 		return "", fmt.Errorf("%w: this account predates personal plans and is already unlimited", ErrInvalidInput)
 	}
-	if s.creem == nil || !s.creem.Enabled() || s.creem.ProProductID() == "" {
+	if s.creem == nil || !s.creem.Enabled() || productID == "" {
 		return "", ErrPaymentsNotConfigured
 	}
 	tenant, err := s.store.GetTenantByID(ctx, user.TenantID.UUID)
@@ -419,7 +391,7 @@ func (s *Service) StartPersonalCheckout(ctx context.Context, actor Actor, succes
 		return "", fmt.Errorf("lookup account tenant: %w", err)
 	}
 	co, err := s.creem.CreateCheckout(ctx, creem.CheckoutInput{
-		ProductID:     s.creem.ProProductID(),
+		ProductID:     productID,
 		SuccessURL:    successURL,
 		RequestID:     requestID,
 		Units:         1,
@@ -448,10 +420,11 @@ var (
 // ProcessCreemWebhook verifies a Creem webhook (creem-signature = hex HMAC of
 // the raw body) and applies it:
 //   - checkout.completed / subscription.active|paid|trialing grant the plan the
-//     product sells (Team for orgs, Pro for personal accounts) and record the
+//     product sells (Team Pro for orgs, Starter or Pro for personal accounts)
+//     and record the
 //     Creem customer/subscription ids;
 //   - subscription.canceled / expired lapse a Team org (locked, data kept) or
-//     return a Pro account to free — but only for the subscription currently
+//     (any paid plan) lapse the tenant (locked, data kept) — but only for the subscription currently
 //     on record, so a stale cancel can't revoke a newer subscription.
 //
 // The tenant comes from the checkout metadata (tenantSlug; orgSlug for
@@ -478,7 +451,9 @@ func (s *Service) ProcessCreemWebhook(ctx context.Context, body []byte, signatur
 	case evt.ProductID != "" && evt.ProductID == s.creem.TeamProductID():
 		paidPlan, lapsedPlan = PlanTeam, PlanLapsed
 	case evt.ProductID != "" && evt.ProductID == s.creem.ProProductID():
-		paidPlan, lapsedPlan = PlanPro, PlanFree
+		paidPlan, lapsedPlan = PlanPro, PlanLapsed
+	case evt.ProductID != "" && evt.ProductID == s.creem.StarterProductID():
+		paidPlan, lapsedPlan = PlanStarter, PlanLapsed
 	default:
 		// Unknown product (e.g. a future enterprise SKU) — nothing to do yet.
 		return CreemResult{}, nil

@@ -14,6 +14,8 @@ func TestOrgSSOConfig(t *testing.T) {
 		t.Fatalf("create org: %v", err)
 	}
 
+	activateOrg(t, svc, "acme", PlanTeam)
+
 	// No config yet.
 	view, err := svc.GetOrgSSO(ctx, founder, "acme")
 	if err != nil {

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -19,57 +18,57 @@ import (
 	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
-// Premium gates: the free plan carries hard limits (repos, pipeline minutes)
-// enforced at the write paths; paid plans (team/enterprise/internal) are
-// unlimited. These tests use a fresh database whose tenant plan default is
-// 'free' (migration 000021), so a newly created org exercises the gates.
+// Plan gates: there is no free tier (migration 000042). New tenants are
+// 'inactive' (locked); starter/pro/beta carry storage and CI-minute caps,
+// team/enterprise/internal are uncapped.
 
-func TestCreateRepoEnforcesFreePlanLimit(t *testing.T) {
+// TestInactiveTenantLocked: a never-subscribed org cannot create repos until
+// it has a plan; no plan caps the repository count.
+func TestInactiveTenantLocked(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 
 	founder := Actor{UserID: scopeMakeUser(t, st, "gate-founder")}
-	if _, _, err := svc.CreateOrganization(ctx, founder, "gateorg", "Gate Org"); err != nil {
+	tenant, _, err := svc.CreateOrganization(ctx, founder, "gateorg", "Gate Org")
+	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	// Orgs start on a Team trial; these tests exercise the free tier's caps.
-	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "gateorg", PlanFree); err != nil {
-		t.Fatalf("set free plan: %v", err)
+	if tenant.Plan != PlanInactive {
+		t.Fatalf("new org plan = %q, want %q", tenant.Plan, PlanInactive)
+	}
+	view, err := svc.GetBilling(ctx, founder, "gateorg")
+	if err != nil || !view.Locked || view.Limits != nil {
+		t.Fatalf("inactive view = %+v err=%v", view, err)
+	}
+	if _, err := svc.CreateRepo(ctx, founder, "gateorg", CreateRepoInput{Slug: "nope"}); !errors.Is(err, ErrLimitReached) {
+		t.Fatalf("inactive create: want ErrLimitReached, got %v", err)
+	}
+	if _, err := svc.CreateInvite(ctx, founder, "gateorg", "dev@gate.test", "member"); !errors.Is(err, ErrLimitReached) {
+		t.Fatalf("inactive invite: want ErrLimitReached, got %v", err)
+	}
+
+	// Any plan unlocks it; repository count is not capped.
+	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "gateorg", PlanStarter); err != nil {
+		t.Fatalf("set plan: %v", err)
 	}
 	project, err := st.GetProjectBySlug(ctx, "gateorg")
 	if err != nil {
 		t.Fatalf("get project: %v", err)
 	}
-
-	// Fill the quota with direct rows (no Forgejo round-trips needed).
-	for i := 0; i < FreeMaxRepos; i++ {
+	for i := 0; i < 60; i++ {
 		slug := "filler-" + string(rune('a'+i%26)) + "-" + string(rune('a'+i/26))
-		if _, err := st.CreateRepository(ctx, db.CreateRepositoryParams{
-			ProjectID: project.ID,
-			Slug:      slug,
-			Name:      slug,
-		}); err != nil {
+		if _, err := st.CreateRepository(ctx, db.CreateRepositoryParams{ProjectID: project.ID, Slug: slug, Name: slug}); err != nil {
 			t.Fatalf("seed filler repo %d: %v", i, err)
 		}
 	}
-
-	// The next repo is rejected by the gate.
-	if _, err := svc.CreateRepo(ctx, founder, "gateorg", CreateRepoInput{Slug: "over-limit"}); !errors.Is(err, ErrLimitReached) {
-		t.Fatalf("over-quota create: want ErrLimitReached, got %v", err)
-	}
-
-	// Upgrading the tenant lifts the cap.
-	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "gateorg", PlanTeam); err != nil {
-		t.Fatalf("set plan: %v", err)
-	}
-	if _, err := svc.CreateRepo(ctx, founder, "gateorg", CreateRepoInput{Slug: "over-limit"}); err != nil {
-		t.Fatalf("post-upgrade create: %v", err)
+	if _, err := svc.CreateRepo(ctx, founder, "gateorg", CreateRepoInput{Slug: "sixty-one"}); err != nil {
+		t.Fatalf("starter create past 60 repos: %v", err)
 	}
 }
 
-// TestPipelineMinutesEnforceFreePlan gates workflow triggers once the tenant's
-// finished-run minutes this calendar month reach the free cap.
-func TestPipelineMinutesEnforceFreePlan(t *testing.T) {
+// TestPipelineMinutesEnforcePlanCap gates workflow triggers once the tenant's
+// finished-run minutes this calendar month reach the plan's CI allowance.
+func TestPipelineMinutesEnforcePlanCap(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 
@@ -77,9 +76,9 @@ func TestPipelineMinutesEnforceFreePlan(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, founder, "minorg", "Min Org"); err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	// Orgs start on a Team trial; these tests exercise the free tier's caps.
-	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "minorg", PlanFree); err != nil {
-		t.Fatalf("set free plan: %v", err)
+	// Orgs start inactive; this test exercises the Starter plan's CI cap.
+	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "minorg", PlanStarter); err != nil {
+		t.Fatalf("set starter plan: %v", err)
 	}
 	if _, err := svc.CreateRepo(ctx, founder, "minorg", CreateRepoInput{Slug: "ci", Name: "ci"}); err != nil {
 		t.Fatalf("create repo: %v", err)
@@ -117,10 +116,10 @@ func TestPipelineMinutesEnforceFreePlan(t *testing.T) {
 	}
 }
 
-// TestCreateRepoEnforcesFreeStorageGate blocks repo creation once the tenant's
-// metered storage reaches the free-plan allotment; the probe is swapped for a
+// TestCreateRepoEnforcesStorageGate blocks repo creation once the tenant's
+// metered storage reaches the plan allotment (Starter: 5 GiB); the probe is swapped for a
 // fake so no live Forgejo is needed.
-func TestCreateRepoEnforcesFreeStorageGate(t *testing.T) {
+func TestCreateRepoEnforcesStorageGate(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 
@@ -128,9 +127,9 @@ func TestCreateRepoEnforcesFreeStorageGate(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, founder, "diskorg", "Disk Org"); err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	// Orgs start on a Team trial; these tests exercise the free tier's caps.
-	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "diskorg", PlanFree); err != nil {
-		t.Fatalf("set free plan: %v", err)
+	// Orgs start inactive; this test exercises the Starter plan's storage cap.
+	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "diskorg", PlanStarter); err != nil {
+		t.Fatalf("set starter plan: %v", err)
 	}
 	project, err := st.GetProjectBySlug(ctx, "diskorg")
 	if err != nil {
@@ -139,7 +138,7 @@ func TestCreateRepoEnforcesFreeStorageGate(t *testing.T) {
 
 	// Force the probe to report a full disk: the next repo is rejected.
 	svc.storageProbe = func(context.Context, uuid.UUID) (int64, error) {
-		return int64(FreeMaxStorageBytes), nil
+		return int64(StarterMaxStorageBytes), nil
 	}
 	if _, err := svc.CreateRepo(ctx, founder, "diskorg", CreateRepoInput{Slug: "too-big"}); !errors.Is(err, ErrLimitReached) {
 		t.Fatalf("over-storage create: want ErrLimitReached, got %v", err)
@@ -147,23 +146,32 @@ func TestCreateRepoEnforcesFreeStorageGate(t *testing.T) {
 
 	// Just under the limit passes.
 	svc.storageProbe = func(context.Context, uuid.UUID) (int64, error) {
-		return int64(FreeMaxStorageBytes) - 1, nil
+		return int64(StarterMaxStorageBytes) - 1, nil
 	}
 	if _, err := svc.CreateRepo(ctx, founder, "diskorg", CreateRepoInput{Slug: "just-fits"}); err != nil {
 		t.Fatalf("under-limit create: %v", err)
 	}
 
-	// Paid plans are not storage-gated.
+	// Team is not storage-gated.
 	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "diskorg", PlanTeam); err != nil {
 		t.Fatalf("set plan: %v", err)
 	}
 	svc.storageProbe = func(context.Context, uuid.UUID) (int64, error) {
-		return int64(FreeMaxStorageBytes) * 100, nil
+		return int64(StarterMaxStorageBytes) * 100, nil
 	}
 	if _, err := svc.CreateRepo(ctx, founder, "diskorg", CreateRepoInput{Slug: "team-is-fine"}); err != nil {
 		t.Fatalf("team-plan create over storage: %v", err)
 	}
 	_ = project
+}
+
+// activateOrg moves a freshly created (inactive, locked) org onto a paid plan
+// so tests of other features can create repos, invites and tokens.
+func activateOrg(t *testing.T, svc *Service, slug, plan string) {
+	t.Helper()
+	if _, err := svc.SetTenantPlan(context.Background(), Actor{IsAdmin: true}, slug, plan); err != nil {
+		t.Fatalf("activate org %s: %v", slug, err)
+	}
 }
 
 // creemTestSecret signs webhook bodies the way Creem does: hex
@@ -197,86 +205,13 @@ func configuredCreem(t *testing.T, svc *Service, gotBody *map[string]any) {
 	}))
 	t.Cleanup(srv.Close)
 	svc.WithCreem(creem.New(creem.Config{
-		APIKey:        "sk_test",
-		WebhookSecret: creemTestSecret,
-		TeamProductID: "prod_team",
-		ProProductID:  "prod_pro",
-		BaseURL:       srv.URL,
+		APIKey:           "sk_test",
+		WebhookSecret:    creemTestSecret,
+		TeamProductID:    "prod_team",
+		StarterProductID: "prod_starter",
+		ProProductID:     "prod_pro",
+		BaseURL:          srv.URL,
 	}))
-}
-
-// TestNewOrgStartsTrialThenLocks: organizations are not free. A new org runs
-// a TrialDays Team trial with no caps; once the window passes it is locked —
-// repos, pipeline triggers and invites are refused with ErrLimitReached — and
-// a paid Team plan unlocks it.
-func TestNewOrgStartsTrialThenLocks(t *testing.T) {
-	svc, st := scopeTestService(t)
-	ctx := context.Background()
-	now := time.Now()
-	svc.clock = func() time.Time { return now }
-
-	founder := Actor{UserID: scopeMakeUser(t, st, "trial-founder")}
-	tenant, _, err := svc.CreateOrganization(ctx, founder, "trialorg", "Trial Org")
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
-	if tenant.Plan != PlanTrial {
-		t.Fatalf("new org plan = %q, want %q", tenant.Plan, PlanTrial)
-	}
-	view, err := svc.GetBilling(ctx, founder, "trialorg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.Plan != PlanTrial || view.Locked || view.Limits != nil || view.TrialEndsAt == nil || view.Seats != 1 {
-		t.Fatalf("trial view = %+v", view)
-	}
-	if d := view.TrialEndsAt.Sub(now); d < (TrialDays*24-1)*time.Hour || d > (TrialDays*24+1)*time.Hour {
-		t.Fatalf("trial length = %v, want ~%d days", d, TrialDays)
-	}
-
-	// During the trial: everything works.
-	if _, err := svc.CreateRepo(ctx, founder, "trialorg", CreateRepoInput{Slug: "during"}); err != nil {
-		t.Fatalf("create repo during trial: %v", err)
-	}
-	if _, err := svc.CreateInvite(ctx, founder, "trialorg", "dev@trial.test", "member"); err != nil {
-		t.Fatalf("invite during trial: %v", err)
-	}
-
-	// The org list (sidebar) tells members about the trial.
-	if orgs, err := svc.ListOrganizations(ctx, founder); err != nil || len(orgs) != 1 || orgs[0].Plan != PlanTrial || orgs[0].TrialEndsAt == nil || orgs[0].Locked {
-		t.Fatalf("org list during trial = %+v err=%v", orgs, err)
-	}
-
-	// After the window: locked.
-	now = now.Add((TrialDays*24 + 1) * time.Hour)
-	if orgs, _ := svc.ListOrganizations(ctx, founder); len(orgs) != 1 || !orgs[0].Locked {
-		t.Fatalf("org list after trial = %+v, want locked", orgs)
-	}
-	view, _ = svc.GetBilling(ctx, founder, "trialorg")
-	if !view.Locked {
-		t.Fatalf("expired trial not locked: %+v", view)
-	}
-	if _, err := svc.CreateRepo(ctx, founder, "trialorg", CreateRepoInput{Slug: "after"}); !errors.Is(err, ErrLimitReached) {
-		t.Fatalf("create repo after trial: want ErrLimitReached, got %v", err)
-	}
-	if _, err := svc.CreateInvite(ctx, founder, "trialorg", "late@trial.test", "member"); !errors.Is(err, ErrLimitReached) {
-		t.Fatalf("invite after trial: want ErrLimitReached, got %v", err)
-	}
-	if _, _, err := svc.TriggerRun(ctx, founder, "trialorg", "during", TriggerInput{WorkflowPath: ".quill/w.yml", Ref: "main"}); !errors.Is(err, ErrLimitReached) {
-		t.Fatalf("trigger after trial: want ErrLimitReached, got %v", err)
-	}
-	// Existing data stays readable.
-	if _, err := svc.GetRepo(ctx, founder, "trialorg", "during"); err != nil {
-		t.Fatalf("read repo of locked org: %v", err)
-	}
-
-	// Paying unlocks it.
-	if _, err := svc.SetTenantPlan(ctx, Actor{IsAdmin: true}, "trialorg", PlanTeam); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.CreateRepo(ctx, founder, "trialorg", CreateRepoInput{Slug: "after"}); err != nil {
-		t.Fatalf("create repo after paying: %v", err)
-	}
 }
 
 // TestTeamCheckoutFlow covers the Creem upgrade path at the platform layer:
@@ -460,12 +395,11 @@ func TestTeamSubscriptionLapse(t *testing.T) {
 	}
 }
 
-// TestPersonalBillingAndProUpgrade covers the individual (non-org) freemium
-// surfaces: the account's billing view reads its own per-account tenant, the
-// Pro checkout resolves to that same tenant, a verified pro webhook flips the
-// plan to pro (lifting the caps), and cancelling returns it to free — never
-// to a locked state (individuals keep the free tier).
-func TestPersonalBillingAndProUpgrade(t *testing.T) {
+// TestPersonalBillingAndUpgrade covers the individual (non-org) surfaces: a
+// new account is inactive (locked), its billing view reads its own per-account
+// tenant, Starter/Pro checkouts resolve to that tenant, a verified webhook
+// moves the plan (with that plan's caps), and cancelling locks it again.
+func TestPersonalBillingAndUpgrade(t *testing.T) {
 	svc, st := scopeTestService(t)
 	ctx := context.Background()
 
@@ -486,23 +420,23 @@ func TestPersonalBillingAndProUpgrade(t *testing.T) {
 		t.Fatalf("personal project: %v", err)
 	}
 
-	// The personal billing view reports the account tenant: free plan, caps set.
+	// The personal billing view reports the account tenant: inactive, locked.
 	view, err := svc.GetPersonalBilling(ctx, Actor{UserID: userID})
 	if err != nil {
 		t.Fatalf("GetPersonalBilling: %v", err)
 	}
-	if view.Plan != PlanFree || view.Locked || view.Limits == nil || view.Limits.Repos == nil || *view.Limits.Repos != FreeMaxRepos {
-		t.Fatalf("personal view = %+v, want free with caps", view)
+	if view.Plan != PlanInactive || !view.Locked || view.Limits != nil {
+		t.Fatalf("personal view = %+v, want inactive and locked", view)
 	}
 
 	// Unconfigured payments: the personal checkout is truthful.
-	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, "https://app/s", "req-1"); !errors.Is(err, ErrPaymentsNotConfigured) {
+	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, PlanPro, "https://app/s", "req-1"); !errors.Is(err, ErrPaymentsNotConfigured) {
 		t.Fatalf("unconfigured personal checkout: want ErrPaymentsNotConfigured, got %v", err)
 	}
 
 	var sent map[string]any
 	configuredCreem(t, svc, &sent)
-	url, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, "https://app/s", "req-2")
+	url, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, PlanPro, "https://app/s", "req-2")
 	if err != nil || url != "https://checkout.creem.io/ch_1" {
 		t.Fatalf("personal checkout: url=%q err=%v", url, err)
 	}
@@ -510,9 +444,16 @@ func TestPersonalBillingAndProUpgrade(t *testing.T) {
 		t.Fatalf("personal checkout request = %v", sent)
 	}
 
+	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, PlanStarter, "https://app/s", "req-2b"); err != nil || sent["product_id"] != "prod_starter" {
+		t.Fatalf("starter checkout: sent=%v err=%v", sent, err)
+	}
+	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: userID}, "free", "https://app/s", "req-2c"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("unknown plan checkout: want ErrInvalidInput, got %v", err)
+	}
+
 	// Legacy accounts (no per-account tenant) get the clear error.
 	legacy := scopeMakeUser(t, st, "legacy-user")
-	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: legacy}, "https://app/s", "req-3"); !errors.Is(err, ErrInvalidInput) {
+	if _, err := svc.StartPersonalCheckout(ctx, Actor{UserID: legacy}, PlanPro, "https://app/s", "req-3"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("legacy checkout: want ErrInvalidInput, got %v", err)
 	}
 
@@ -526,17 +467,27 @@ func TestPersonalBillingAndProUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("billing after webhook: %v", err)
 	}
-	if view.Plan != PlanPro || view.Limits != nil {
-		t.Fatalf("plan after pro webhook = %q limits=%+v, want pro/unlimited", view.Plan, view.Limits)
+	if view.Plan != PlanPro || view.Locked || view.Limits == nil || *view.Limits.StorageBytes != ProMaxStorageBytes {
+		t.Fatalf("plan after pro webhook = %q limits=%+v, want pro with Pro caps", view.Plan, view.Limits)
 	}
 
-	// Cancelling Pro returns the account to the free tier (caps, not a lock).
+	// Cancelling Pro locks the account (there is no free tier to fall back to).
 	cancel := creemSubscriptionEvent("subscription.canceled", "prod_pro", "sub_pro", `{"tenantSlug":"pro-user"}`)
 	if _, err := svc.ProcessCreemWebhook(ctx, []byte(cancel), creemSig(cancel)); err != nil {
 		t.Fatal(err)
 	}
 	view, _ = svc.GetPersonalBilling(ctx, Actor{UserID: userID})
-	if view.Plan != PlanFree || view.Locked || view.Limits == nil {
-		t.Fatalf("after pro cancel = %+v, want free with caps", view)
+	if view.Plan != PlanLapsed || !view.Locked {
+		t.Fatalf("after pro cancel = %+v, want lapsed and locked", view)
+	}
+
+	// A Starter webhook (different product) grants Starter's smaller caps.
+	starter := creemCheckoutCompleted("prod_starter", "pro-user", "sub_starter")
+	if res, err := svc.ProcessCreemWebhook(ctx, []byte(starter), creemSig(starter)); err != nil || res.Plan != PlanStarter {
+		t.Fatalf("starter webhook: res=%+v err=%v", res, err)
+	}
+	view, _ = svc.GetPersonalBilling(ctx, Actor{UserID: userID})
+	if view.Plan != PlanStarter || view.Limits == nil || *view.Limits.StorageBytes != StarterMaxStorageBytes {
+		t.Fatalf("after starter webhook = %+v", view)
 	}
 }

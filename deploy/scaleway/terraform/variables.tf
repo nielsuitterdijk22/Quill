@@ -273,6 +273,12 @@ variable "creem_team_product_id" {
   default     = "unset"
 }
 
+variable "creem_starter_product_id" {
+  description = "Creem product id for Quill's individual Starter plan (EUR 4; personal-account checkout). PLACEHOLDER until the product exists in Creem."
+  type        = string
+  default     = "unset"
+}
+
 variable "creem_pro_product_id" {
   description = "Creem product id for Quill's individual Pro plan (personal-account upgrades)."
   type        = string

@@ -152,6 +152,7 @@ func TestSSOLoginLifecycle(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, admin, "ssoorg", "SSO Org"); err != nil {
 		t.Fatal(err)
 	}
+	activateOrg(t, svc, "ssoorg", PlanTeam)
 	in := SSOConfigInput{Protocol: "oidc", Issuer: "https://login.acme.test/", ClientID: "cid", ClientSecret: "s3cret", EmailDomain: "Acme.test", Enabled: true}
 	v, err := svc.SetOrgSSO(ctx, admin, "ssoorg", in)
 	if err != nil {
@@ -211,6 +212,7 @@ func TestSSOLoginLifecycle(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, other, "ssoother", "Other"); err != nil {
 		t.Fatal(err)
 	}
+	activateOrg(t, svc, "ssoother", PlanTeam)
 	ov, err := svc.SetOrgSSO(ctx, other, "ssoother", SSOConfigInput{Protocol: "oidc", Issuer: "https://evil.test", ClientID: "x", ClientSecret: "y", EmailDomain: "acme.test", Enabled: true})
 	if err != nil {
 		t.Fatal(err)
@@ -291,6 +293,7 @@ func TestSSORules(t *testing.T) {
 	if _, _, err := svc.CreateOrganization(ctx, admin, "rulesorg", "Rules"); err != nil {
 		t.Fatal(err)
 	}
+	activateOrg(t, svc, "rulesorg", PlanTeam)
 	base := SSOConfigInput{Protocol: "oidc", Issuer: "https://login.rules.test", ClientID: "c", ClientSecret: "s", EmailDomain: "rules.test", Enabled: true}
 	for name, mut := range map[string]func(*SSOConfigInput){
 		"public domain": func(i *SSOConfigInput) { i.EmailDomain = "gmail.com" },

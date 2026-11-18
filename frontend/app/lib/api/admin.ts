@@ -44,7 +44,6 @@ export type AnalyticsData = {
     personal: boolean;
     members: number;
     repos: number;
-    repoLimit: number;
     minutes: number;
     minuteLimit: number;
     storageBytes: number;
@@ -66,4 +65,21 @@ export type AnalyticsData = {
 // getAnalytics loads operator analytics (admins only) for the last `days` days.
 export function getAnalytics(token: string, days: number): Promise<Result<AnalyticsData>> {
   return authGet<AnalyticsData>(token, `/api/v1/admin/analytics?days=${days}`);
+}
+
+// Beta invites: temporary, capped links that put a hand-picked user on the
+// free beta plan (platform admins only).
+export type BetaInvite = {
+  id: string;
+  note: string;
+  maxUses: number;
+  uses: number;
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  active: boolean;
+};
+
+export function listBetaInvites(token: string): Promise<Result<{ invites: BetaInvite[] }>> {
+  return authGet<{ invites: BetaInvite[] }>(token, "/api/v1/admin/beta-invites");
 }

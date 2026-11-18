@@ -10,13 +10,16 @@ function formatBytes(bytes: number): string {
 }
 
 // PersonalBillingPanel is the account settings' billing surface: the personal
-// plan, metered usage against it, and the Pro upgrade checkout. Accounts on the
+// plan, metered usage against it, and the Starter / Pro checkout. There is no
+// free tier: a new account is "inactive" (locked) until it subscribes or a
+// hand-issued beta link moves it to the free "beta" plan. Accounts on the
 // legacy shared tenant see the unlimited internal plan — no caps, no upsell.
 export async function PersonalBillingPanel() {
   const token = await getToken();
   if (!token) return null;
   const res = await authGet<{
     plan: string;
+    locked?: boolean;
     usage: { repos: number; storageBytes: number; pipelineMinutes: number };
     limits?: {
       repos?: number;
@@ -25,7 +28,8 @@ export async function PersonalBillingPanel() {
     };
   }>(token, "/api/v1/me/billing");
   if (!res.ok) return null;
-  const { plan, usage, limits } = res.data;
+  const { plan, usage, limits, locked } = res.data;
+  const canSubscribe = ["inactive", "lapsed", "beta"].includes(plan);
 
   const rows: { label: string; used: number; limit?: number; format: (n: number) => string }[] = [
     { label: "Repositories", used: usage.repos, limit: limits?.repos, format: (n) => String(n) },
@@ -47,8 +51,15 @@ export async function PersonalBillingPanel() {
     <div className="panel form-narrow">
       <h2>Billing</h2>
       <div className="readme-body">
+        {locked && (
+          <div className="banner danger">
+            {plan === "lapsed" ? "Your subscription has ended." : "Quill has no free plan."} Your repositories stay
+            readable, but creating repositories and running pipelines is paused until you choose a plan.
+          </div>
+        )}
         <p>
-          Plan: <span className={`badge ${plan === "free" ? "" : "gold"}`}>{plan}</span>
+          Plan: <span className={`badge ${locked ? "red" : "gold"}`}>{plan}</span>
+          {plan === "beta" && <span className="subtle"> · free during the beta, with Pro limits</span>}
         </p>
         <table className="policy-table">
           <thead>
@@ -68,14 +79,24 @@ export async function PersonalBillingPanel() {
             ))}
           </tbody>
         </table>
-        {plan === "free" && (
-          <p className="subtle">
-            The free plan is a hard cap — creating repositories and triggering
-            pipelines stops when a limit is reached.
-          </p>
-        )}
-        {plan === "free" && (
-          <UpgradeButton endpoint="/me/billing/checkout" label="Upgrade to Pro" />
+        {canSubscribe && (
+          <>
+            <p className="subtle">
+              Per month, VAT included. Cancel any time.
+            </p>
+            <div className="plan-actions">
+              <div>
+                <b>Starter · €4</b>
+                <p className="subtle">5 GB of git storage, 100 CI minutes, private repositories, SBOM export.</p>
+                <UpgradeButton endpoint="/me/billing/checkout" plan="starter" label="Get Starter" />
+              </div>
+              <div>
+                <b>Pro · €9</b>
+                <p className="subtle">10 GB + 1 GB LFS, 500 CI minutes, self-hosted runners, priority support.</p>
+                <UpgradeButton endpoint="/me/billing/checkout" plan="pro" label="Get Pro" />
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -54,7 +54,6 @@ type TenantUsage struct {
 	Personal     bool      `json:"personal"`
 	Members      int       `json:"members"`
 	Repos        int64     `json:"repos"`
-	RepoLimit    int       `json:"repoLimit"`
 	Minutes      float64   `json:"minutes"` // this calendar month
 	MinuteLimit  int       `json:"minuteLimit"`
 	StorageBytes int64     `json:"storageBytes"`
@@ -167,8 +166,10 @@ func (s *Service) GetAnalytics(ctx context.Context, actor Actor, days int) (Anal
 		return Analytics{}, fmt.Errorf("analytics tenants: %w", err)
 	}
 	for _, t := range tenants {
-		tu := TenantUsage{Slug: t.Slug, Name: t.Name, Plan: t.Plan, Personal: t.Personal, Members: t.Members, CreatedAt: t.CreatedAt,
-			RepoLimit: FreeMaxRepos, MinuteLimit: FreeMaxPipelineMinutes, StorageLimit: FreeMaxStorageBytes}
+		tu := TenantUsage{Slug: t.Slug, Name: t.Name, Plan: t.Plan, Personal: t.Personal, Members: t.Members, CreatedAt: t.CreatedAt}
+		if l := limitsForPlan(t.Plan); l != nil {
+			tu.MinuteLimit, tu.StorageLimit = int(*l.PipelineMinutes), *l.StorageBytes
+		}
 		if tu.Repos, err = s.store.CountRepositoriesByTenant(ctx, t.ID); err != nil {
 			return Analytics{}, fmt.Errorf("count repositories: %w", err)
 		}
@@ -178,10 +179,9 @@ func (s *Service) GetAnalytics(ctx context.Context, actor Actor, days int) (Anal
 		if tu.StorageBytes, err = s.store.SumEngineStorageByTenant(ctx, t.ID); err != nil {
 			return Analytics{}, fmt.Errorf("sum storage: %w", err)
 		}
-		if t.Plan == PlanFree {
-			tu.NearLimit = float64(tu.Repos) >= 0.8*float64(FreeMaxRepos) ||
-				tu.Minutes >= 0.8*float64(FreeMaxPipelineMinutes) ||
-				float64(tu.StorageBytes) >= 0.8*float64(FreeMaxStorageBytes)
+		if tu.MinuteLimit > 0 {
+			tu.NearLimit = tu.Minutes >= 0.8*float64(tu.MinuteLimit) ||
+				float64(tu.StorageBytes) >= 0.8*float64(tu.StorageLimit)
 		}
 		out.Tenants = append(out.Tenants, tu)
 	}

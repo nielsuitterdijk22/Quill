@@ -15,8 +15,8 @@ import (
 )
 
 // TestTeamOnboardingAndBilling walks the paid-teams onboarding against the
-// deployed platform: a new organization starts a 14-day Team trial (usable,
-// not locked), its admin can open a Creem Team checkout, and — when the
+// deployed platform: a new organization starts inactive (locked: there
+// is no free tier or trial), its admin can open a Creem Team checkout, and — when the
 // operator supplies the webhook secret and product id — a Creem-signed
 // checkout.completed moves it to team while a signed subscription.canceled
 // locks it (repo creation answers 402, existing repos stay readable).
@@ -37,20 +37,12 @@ func TestTeamOnboardingAndBilling(t *testing.T) {
 		t.Fatalf("billing: %d %s", st, b)
 	}
 	bill := jbody(t, b)
-	if bill["plan"] != "trial" || bill["locked"] != false || bill["seats"] != float64(1) {
-		t.Fatalf("new org billing = %s, want an unlocked trial with 1 seat", b)
+	if bill["plan"] != "inactive" || bill["locked"] != true || bill["seats"] != float64(1) {
+		t.Fatalf("new org billing = %s, want an inactive, locked org with 1 seat", b)
 	}
-	ends, err := time.Parse(time.RFC3339Nano, fmt.Sprint(bill["trialEndsAt"]))
-	if err != nil {
-		t.Fatalf("trialEndsAt %v: %v", bill["trialEndsAt"], err)
-	}
-	if d := time.Until(ends); d < 13*24*time.Hour || d > 15*24*time.Hour {
-		t.Fatalf("trial ends in %v, want ~14 days", d)
-	}
-
 	repo := org + "-r1"
-	if st, b := apiCall(t, token, http.MethodPost, "/projects/"+org+"/repos", map[string]any{"slug": repo, "name": repo}); st != 200 && st != 201 {
-		t.Fatalf("create repo during trial: %d %s", st, b)
+	if st, b := apiCall(t, token, http.MethodPost, "/projects/"+org+"/repos", map[string]any{"slug": repo, "name": repo}); st == 200 || st == 201 {
+		t.Fatalf("create repo on an inactive org must be refused, got %d %s", st, b)
 	}
 
 	st, b = apiCall(t, token, http.MethodPost, "/orgs/"+org+"/billing/checkout", map[string]any{})
@@ -105,6 +97,9 @@ func TestTeamOnboardingAndBilling(t *testing.T) {
 	hook(fmt.Sprintf(`{"id":"evt_e2e_%[1]s","eventType":"checkout.completed","object":{"id":"ch_e2e_%[1]s","object":"checkout","product":{"id":%[2]q},"customer":{"id":"cust_e2e"},"subscription":{"id":%[3]q},"status":"completed","metadata":{"tenantSlug":%[1]q},"mode":"test"}}`, org, product, sub))
 	if p := plan(); p["plan"] != "team" || p["locked"] != false {
 		t.Fatalf("after checkout.completed: %v", p)
+	}
+	if st, b := apiCall(t, token, http.MethodPost, "/projects/"+org+"/repos", map[string]any{"slug": repo, "name": repo}); st != 200 && st != 201 {
+		t.Fatalf("create repo on a paid org: %d %s", st, b)
 	}
 
 	hook(fmt.Sprintf(`{"id":"evt_e2e_cancel_%[1]s","eventType":"subscription.canceled","object":{"id":%[3]q,"object":"subscription","product":{"id":%[2]q},"customer":{"id":"cust_e2e"},"status":"canceled","metadata":{"tenantSlug":%[1]q},"mode":"test"}}`, org, product, sub))

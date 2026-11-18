@@ -259,10 +259,11 @@ func Load() (*Config, error) {
 			ClientSecret: getenv("GITHUB_CLIENT_SECRET", ""),
 		},
 		Creem: creem.Config{
-			APIKey:        getenv("CREEM_API_KEY", ""),
-			WebhookSecret: getenv("CREEM_WEBHOOK_SECRET", ""),
-			TeamProductID: getenv("CREEM_TEAM_PRODUCT_ID", ""),
-			ProProductID:  getenv("CREEM_PRO_PRODUCT_ID", ""),
+			APIKey:           getenv("CREEM_API_KEY", ""),
+			WebhookSecret:    getenv("CREEM_WEBHOOK_SECRET", ""),
+			TeamProductID:    getenv("CREEM_TEAM_PRODUCT_ID", ""),
+			StarterProductID: getenv("CREEM_STARTER_PRODUCT_ID", ""),
+			ProProductID:     getenv("CREEM_PRO_PRODUCT_ID", ""),
 		},
 		Forgejo: ForgejoConfig{
 			BaseURL:    getenv("FORGEJO_BASE_URL", "http://localhost:3000"),
@@ -317,9 +318,11 @@ func Load() (*Config, error) {
 	// terraform default must leave the upgrade button truthful (not
 	// configured) rather than sending checkouts to a garbage API key.
 	for k, v := range map[string]*string{
-		"CREEM_API_KEY":         &cfg.Creem.APIKey,
-		"CREEM_WEBHOOK_SECRET":  &cfg.Creem.WebhookSecret,
-		"CREEM_TEAM_PRODUCT_ID": &cfg.Creem.TeamProductID,
+		"CREEM_API_KEY":            &cfg.Creem.APIKey,
+		"CREEM_WEBHOOK_SECRET":     &cfg.Creem.WebhookSecret,
+		"CREEM_TEAM_PRODUCT_ID":    &cfg.Creem.TeamProductID,
+		"CREEM_STARTER_PRODUCT_ID": &cfg.Creem.StarterProductID,
+		"CREEM_PRO_PRODUCT_ID":     &cfg.Creem.ProProductID,
 	} {
 		if isPlaceholder(*v) {
 			*v = ""

@@ -4910,6 +4910,16 @@ button.sbom-chip:hover {
 }
 
 /* A run the deploy gate refused (run page). */
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 12px;
+}
+.plan-actions > div {
+  flex: 1 1 240px;
+}
+
 .banner.danger {
   background: color-mix(in oklab, var(--red) 12%, transparent);
   border-color: color-mix(in oklab, var(--red) 34%, transparent);

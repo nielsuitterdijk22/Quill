@@ -481,6 +481,9 @@ func (s *Server) setupRoutes() {
 			}
 			r.Get("/admin/audit-log", s.handleListAuditLog)
 			r.Get("/admin/analytics", s.handleGetAnalytics)
+			r.Get("/admin/beta-invites", s.handleListBetaInvites)
+			r.Post("/admin/beta-invites", s.handleCreateBetaInvite)
+			r.Delete("/admin/beta-invites/{id}", s.handleRevokeBetaInvite)
 			r.Get("/admin/audit-log/export", s.handleExportAuditLog)
 		})
 
@@ -515,6 +518,7 @@ func (s *Server) setupRoutes() {
 			// Pro upgrade checkout (per-account tenants from signup).
 			r.Get("/me/billing", s.handleMyBilling)
 			r.Post("/me/billing/checkout", s.handleMyBillingCheckout)
+			r.Post("/me/billing/beta", s.handleRedeemBeta)
 			r.Get("/me/contributions", s.handleMyContributions)
 			r.Get("/me/commit-emails", s.handleGetCommitEmails)
 			r.Put("/me/commit-emails", s.handlePutCommitEmails)

@@ -23,8 +23,8 @@ export async function setCurrentProjectAction(
   revalidatePath("/", "layout");
 }
 
-// startUpgradeAction starts a Creem checkout server-side (Team for orgs, Pro
-// for personal accounts): calls the Go API with the session's bearer so it
+// startUpgradeAction starts a Creem checkout server-side (Team Pro for orgs,
+// Starter or Pro for personal accounts): calls the Go API with the session's bearer so it
 // works independent of the /api/backend browser proxy; returns the checkout
 // URL for the client to redirect to, or an error message that is shown
 // honestly next to the button.
@@ -40,6 +40,8 @@ export async function startUpgradeAction(
     "",
   );
   if (!endpoint.startsWith("/")) return { error: "Invalid request." };
+  // Optional plan (personal checkout: "starter" | "pro"); orgs have one plan.
+  const plan = String(formData.get("plan") ?? "");
   const { getToken } = await import("./session");
   const token = await getToken();
   if (!token) return { error: "Your session has expired — sign in again." };
@@ -47,7 +49,11 @@ export async function startUpgradeAction(
   try {
     const res = await fetch(`${API_BASE}/api/v1${endpoint}`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(plan ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(plan ? { body: JSON.stringify({ plan }) } : {}),
       cache: "no-store",
     });
     const data = (await res.json().catch(() => null)) as {
