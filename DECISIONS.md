@@ -933,3 +933,21 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
 - **Decision:** a signed-in account whose personal plan is `inactive` and that belongs to no organization is redirected from the whole `(app)` shell to `/subscribe` (Starter €4 / Pro €9 / Team €11 per user). Creem's success URL is now `/subscribe?upgraded=1`, which refreshes until the webhook sets the plan. Members of any org are not gated (they work under the org's plan; an unpaid org is locked by the backend and pays from its billing page). Lapsed accounts are not gated, so their repos stay readable.
 - **Why:** accounts were created `inactive` and locked by the backend, but people could still browse the product, which read as a free account. The backend lock (`enforceTenantActive`) stays the real enforcement; this is the UX gate.
 - **Alternatives rejected:** gating lapsed accounts (hides their own readable repos); gating in the onboarding layout (it cannot read the query, and the Team path must pass through it).
+
+## 2026-11-18 — "Compare & pull request" prompt for recently pushed branches
+
+- The repo home and the Pull requests list show up to three prompts, one per branch that (a) is not
+  the default branch, (b) has commits the default branch lacks, (c) changed in the last 24 h and
+  (d) has no open pull request with it as head; the button opens `/pulls/new?head=<branch>` with
+  the compare branch preselected. Signed-in viewers only.
+- "Recent" is the tip's **committer** date, not the author date, so a rebase or amend counts as an
+  update. We have no push log (bare engine repos keep no reflog); a push of old commits (e.g. a
+  new branch off an old commit) is therefore not "recent". Rejected: recording pushes in Postgres
+  (a write on every push for a convenience prompt).
+- `ahead` (`git rev-list --count default..branch`) is computed only for branches updated in the
+  last 7 days, so a repo with hundreds of stale branches still costs one `for-each-ref`. It is 0
+  when the default branch can't be resolved, never an error.
+- Not done: the prompt does not check that the viewer may open pull requests (a signed-in
+  non-member of a public repo sees it and gets a 403 on submit); no dismiss button. No frontend
+  unit-test harness exists, so the filter (`recentBranches`) is covered only through the backend
+  test of the data it consumes.

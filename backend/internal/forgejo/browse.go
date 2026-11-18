@@ -37,6 +37,12 @@ type Branch struct {
 	Name      string       `json:"name"`
 	Commit    BranchCommit `json:"commit"`
 	Protected bool         `json:"protected"`
+	// UpdatedAt is when the tip last changed (committer date, so a rebase
+	// counts). Ahead is the number of commits the branch has beyond the
+	// default branch. Both are filled by the own git engine only (not part
+	// of Forgejo's wire format).
+	UpdatedAt time.Time `json:"-"`
+	Ahead     int       `json:"-"`
 }
 
 // CommitSignature is an author/committer entry inside a commit payload.

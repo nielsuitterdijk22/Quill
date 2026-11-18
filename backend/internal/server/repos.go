@@ -32,6 +32,10 @@ type branchResponse struct {
 	CommitSHA     string    `json:"commitSha"`
 	CommitMessage string    `json:"commitMessage"`
 	CommitDate    time.Time `json:"commitDate"`
+	// UpdatedAt (tip committer date) and Ahead (commits beyond the default
+	// branch) drive the "recently pushed → open a pull request" shortcut.
+	UpdatedAt time.Time `json:"updatedAt"`
+	Ahead     int       `json:"ahead"`
 }
 
 // commitResponse is the public JSON shape for a commit log entry.
@@ -250,6 +254,8 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 			CommitSHA:     b.Commit.ID,
 			CommitMessage: b.Commit.Message,
 			CommitDate:    b.Commit.Timestamp,
+			UpdatedAt:     b.UpdatedAt,
+			Ahead:         b.Ahead,
 		})
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{

@@ -938,6 +938,34 @@ select:focus {
   margin-bottom: 18px;
 }
 
+/* "Recently pushed branch → Compare & pull request" prompt. */
+.pr-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.pr-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+}
+.pr-prompt-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-prompt-text .nm {
+  font-weight: 600;
+}
+
 /* ---- centered auth / connect screens --------------------------------------- */
 .center-wrap {
   display: flex;

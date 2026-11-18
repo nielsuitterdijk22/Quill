@@ -2,7 +2,7 @@ import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getPulls } from "../../../../../../lib/api";
+import { getBranches, getPulls } from "../../../../../../lib/api";
 import { getToken } from "../../../../../../lib/session";
 import {
   BrowseError,
@@ -11,6 +11,7 @@ import {
   repoBase,
 } from "../../../../../../components/repo";
 import { DiffStat, PullStateBadge } from "../../../../../../components/pulls";
+import { RecentBranchPrompt } from "../../../../../../components/RecentBranchPrompt";
 
 // PullsPage lists a repository's pull requests with Open/Closed filters.
 export default async function PullsPage({
@@ -24,9 +25,10 @@ export default async function PullsPage({
   if (!token) notFound();
 
   const wantClosed = searchParams.state === "closed";
-  const [openRes, closedRes] = await Promise.all([
+  const [openRes, closedRes, branchesRes] = await Promise.all([
     getPulls(token, params.project, params.repo, "open"),
     getPulls(token, params.project, params.repo, "closed"),
+    getBranches(token, params.project, params.repo),
   ]);
 
   const active = wantClosed ? closedRes : openRes;
@@ -57,6 +59,16 @@ export default async function PullsPage({
         refName={repo.defaultBranch}
         active="pulls"
       />
+
+      {branchesRes.ok && openRes.ok ? (
+        <RecentBranchPrompt
+          project={params.project}
+          repo={params.repo}
+          defaultBranch={repo.defaultBranch}
+          branches={branchesRes.data.branches}
+          openHeads={openRes.data.pulls.map((pr) => pr.head.ref)}
+        />
+      ) : null}
 
       <div className="repo-toolbar">
         <div className="state-tabs">

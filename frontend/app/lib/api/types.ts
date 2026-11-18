@@ -51,6 +51,10 @@ export type Branch = {
   commitSha: string;
   commitMessage: string;
   commitDate: string;
+  // Tip committer date and commits beyond the default branch; they feed the
+  // "recently pushed → open a pull request" prompt.
+  updatedAt?: string;
+  ahead?: number;
 };
 
 export type Commit = {

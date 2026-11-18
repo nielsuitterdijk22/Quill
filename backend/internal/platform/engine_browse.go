@@ -210,8 +210,8 @@ func commitFromRecord(rec string) (forgejo.Commit, error) {
 // bareListBranches returns the branches with tip commits from a hydrated dir.
 // (for-each-ref formats do not expand %xNN escapes — the separators are real
 // bytes; refnames cannot contain them.)
-func bareListBranches(dir string) ([]forgejo.Branch, error) {
-	const f = "%(refname:short)\x1f%(objectname)\x1f%(contents:subject)\x1f%(authorname)\x1f%(authoremail)\x1f%(authordate:iso8601-strict)"
+func bareListBranches(dir, defaultBranch string) ([]forgejo.Branch, error) {
+	const f = "%(refname:short)\x1f%(objectname)\x1f%(contents:subject)\x1f%(authorname)\x1f%(authoremail)\x1f%(authordate:iso8601-strict)\x1f%(committerdate:iso8601-strict)"
 	out, err := gitBrowse(dir, "for-each-ref", "refs/heads", "--format="+f)
 	if err != nil {
 		return nil, err
@@ -222,9 +222,10 @@ func bareListBranches(dir string) ([]forgejo.Branch, error) {
 			continue
 		}
 		parts := strings.Split(line, "\x1f")
-		if len(parts) != 6 {
+		if len(parts) != 7 {
 			return nil, fmt.Errorf("branch record has %d fields: %q", len(parts), line)
 		}
+		updated := isoTime(parts[6])
 		branches = append(branches, forgejo.Branch{
 			Name: parts[0],
 			Commit: forgejo.BranchCommit{
@@ -233,9 +234,35 @@ func bareListBranches(dir string) ([]forgejo.Branch, error) {
 				Author:    forgejo.GitActor{Name: parts[3], Email: strings.Trim(parts[4], "<>")},
 				Timestamp: isoTime(parts[5]),
 			},
+			UpdatedAt: updated,
+			Ahead:     branchAhead(dir, defaultBranch, parts[0], updated),
 		})
 	}
 	return branches, nil
+}
+
+// aheadWindow bounds the per-branch `git rev-list` in bareListBranches: only
+// branches changed this recently can feed the "open a pull request" shortcut,
+// so a repository with hundreds of old branches costs one for-each-ref.
+const aheadWindow = 7 * 24 * time.Hour
+
+// branchAhead counts the commits branch has beyond the default branch. It is 0
+// for the default branch itself, for branches outside aheadWindow, and when the
+// default branch cannot be resolved (empty repository): "unknown" must never
+// fail a branch listing.
+func branchAhead(dir, defaultBranch, branch string, updated time.Time) int {
+	if defaultBranch == "" || branch == defaultBranch || time.Since(updated) > aheadWindow {
+		return 0
+	}
+	out, err := gitBrowse(dir, "rev-list", "--count", "refs/heads/"+defaultBranch+"..refs/heads/"+branch)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // bareListCommits mirrors the forgejo client's ListCommits semantics: limit

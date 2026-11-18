@@ -6,12 +6,14 @@ import {
   getContents,
   getCommits,
   getMeta,
+  getPulls,
   getRepo,
   renderMarkdown,
 } from "../../../../../lib/api";
 import { getToken } from "../../../../../lib/session";
 import { CloneButton } from "../../../../../components/CloneButton";
 import { BranchSelector } from "../../../../../components/BranchSelector";
+import { RecentBranchPrompt } from "../../../../../components/RecentBranchPrompt";
 import { ForkButton } from "./ForkButton";
 import { StarButton } from "./StarButton";
 import { SBOMButton } from "./SBOMButton";
@@ -131,7 +133,7 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
   const readmeEntry = entries.find(
     (e) => e.type === "file" && /^readme(\.md|\.txt)?$/i.test(e.name),
   );
-  const [branchesRes, commitsRes, readmeRes, meta, repoDetailRes] = await Promise.all([
+  const [branchesRes, commitsRes, readmeRes, meta, repoDetailRes, openPullsRes] = await Promise.all([
     getBranches(token, params.project, params.repo),
     getCommits(token, params.project, params.repo, ref, "", 1),
     readmeEntry
@@ -139,7 +141,13 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
       : Promise.resolve(null),
     getMeta(),
     getRepo(token, params.project, params.repo),
+    // Only signed-in viewers get the "open a pull request" prompt.
+    token ? getPulls(token, params.project, params.repo, "open") : Promise.resolve(null),
   ]);
+  const openHeads =
+    openPullsRes && openPullsRes.ok
+      ? openPullsRes.data.pulls.map((pr) => pr.head.ref)
+      : [];
   const refNames = branchesRes.ok
     ? branchesRes.data.branches.map((b) => b.name)
     : [ref];
@@ -175,6 +183,16 @@ git push -u origin ${repo.defaultBranch || "main"}`}</pre>
         active="code"
         description={repo.description}
       />
+
+      {token && branchesRes.ok && openPullsRes?.ok ? (
+        <RecentBranchPrompt
+          project={params.project}
+          repo={params.repo}
+          defaultBranch={ref}
+          branches={branchesRes.data.branches}
+          openHeads={openHeads}
+        />
+      ) : null}
 
       <div className="repo-toolbar">
         <BranchSelector

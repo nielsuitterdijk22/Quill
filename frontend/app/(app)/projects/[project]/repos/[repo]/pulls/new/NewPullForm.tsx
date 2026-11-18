@@ -24,17 +24,24 @@ export function NewPullForm({
   repo,
   branches,
   defaultBranch,
+  initialHead,
 }: {
   project: string;
   repo: string;
   branches: Branch[];
   defaultBranch: string;
+  // ?head= from the "recently pushed" prompt; ignored unless it names a branch
+  // other than the default one.
+  initialHead?: string;
 }) {
   const action = createPullAction.bind(null, project, repo);
   const [state, formAction] = useFormState(action, initialState);
 
   const names = branches.map((b) => b.name);
-  const defaultHead = names.find((n) => n !== defaultBranch) ?? "";
+  const defaultHead =
+    initialHead && initialHead !== defaultBranch && names.includes(initialHead)
+      ? initialHead
+      : (names.find((n) => n !== defaultBranch) ?? "");
 
   return (
     <div className="panel form-narrow">

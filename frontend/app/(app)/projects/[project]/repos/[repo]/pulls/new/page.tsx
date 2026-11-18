@@ -9,8 +9,10 @@ import { NewPullForm } from "./NewPullForm";
 // branches available as the source/target options.
 export default async function NewPullPage({
   params,
+  searchParams,
 }: {
   params: { project: string; repo: string };
+  searchParams: { head?: string };
 }) {
   const token = await getToken();
   if (!token) notFound();
@@ -44,6 +46,7 @@ export default async function NewPullPage({
         repo={params.repo}
         branches={branches}
         defaultBranch={defaultBranch}
+        initialHead={searchParams.head}
       />
     </>
   );

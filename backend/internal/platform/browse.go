@@ -36,7 +36,7 @@ func (s *Service) ListBranches(ctx context.Context, actor Actor, projectSlug, re
 		if err != nil {
 			return db.Repository{}, nil, err
 		}
-		branches, err := bareListBranches(dir)
+		branches, err := bareListBranches(dir, repo.DefaultBranch)
 		if err != nil {
 			return db.Repository{}, nil, err
 		}
