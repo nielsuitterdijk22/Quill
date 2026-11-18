@@ -299,9 +299,12 @@ func (s *Store) AddTenantMemberIfAbsent(ctx context.Context, tenantID, userID uu
 	return tag.RowsAffected() > 0, err
 }
 
-// RemoveUserFromTenant drops a user's tenant membership and their membership
-// of every group in that tenant (deprovisioning). Reports whether a
-// membership existed.
+// RemoveUserFromTenant offboards a user from a tenant: it drops the tenant
+// membership, their membership of every group in that tenant, and their direct
+// project_members rows on that tenant's projects (the creator's owner row
+// included), all in one transaction. Rows in other tenants — their personal
+// project — are untouched. A later re-join starts from the plain member role,
+// never from a role held before leaving. Reports whether a membership existed.
 func (s *Store) RemoveUserFromTenant(ctx context.Context, tenantID, userID uuid.UUID) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -311,6 +314,11 @@ func (s *Store) RemoveUserFromTenant(ctx context.Context, tenantID, userID uuid.
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM group_members WHERE user_id = $2
 		AND group_id IN (SELECT id FROM groups WHERE tenant_id = $1)`, tenantID, userID); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM project_members WHERE user_id = $2
+		AND project_id IN (SELECT id FROM projects WHERE tenant_id = $1)`, tenantID, userID); err != nil {
 		return false, err
 	}
 	tag, err := tx.Exec(ctx, `DELETE FROM tenant_members WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)

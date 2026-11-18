@@ -951,3 +951,30 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   non-member of a public repo sees it and gets a 403 on submit); no dismiss button. No frontend
   unit-test harness exists, so the filter (`recentBranches`) is covered only through the backend
   test of the data it consumes.
+
+## 2026-11-18 — One definition of project access; grants are live only for current org members
+
+- Three queries decided access separately and disagreed (the authorization check knew group grants;
+  the project switcher and the cross-cutting views did not). `project_access(user, project?)`
+  (migration 000043, a SQL function) is now the single definition; `GetEffectiveProjectRole`,
+  `ListVisibleProjectsForUser` and `…WithRole` read it. Rejected: a view (cannot take the user as
+  a parameter, so every caller would filter a full cross join) and duplicating the logic in Go.
+- Invariant: in an organization, a direct row, a group grant and the org membership are live only
+  while the person is a current member of that org; personal tenants keep the direct row as the
+  access (they have no member list). A group grant also only counts when the group and the project
+  share a tenant (read-time defence behind the `tenantProject` fix).
+- Gaps closed, found by reading, reproduced by tests first: (1) SCIM deprovisioning / admin removal
+  left the person's direct `project_members` rows, so an offboarded project creator kept `owner`
+  (and git push) on the projects they created; (2) `AddGroupMember` documented "must be a member
+  of the org" but did not check, so any user could get project access through a group without an
+  invite or a seat. Offboarding (`RemoveUserFromTenant`, used by SCIM *and* `RemoveOrgMember`, which
+  previously left group memberships behind) now deletes the direct rows and group memberships in
+  that org in one transaction; rejoining starts from the plain member role.
+- Production check before shipping (read-only): 0 direct rows for non-members, 0 group members
+  outside their org, 0 cross-tenant group grants (the audit follow-up from the group-grant
+  security fix). Nothing loses access.
+- Existing test changed (owner-approved direction: no guests, explicit access): in
+  `TestGroupProjectRoleInheritance` the group member is now an org member first, and the
+  "no access before the grant" assertions check owner level (org members hold an implicit `member`
+  role until access becomes explicit, which restores the stricter assertions).
+- Group nesting is untouched here; flattening groups is the next, separate change.

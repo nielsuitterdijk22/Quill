@@ -192,11 +192,16 @@ func (s *Service) AddGroupMember(ctx context.Context, actor Actor, orgSlug, grou
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return err
 	}
-	// The target must exist and be a member of the org.
+	// The target must exist and (checked below) be a member of the org.
 	if _, err := s.store.GetUserByID(ctx, userID); errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	} else if err != nil {
 		return fmt.Errorf("lookup user: %w", err)
+	}
+	if _, err := s.store.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: tenant.ID, UserID: userID}); errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%w: only members of the organization can join its groups", ErrInvalidInput)
+	} else if err != nil {
+		return fmt.Errorf("lookup org member: %w", err)
 	}
 	if err := s.store.AddGroupMember(ctx, db.AddGroupMemberParams{GroupID: group.ID, UserID: userID}); err != nil {
 		return fmt.Errorf("add group member: %w", err)

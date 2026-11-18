@@ -63,38 +63,9 @@ WHERE gpr.project_id = $1
 ORDER BY g.depth, g.slug;
 
 -- name: GetEffectiveProjectRole :one
--- The user's effective role on a project: max of their direct project_members
--- role, the roles granted to any of their effective groups (direct groups
--- plus all ancestors, via recursive expansion), and their tenant (org)
--- membership — org members can access their org's projects (tenant 'admin'
--- maps to project 'owner'). Returns '' when the user has no access.
--- Role precedence: owner > member.
-WITH RECURSIVE effective_groups AS (
-  SELECT gm.group_id
-  FROM group_members gm
-  WHERE gm.user_id = $2
-  UNION
-  SELECT g.parent_id
-  FROM groups g
-  JOIN effective_groups eg ON g.id = eg.group_id
-  WHERE g.parent_id IS NOT NULL
-),
-candidates AS (
-  SELECT pm.role FROM project_members pm
-  WHERE pm.project_id = $1 AND pm.user_id = $2
-  UNION ALL
-  SELECT gpr.role
-  FROM group_project_roles gpr
-  JOIN effective_groups eg ON eg.group_id = gpr.group_id
-  WHERE gpr.project_id = $1
-  UNION ALL
-  SELECT CASE WHEN tm.role = 'admin' THEN 'owner' ELSE 'member' END
-  FROM tenant_members tm
-  JOIN projects p ON p.tenant_id = tm.tenant_id
-  WHERE p.id = $1 AND tm.user_id = $2
-)
-SELECT COALESCE((
-  SELECT role FROM candidates
-  ORDER BY CASE role WHEN 'owner' THEN 2 WHEN 'member' THEN 1 ELSE 0 END DESC
-  LIMIT 1
-), '') AS role;
+-- The user's effective role on a project, from the one definition of access
+-- (project_access, migration 000043): direct role, group grants and org
+-- membership, each live only while the person is a current member of the
+-- project's organization. Returns '' when the user has no access.
+-- Role precedence: owner > member > read.
+SELECT COALESCE((SELECT a.role FROM project_access($2::uuid, $1::uuid) a LIMIT 1), '') AS role;

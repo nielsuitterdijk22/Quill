@@ -235,7 +235,9 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actor Actor, orgSlug stri
 			return err
 		}
 	}
-	if err := s.store.RemoveTenantMember(ctx, db.RemoveTenantMemberParams{TenantID: tenant.ID, UserID: targetUserID}); err != nil {
+	// The same offboarding primitive SCIM deprovisioning uses: the membership,
+	// their group memberships and their direct project rows in this org.
+	if _, err := s.store.RemoveUserFromTenant(ctx, tenant.ID, targetUserID); err != nil {
 		return fmt.Errorf("remove member: %w", err)
 	}
 	s.syncTeamSeatsBestEffort(ctx, tenant.ID)

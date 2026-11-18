@@ -404,35 +404,7 @@ func (q *Queries) ListProjectGroupRoles(ctx context.Context, projectID uuid.UUID
 }
 
 const getEffectiveProjectRole = `-- name: GetEffectiveProjectRole :one
-WITH RECURSIVE effective_groups AS (
-  SELECT gm.group_id
-  FROM group_members gm
-  WHERE gm.user_id = $2
-  UNION
-  SELECT g.parent_id
-  FROM groups g
-  JOIN effective_groups eg ON g.id = eg.group_id
-  WHERE g.parent_id IS NOT NULL
-),
-candidates AS (
-  SELECT pm.role FROM project_members pm
-  WHERE pm.project_id = $1 AND pm.user_id = $2
-  UNION ALL
-  SELECT gpr.role
-  FROM group_project_roles gpr
-  JOIN effective_groups eg ON eg.group_id = gpr.group_id
-  WHERE gpr.project_id = $1
-  UNION ALL
-  SELECT CASE WHEN tm.role = 'admin' THEN 'owner' ELSE 'member' END
-  FROM tenant_members tm
-  JOIN projects p ON p.tenant_id = tm.tenant_id
-  WHERE p.id = $1 AND tm.user_id = $2
-)
-SELECT COALESCE((
-  SELECT role FROM candidates
-  ORDER BY CASE role WHEN 'owner' THEN 2 WHEN 'member' THEN 1 ELSE 0 END DESC
-  LIMIT 1
-), '') AS role
+SELECT COALESCE((SELECT a.role FROM project_access($2::uuid, $1::uuid) a LIMIT 1), '') AS role
 `
 
 type GetEffectiveProjectRoleParams struct {

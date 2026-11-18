@@ -80,7 +80,7 @@ func TestGroupProjectRoleInheritance(t *testing.T) {
 	ctx := context.Background()
 	founder := Actor{UserID: scopeMakeUser(t, st, "ifounder")}
 
-	_, project, err := svc.CreateOrganization(ctx, founder, "acme", "Acme")
+	orgTenant, project, err := svc.CreateOrganization(ctx, founder, "acme", "Acme")
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
@@ -93,13 +93,19 @@ func TestGroupProjectRoleInheritance(t *testing.T) {
 		t.Fatalf("create team: %v", err)
 	}
 	memberID := scopeMakeUser(t, st, "imember")
+	// Group members must belong to the org (AddGroupMember enforces it). Until
+	// access becomes explicit, org members hold an implicit 'member' role, so the
+	// inheritance under test is the OWNER role granted through the group.
+	if err := st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: orgTenant.ID, UserID: memberID, Role: "member"}); err != nil {
+		t.Fatalf("add tenant member: %v", err)
+	}
 	if err := svc.AddGroupMember(ctx, founder, "acme", "team", memberID); err != nil {
 		t.Fatalf("add group member: %v", err)
 	}
 	member := Actor{UserID: memberID}
 
-	// No grant yet: no access.
-	if err := svc.authorizeProjectMember(ctx, member, project.ID); !errors.Is(err, ErrForbidden) {
+	// No grant yet: not an owner.
+	if err := svc.authorizeProjectAdmin(ctx, member, project.ID); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("before grant: want ErrForbidden, got %v", err)
 	}
 
@@ -121,11 +127,11 @@ func TestGroupProjectRoleInheritance(t *testing.T) {
 		t.Fatalf("stranger: want ErrForbidden, got %v", err)
 	}
 
-	// Revoke the grant: access is gone again.
+	// Revoke the grant: owner access is gone again.
 	if err := svc.RemoveGroupProjectRole(ctx, founder, "acme", "dept", "acme"); err != nil {
 		t.Fatalf("remove group role: %v", err)
 	}
-	if err := svc.authorizeProjectMember(ctx, member, project.ID); !errors.Is(err, ErrForbidden) {
+	if err := svc.authorizeProjectAdmin(ctx, member, project.ID); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("after revoke: want ErrForbidden, got %v", err)
 	}
 
