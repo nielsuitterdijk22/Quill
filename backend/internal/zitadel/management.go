@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -97,16 +98,33 @@ func (c *Client) InviteUser(ctx context.Context, orgID, email, displayName strin
 // and last name, so both are set to the handle (nobody ever sees them). The
 // handle is the Zitadel username, which Quill derives its own username from at
 // first sign-in. ErrConflict means the username or email is already taken.
-func (c *Client) CreateAccount(ctx context.Context, username, email, password string) error {
+//
+// verifyURL, when non-empty, is the Zitadel urlTemplate for the emailed link
+// ({{.UserID}} and {{.Code}} are filled in by Zitadel). Pointing it at a Quill
+// page keeps the person in Quill: Zitadel's default link opens its own login
+// without a Quill sign-in attached, which ends on its management console.
+func (c *Client) CreateAccount(ctx context.Context, username, email, password, verifyURL string) error {
 	if !c.Enabled() {
 		return fmt.Errorf("zitadel management client not configured")
+	}
+	send := map[string]any{}
+	if verifyURL != "" {
+		send["urlTemplate"] = verifyURL
 	}
 	return c.do(ctx, http.MethodPost, "/v2/users/human", "", map[string]any{
 		"username": username,
 		"profile":  map[string]any{"givenName": username, "familyName": username, "displayName": username},
-		"email":    map[string]any{"email": email, "sendCode": map[string]any{}},
+		"email":    map[string]any{"email": email, "sendCode": send},
 		"password": map[string]any{"password": password, "changeRequired": false},
 	}, nil)
+}
+
+// VerifyEmail confirms a human user's email with the code from the emailed link.
+func (c *Client) VerifyEmail(ctx context.Context, userID, code string) error {
+	if !c.Enabled() {
+		return fmt.Errorf("zitadel management client not configured")
+	}
+	return c.do(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/email/verify", "", map[string]any{"verificationCode": code}, nil)
 }
 
 // do performs a JSON request against the Management API. orgID, when non-empty,

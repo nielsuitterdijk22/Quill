@@ -63,17 +63,19 @@ func TestSignup(t *testing.T) {
 	}
 
 	srv.signup = nil
-	if c := post(`{"username":"sam","email":"sam@x.test","password":"correct-horse"}`); c != http.StatusNotImplemented {
+	if c := post(`{"username":"sam","email":"sam@x.test","password":"Correct-Horse-9"}`); c != http.StatusNotImplemented {
 		t.Fatalf("unconfigured: want 501, got %d", c)
 	}
 	srv.signup = zitadel.NewClient(fake.URL, "tok")
 
 	for name, body := range map[string]string{
-		"reserved":     `{"username":"orgs","email":"a@x.test","password":"correct-horse"}`,
-		"bad chars":    `{"username":"sa m","email":"a@x.test","password":"correct-horse"}`,
-		"trailing dot": `{"username":"sam.","email":"a@x.test","password":"correct-horse"}`,
-		"bad email":    `{"username":"sam","email":"nope","password":"correct-horse"}`,
+		"reserved":     `{"username":"orgs","email":"a@x.test","password":"Correct-Horse-9"}`,
+		"bad chars":    `{"username":"sa m","email":"a@x.test","password":"Correct-Horse-9"}`,
+		"trailing dot": `{"username":"sam.","email":"a@x.test","password":"Correct-Horse-9"}`,
+		"bad email":    `{"username":"sam","email":"nope","password":"Correct-Horse-9"}`,
 		"short pw":     `{"username":"sam","email":"a@x.test","password":"short"}`,
+		"no symbol":    `{"username":"sam","email":"a@x.test","password":"CorrectHorse9"}`,
+		"no uppercase": `{"username":"sam","email":"a@x.test","password":"correct-horse-9"}`,
 	} {
 		if c := post(body); c != http.StatusBadRequest {
 			t.Errorf("%s: want 400, got %d", name, c)
@@ -83,7 +85,7 @@ func TestSignup(t *testing.T) {
 		t.Fatalf("invalid input reached zitadel: %v", got)
 	}
 
-	if c := post(`{"username":"Sam-Test","email":"sam@x.test","password":"correct-horse"}`); c != http.StatusCreated {
+	if c := post(`{"username":"Sam-Test","email":"sam@x.test","password":"Correct-Horse-9"}`); c != http.StatusCreated {
 		t.Fatalf("valid sign-up: want 201, got %d", c)
 	}
 	profile, _ := got["profile"].(map[string]any)
@@ -95,7 +97,7 @@ func TestSignup(t *testing.T) {
 	}
 
 	status = http.StatusConflict
-	if c := post(`{"username":"sam-test","email":"sam@x.test","password":"correct-horse"}`); c != http.StatusConflict {
+	if c := post(`{"username":"sam-test","email":"sam@x.test","password":"Correct-Horse-9"}`); c != http.StatusConflict {
 		t.Fatalf("taken: want 409, got %d", c)
 	}
 }

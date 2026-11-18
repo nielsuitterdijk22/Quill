@@ -6,13 +6,34 @@
 // Route: auth.black-tulip.nl/ui/login/*
 const CSS = "__ZITADEL_LOGIN_CSS__";
 
+const SIGN_UP_URL = "https://app.black-tulip.nl/sign-up";
+
 export default {
   async fetch(request) {
     const response = await fetch(request);
     const type = response.headers.get("content-type") || "";
     if (!type.includes("text/html")) return response;
-    return new HTMLRewriter()
-      .on("head", { element(el) { el.append(`<style id="quill-skin">${CSS}</style>`, { html: true }); } })
-      .transform(response);
+
+    // Zitadel's CSP only allows styles carrying its per-request nonce; an
+    // un-nonced <style> is silently dropped by the browser.
+    const csp = response.headers.get("content-security-policy") || "";
+    const m = csp.match(/style-src[^;]*'nonce-([^']+)'/);
+    const nonce = m ? ` nonce="${m[1]}"` : "";
+
+    const path = new URL(request.url).pathname;
+    const rewriter = new HTMLRewriter().on("head", {
+      element(el) { el.append(`<style id="quill-skin"${nonce}>${CSS}</style>`, { html: true }); },
+    });
+    if (path.endsWith("/loginname")) {
+      rewriter.on(".content-container", {
+        element(el) {
+          el.append(
+            `<p class="q-signup">New to Quill? <a href="${SIGN_UP_URL}">Create an account</a></p>`,
+            { html: true },
+          );
+        },
+      });
+    }
+    return rewriter.transform(response);
   },
 };

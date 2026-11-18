@@ -1,0 +1,11 @@
+# Deploys the Zitadel login skin Worker:
+#   ./build-zitadel-worker.sh && npx wrangler login && npx wrangler deploy
+# Removing the Worker (or its route) restores Zitadel's default look.
+name = "quill-zitadel-login-skin"
+main = "dist/zitadel-login-worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = false
+
+routes = [
+  { pattern = "auth.black-tulip.nl/ui/login/*", zone_name = "black-tulip.nl" },
+]

@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { passwordOk, passwordRules } from "../../lib/password";
 import { isValidHandle } from "../../lib/slug";
 import { AppTile } from "../icons/AppMarks";
 
@@ -23,6 +24,10 @@ export function SignUpForm() {
     setError(null);
     if (!isValidHandle(username)) {
       setError("Username: lowercase letters, digits, '.', '_' or '-', starting with a letter or digit.");
+      return;
+    }
+    if (!passwordOk(password)) {
+      setError("Your password doesn't meet all the requirements below.");
       return;
     }
     setPending(true);
@@ -55,8 +60,8 @@ export function SignUpForm() {
           <>
             <h1 className="signin-title">Check your email</h1>
             <p className="signin-sub">
-              We sent a verification code to <b>{email}</b>. Sign in with your username{" "}
-              <code>{username}</code> and your password, then enter the code when asked.
+              We sent a verification link to <b>{email}</b>. Open it to confirm your address, then sign in with
+              your username <code>{username}</code> and your password.
             </p>
             <Link className="signin-btn signin-btn-link" href="/sign-in">
               Continue to sign in
@@ -103,12 +108,19 @@ export function SignUpForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
-                  minLength={8}
                   maxLength={128}
                   required
+                  aria-describedby="pw-rules"
                 />
               </label>
-              <button className="signin-btn" type="submit" disabled={pending}>
+              <ul className="pw-rules" id="pw-rules">
+                {passwordRules(password).map((r) => (
+                  <li key={r.label} className={r.ok ? "ok" : undefined}>
+                    <span aria-hidden="true">{r.ok ? "✓" : "○"}</span> {r.label}
+                  </li>
+                ))}
+              </ul>
+              <button className="signin-btn" type="submit" disabled={pending || !passwordOk(password)}>
                 {pending ? "Creating…" : "Create account"}
               </button>
             </form>

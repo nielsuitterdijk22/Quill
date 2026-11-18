@@ -460,6 +460,7 @@ func (s *Server) setupRoutes() {
 			}
 			// Public sign-up form (handle + email + password) -> Zitadel account.
 			r.With(newIPRateLimiter(5, time.Minute).middleware()).Post("/signup", s.handleSignup)
+			r.With(newIPRateLimiter(10, time.Minute).middleware()).Post("/verify-email", s.handleVerifyEmail)
 			// GitHub OAuth for onboarding repo import (no Quill auth required —
 			// the user is redirected from the frontend during onboarding).
 			r.Get("/github", s.handleGitHubOAuthRedirect)

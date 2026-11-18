@@ -91,3 +91,15 @@ footer { display: none; }
 @media (max-width: 520px) {
   .lgn-max-width-wrapper { margin: 0 !important; min-height: 100vh; border-radius: 0 !important; border: none !important; }
 }
+
+/* "Create an account" link under the login-name step (injected by the Worker). */
+.q-signup {
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--q-line);
+  text-align: center;
+  font-size: 14px;
+  color: var(--q-muted);
+}
+.q-signup a { color: var(--q-accent); font-weight: 600; text-decoration: none; }
+.q-signup a:hover { text-decoration: underline; }

@@ -919,3 +919,11 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   custom login on the Session API (rebuilds MFA/reset/SSO on the auth path — revisit later); running
   Login V2 as an extra container.
 
+
+## 2026-11-18 — Verification link lands in Quill; password rules checked client-side; login skin needs the CSP nonce
+
+- **Decision:** the sign-up email's link is a Zitadel `urlTemplate` pointing at Quill's `/verify-email` page (origin = first `QUILL_CORS_ALLOWED_ORIGINS` entry), which POSTs `/api/v1/auth/verify-email` (public, rate limited; backend calls Zitadel `POST /v2/users/{id}/email/verify`) and then offers "Continue to sign in".
+- **Why:** Zitadel's default link opens its own login with no auth request, which ends on its management console. Verifying through the backend keeps the person in Quill.
+- **Password rules** mirror the instance policy (8+, upper, lower, number, symbol): live checklist in `SignUpForm`, same check in `passwordProblem()` server-side. Change all three together with the Zitadel policy.
+- **Login skin:** Zitadel's CSP only allows styles carrying its per-request nonce, so the Worker copies the nonce onto the injected `<style>`; it also injects the "Create account" link on the login-name step.
+- **Rejected:** creating accounts with the email pre-verified (lets anyone claim any address); redirecting `/ui/console` in the Worker (hides the cause).

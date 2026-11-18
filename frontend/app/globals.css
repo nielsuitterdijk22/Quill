@@ -5517,3 +5517,17 @@ button.sbom-chip:hover {
 .signin-foot a {
   color: var(--accent);
 }
+
+.pw-rules {
+  list-style: none;
+  margin: -4px 0 4px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 12px;
+  font-size: 12.5px;
+  color: var(--muted, #8a8a9e);
+}
+.pw-rules li.ok {
+  color: var(--green, #3ecf8e);
+}

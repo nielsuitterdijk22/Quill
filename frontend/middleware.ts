@@ -8,6 +8,7 @@ import { auth as zitadelAuth } from "./app/auth";
 const PUBLIC_ROUTES = [
   /^\/sign-in(?:\/.*)?$/,
   /^\/sign-up(?:\/.*)?$/,
+  /^\/verify-email(?:\/.*)?$/,
   /^\/login(?:\/.*)?$/, // kept for backwards-compat redirects
   /^\/register(?:\/.*)?$/,
   /^\/api\/auth(?:\/.*)?$/, // NextAuth endpoints
