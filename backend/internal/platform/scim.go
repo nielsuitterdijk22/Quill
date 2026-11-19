@@ -398,6 +398,31 @@ func (s *Service) SCIMCreateGroup(ctx context.Context, tenant db.Tenant, display
 	if len(base) > 55 {
 		base = strings.Trim(base[:55], "-")
 	}
+	// A hand-made group of the same name is adopted: it keeps its id, slug and
+	// project grants; the IdP's roster overwrites its members from now on.
+	if gid, ok, err := s.store.FindManualGroupByName(ctx, tenant.ID, displayName, base); err != nil {
+		return SCIMGroupView{}, err
+	} else if ok {
+		rec, err := s.store.InsertSCIMGroup(ctx, store.SCIMGroup{TenantID: tenant.ID, GroupID: gid, DisplayName: displayName, ExternalID: externalID})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return SCIMGroupView{}, ErrConflict
+			}
+			return SCIMGroupView{}, fmt.Errorf("record scim group: %w", err)
+		}
+		if err := s.store.RenameGroup(ctx, gid, displayName); err != nil {
+			return SCIMGroupView{}, fmt.Errorf("rename adopted group: %w", err)
+		}
+		if err := s.store.ClearGroupMembers(ctx, gid); err != nil {
+			return SCIMGroupView{}, fmt.Errorf("clear adopted group: %w", err)
+		}
+		for _, uid := range userIDs {
+			if err := s.store.AddGroupMember(ctx, db.AddGroupMemberParams{GroupID: gid, UserID: uid}); err != nil {
+				return SCIMGroupView{}, fmt.Errorf("add group member: %w", err)
+			}
+		}
+		return s.scimGroupView(ctx, tenant, rec)
+	}
 	var group db.Group
 	for i := 0; ; i++ {
 		slug := base

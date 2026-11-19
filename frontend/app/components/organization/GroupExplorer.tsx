@@ -57,6 +57,8 @@ export function GroupExplorer({
   const base = `/orgs/${encodeURIComponent(org)}/settings/groups`;
   const sorted = [...groups].sort((a, b) => a.name.localeCompare(b.name));
 
+  const rosterEditable = canEdit && selected?.source !== "scim";
+
   function run(fn: () => Promise<Result>, after?: () => void) {
     setError(null);
     start(async () => {
@@ -99,6 +101,7 @@ export function GroupExplorer({
                   className={`group-node${selected?.id === g.id ? " active" : ""}`}
                 >
                   {g.name}
+                  {g.source === "scim" && <span className="badge">IdP</span>}
                 </Link>
               </li>
             ))}
@@ -130,7 +133,7 @@ export function GroupExplorer({
           <>
             <div className="group-detail-head">
               <h3 className="group-detail-title">{selected.name}</h3>
-              {canEdit && (
+              {rosterEditable && (
                 <button
                   className="btn danger small"
                   disabled={pending}
@@ -144,6 +147,11 @@ export function GroupExplorer({
               )}
             </div>
 
+            {selected.source === "scim" && (
+              <p className="subtle">
+                This group is managed by your identity provider: members and name come from SCIM and cannot be edited here.
+              </p>
+            )}
             <h4 className="settings-subtitle">Members ({selectedMembers.length})</h4>
             {selectedMembers.length === 0 ? (
               <p className="subtle">No direct members.</p>
@@ -155,7 +163,7 @@ export function GroupExplorer({
                       <span className="token-name">{m.displayName || m.username}</span>
                       <span className="subtle">{m.email}</span>
                     </div>
-                    {canEdit && (
+                    {rosterEditable && (
                       <button className="btn ghost danger" disabled={pending} onClick={() => run(() => removeGroupMemberAction(org, selected.slug, m.userId))}>
                         Remove
                       </button>
@@ -164,7 +172,7 @@ export function GroupExplorer({
                 ))}
               </ul>
             )}
-            {canEdit && (
+            {rosterEditable && (
               <form
                 className="group-inline-form"
                 onSubmit={(e) => {

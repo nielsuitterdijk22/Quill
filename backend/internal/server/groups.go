@@ -13,6 +13,8 @@ type groupResponse struct {
 	ID   string `json:"id"`
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+	// Source is "manual" or "scim" (IdP-owned: roster read-only).
+	Source string `json:"source"`
 }
 
 type createGroupRequest struct {
@@ -56,7 +58,7 @@ func handleGroupsList(s *Server) http.HandlerFunc {
 		}
 		out := make([]groupResponse, 0, len(groups))
 		for _, g := range groups {
-			out = append(out, groupResponse{ID: g.ID.String(), Slug: g.Slug, Name: g.Name})
+			out = append(out, groupResponse{ID: g.ID.String(), Slug: g.Slug, Name: g.Name, Source: g.Source})
 		}
 		httpx.JSON(w, http.StatusOK, map[string]any{"groups": out})
 	}
@@ -82,7 +84,7 @@ func handleGroupsCreate(s *Server) http.HandlerFunc {
 		s.logAudit(r, "group.created", "group", group.ID.String(), map[string]any{
 			"org": orgSlug, "slug": group.Slug,
 		})
-		httpx.JSON(w, http.StatusCreated, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name}})
+		httpx.JSON(w, http.StatusCreated, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name, Source: group.Source}})
 	}
 }
 
@@ -107,7 +109,7 @@ func handleGroupsUpdate(s *Server) http.HandlerFunc {
 		s.logAudit(r, "group.updated", "group", group.ID.String(), map[string]any{
 			"org": orgSlug, "slug": group.Slug,
 		})
-		httpx.JSON(w, http.StatusOK, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name}})
+		httpx.JSON(w, http.StatusOK, map[string]any{"group": groupResponse{ID: group.ID.String(), Slug: group.Slug, Name: group.Name, Source: group.Source}})
 	}
 }
 

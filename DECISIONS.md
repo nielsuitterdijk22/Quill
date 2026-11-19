@@ -1034,3 +1034,17 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   admin access (the owner wants least privilege) and a silent grant.
 - Tests changed: none weakened; new tests cover owner-only management, last-owner guard,
   non-member refusal, and the claim path.
+
+## 2026-11-19 — IdP groups adopt same-named manual groups; their roster is read-only
+
+- Groups already had an IdP flavour (`scim_groups`); now a SCIM group whose name (or derived slug)
+  matches a hand-made group **adopts** it: same id, slug and project grants, the IdP roster
+  overwrites the members (owner's decision for the delete-and-recreate edge case). Otherwise a new
+  group is created as before. Rejected: a name-pattern rules table (project owners just grant the
+  IdP group like any group) and keeping two groups with the same name.
+- IdP-owned groups cannot be renamed, deleted or have members added/removed by hand
+  (`ErrInvalidInput`, "managed by your identity provider"); the API exposes `source`
+  (`manual` | `scim`) and the UI shows an IdP badge and read-only roster. Project grants on an IdP
+  group stay editable by project owners.
+- Delete-and-recreate of an IdP group in the IdP loses its grants (the group row is deleted); this
+  is the accepted edge case.

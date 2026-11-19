@@ -14,6 +14,8 @@ export type OrgGroup = {
   id: string;
   slug: string;
   name: string;
+  // "scim" groups belong to the identity provider: roster is read-only.
+  source?: "manual" | "scim";
 };
 
 export type GroupMember = {

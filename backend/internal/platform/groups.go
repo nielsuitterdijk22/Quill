@@ -21,6 +21,9 @@ type GroupView struct {
 	ID   uuid.UUID `json:"id"`
 	Slug string    `json:"slug"`
 	Name string    `json:"name"`
+	// Source is "manual" (made in Quill) or "scim" (owned by the identity
+	// provider: its membership is read-only here).
+	Source string `json:"source"`
 }
 
 // GroupMember is one user's membership in a group.
@@ -33,7 +36,7 @@ type GroupMember struct {
 }
 
 func groupView(g db.Group) GroupView {
-	return GroupView{ID: g.ID, Slug: g.Slug, Name: g.Name}
+	return GroupView{ID: g.ID, Slug: g.Slug, Name: g.Name, Source: "manual"}
 }
 
 // resolveGroup loads a group by slug within the org tenant and authorizes the
@@ -100,9 +103,17 @@ func (s *Service) ListGroups(ctx context.Context, actor Actor, orgSlug string) (
 	if err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
 	}
+	idp, err := s.store.IdPGroupIDs(ctx, tenant.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list idp groups: %w", err)
+	}
 	out := make([]GroupView, 0, len(rows))
 	for _, g := range rows {
-		out = append(out, groupView(g))
+		v := groupView(g)
+		if idp[g.ID] {
+			v.Source = "scim"
+		}
+		out = append(out, v)
 	}
 	return out, nil
 }
@@ -114,6 +125,9 @@ func (s *Service) UpdateGroup(ctx context.Context, actor Actor, orgSlug, groupSl
 		return GroupView{}, err
 	}
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
+		return GroupView{}, err
+	}
+	if err := s.rejectIdPGroup(ctx, group.ID); err != nil {
 		return GroupView{}, err
 	}
 	newSlug = strings.TrimSpace(newSlug)
@@ -131,6 +145,19 @@ func (s *Service) UpdateGroup(ctx context.Context, actor Actor, orgSlug, groupSl
 	return groupView(updated), nil
 }
 
+// rejectIdPGroup refuses manual changes to a group the identity provider owns:
+// its roster and name come from SCIM.
+func (s *Service) rejectIdPGroup(ctx context.Context, groupID uuid.UUID) error {
+	idp, err := s.store.IsIdPGroup(ctx, groupID)
+	if err != nil {
+		return fmt.Errorf("check group source: %w", err)
+	}
+	if idp {
+		return fmt.Errorf("%w: this group is managed by your identity provider", ErrInvalidInput)
+	}
+	return nil
+}
+
 // DeleteGroup removes a group; its memberships and project grants cascade.
 func (s *Service) DeleteGroup(ctx context.Context, actor Actor, orgSlug, groupSlug string) error {
 	tenant, group, err := s.resolveGroup(ctx, actor, orgSlug, groupSlug)
@@ -138,6 +165,9 @@ func (s *Service) DeleteGroup(ctx context.Context, actor Actor, orgSlug, groupSl
 		return err
 	}
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
+		return err
+	}
+	if err := s.rejectIdPGroup(ctx, group.ID); err != nil {
 		return err
 	}
 	if err := s.store.DeleteGroup(ctx, group.ID); err != nil {
@@ -157,6 +187,9 @@ func (s *Service) AddGroupMember(ctx context.Context, actor Actor, orgSlug, grou
 		return err
 	}
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
+		return err
+	}
+	if err := s.rejectIdPGroup(ctx, group.ID); err != nil {
 		return err
 	}
 	// The target must exist and (checked below) be a member of the org.
@@ -183,6 +216,9 @@ func (s *Service) RemoveGroupMember(ctx context.Context, actor Actor, orgSlug, g
 		return err
 	}
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
+		return err
+	}
+	if err := s.rejectIdPGroup(ctx, group.ID); err != nil {
 		return err
 	}
 	if err := s.store.RemoveGroupMember(ctx, db.RemoveGroupMemberParams{GroupID: group.ID, UserID: userID}); err != nil {

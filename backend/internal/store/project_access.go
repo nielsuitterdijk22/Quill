@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5"
 	"time"
 
 	"github.com/google/uuid"
@@ -107,4 +108,60 @@ func (s *Store) IsOrgTenant(ctx context.Context, tenantID uuid.UUID) (bool, erro
 		return false, err
 	}
 	return kind == "org", nil
+}
+
+// IsIdPGroup reports whether the IdP (SCIM) owns the group.
+func (s *Store) IsIdPGroup(ctx context.Context, groupID uuid.UUID) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM scim_groups WHERE group_id = $1)`, groupID).Scan(&ok)
+	return ok, err
+}
+
+// IdPGroupIDs returns the ids of a tenant's IdP-owned groups.
+func (s *Store) IdPGroupIDs(ctx context.Context, tenantID uuid.UUID) (map[uuid.UUID]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT group_id FROM scim_groups WHERE tenant_id = $1`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]bool{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+// FindManualGroupByName returns a tenant's hand-made (non-IdP) group whose name
+// or slug matches, case-insensitively — the group an IdP group of the same
+// name adopts. ok=false when there is none.
+func (s *Store) FindManualGroupByName(ctx context.Context, tenantID uuid.UUID, name, slug string) (id uuid.UUID, ok bool, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT g.id FROM groups g
+		WHERE g.tenant_id = $1
+		  AND NOT EXISTS (SELECT 1 FROM scim_groups sg WHERE sg.group_id = g.id)
+		  AND (lower(g.name) = lower($2) OR lower(g.slug) = lower($3))
+		ORDER BY g.created_at LIMIT 1`, tenantID, name, slug).Scan(&id)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return uuid.Nil, false, nil
+		}
+		return uuid.Nil, false, err
+	}
+	return id, true, nil
+}
+
+// ClearGroupMembers removes every member of a group (the IdP's roster overwrites it).
+func (s *Store) ClearGroupMembers(ctx context.Context, groupID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM group_members WHERE group_id = $1`, groupID)
+	return err
+}
+
+// RenameGroup sets only a group's display name (slug and grants stay).
+func (s *Store) RenameGroup(ctx context.Context, groupID uuid.UUID, name string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE groups SET name = $2 WHERE id = $1`, groupID, name)
+	return err
 }

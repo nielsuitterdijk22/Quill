@@ -26,6 +26,12 @@ organization. The person who creates a project is its first owner.
   organization (never writable through that route); **private** needs a role;
   **public** is world-readable.
 
+Groups provisioned over SCIM (for example from Entra) are marked **IdP**: their
+members and name come from the identity provider and are read-only in Quill. If
+a hand-made group with the same name already exists, the IdP group takes it
+over — it keeps its project grants and the IdP roster replaces its members.
+Project owners grant an IdP group a role like any other group.
+
 Project owners manage access under **Project → Access** (or
 `PUT /api/v1/projects/{project}/access/users/{username}` and
 `.../access/groups/{group}` with `{role}`). A project always keeps at least one
