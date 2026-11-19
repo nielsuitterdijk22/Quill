@@ -997,3 +997,25 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   (old revision errors during the rollout) and keeping nesting but hiding it.
 - `BACKLOG.md` still lists nested-group tasks (T-002, T-003); it is foundry-owned and was not
   edited — those items are obsolete.
+
+## 2026-11-19 — Explicit project access (org membership no longer implies it)
+
+- Owner decision: being in an organization is identity, not project access. `project_access()`
+  (migration 000045) drops the implicit org-membership grant; a person reaches a project through a
+  direct `project_members` row or a group grant, both live only for a current org member. The
+  project creator is its first owner (unchanged); org admins have no standing access (an audited
+  self-add for them, and project-owner-managed grants, come in the next change).
+- Migration 000045 backfills first: every current member of every org gets the direct row the
+  implicit rule gave them (admin → owner, member → member, never weakening a stronger row), so
+  existing orgs lose nothing on deploy. Tested over a legacy-shaped org, twice.
+- New `read` role (rank below `member`). `authorizeProjectMember` is now the write gate
+  (member/owner); new `authorizeProjectRead` is any role. Browsing, pull/issue listing and reading,
+  project/environment/policy reads use the read gate; everything else stays on the write gate, so
+  the default for an unaudited caller is "needs write". Git push already rejected `read`.
+- `internal` repositories are readable by every org member, never writable by that route
+  (`authorizeRepoRead`, git smart-HTTP read). Rejected: giving org members an implicit `read` on
+  the project (it would leak private repos).
+- Tests changed (model change, owner-approved): the resolver matrix, offboarding "rejoined" case
+  and two project-visibility tests now expect no access without a grant, and assert the granted
+  state. The 000044 migration test restores the current `project_access` after re-applying its SQL
+  (it otherwise leaked the old definition into later tests).

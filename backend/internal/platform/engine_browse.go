@@ -58,7 +58,7 @@ func (s *Service) resolveBrowseRepo(ctx context.Context, act Actor, projectSlug,
 	if err != nil {
 		return db.Repository{}, gitBackend{}, fmt.Errorf("lookup repo: %w", err)
 	}
-	if err := s.authorizeProjectMember(ctx, act, project.ID); err != nil {
+	if err := s.authorizeRepoRead(ctx, act, project, repo); err != nil {
 		if errors.Is(err, ErrForbidden) && repo.Visibility == VisibilityPublic {
 			if act.UserID == uuid.Nil {
 				s.logger.Debug("anonymous public repo read", "project", projectSlug, "repo", repoSlug)

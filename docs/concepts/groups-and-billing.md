@@ -12,12 +12,19 @@ that group's members receive it.
 - Add members with `POST .../groups/{group}/members` `{userId}`. Only members
   of the organization can join its groups.
 - Grant a group a role on a project with
-  `PUT .../groups/{group}/projects/{project}` `{role: "owner" | "member"}`.
+  `PUT .../groups/{group}/projects/{project}` `{role: "owner" | "member" | "read"}`.
 
-Your effective role on a project is the strongest of your direct membership,
-the roles granted to your groups and your organization membership
-(`owner` > `member`), and only while you are a current member of the
-organization.
+Project access is **explicit**. Being a member of an organization — even an
+admin — does not give access to its projects. Your effective role on a project
+is the strongest of your direct grant and the roles granted to your groups
+(`owner` > `member` > `read`), and only while you are a current member of the
+organization. The person who creates a project is its first owner.
+
+- `owner` manages the project; `member` reads and writes; `read` can browse
+  code, pull requests, issues and environments but change nothing.
+- A repository classified **internal** is readable by every member of the
+  organization (never writable through that route); **private** needs a role;
+  **public** is world-readable.
 
 Every mutation is written to the audit log (`group.*` actions).
 

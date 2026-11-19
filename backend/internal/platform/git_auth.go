@@ -157,6 +157,13 @@ func (s *Service) ResolveRepoForGitAccess(ctx context.Context, ga GitActor, proj
 	if repo.Visibility == VisibilityPublic {
 		return ref, nil
 	}
+	// "internal" repositories are readable by every member of the organization
+	// (never writable by that route: the push branch above needs a real role).
+	if repo.Visibility == VisibilityInternal && ga.UserID != uuid.Nil {
+		if _, err := s.store.GetTenantMember(ctx, db.GetTenantMemberParams{TenantID: ref.TenantID, UserID: ga.UserID}); err == nil {
+			return ref, nil
+		}
+	}
 	// Not visible: 404 for anonymous callers (no existence leak), forbidden
 	// otherwise — the browse convention.
 	if ga.UserID == uuid.Nil {

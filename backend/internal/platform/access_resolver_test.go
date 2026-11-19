@@ -76,9 +76,31 @@ func TestProjectAccessMatrix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("org admin and member", func(t *testing.T) {
-		accessAll(t, svc, "admin", founder.UserID, project.ID, "owner")
-		accessAll(t, svc, "member", member, project.ID, "member")
+	t.Run("project creator owns it; org membership alone grants nothing", func(t *testing.T) {
+		accessAll(t, svc, "creator", founder.UserID, project.ID, "owner")
+		accessAll(t, svc, "plain org member", member, project.ID, "")
+
+		// A second org ADMIN has no standing access to projects either.
+		admin2 := scopeMakeUser(t, st, "radmin2")
+		if err := st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: tenant.ID, UserID: admin2, Role: "admin"}); err != nil {
+			t.Fatal(err)
+		}
+		accessAll(t, svc, "org admin without a grant", admin2, project.ID, "")
+	})
+
+	t.Run("explicit grants: member and read", func(t *testing.T) {
+		reader := scopeMakeUser(t, st, "rreader")
+		if err := st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: tenant.ID, UserID: reader, Role: "member"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: project.ID, UserID: reader, Role: "read"}); err != nil {
+			t.Fatal(err)
+		}
+		accessAll(t, svc, "reader", reader, project.ID, "read")
+		if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: project.ID, UserID: member, Role: "member"}); err != nil {
+			t.Fatal(err)
+		}
+		accessAll(t, svc, "granted member", member, project.ID, "member")
 	})
 
 	t.Run("stranger", func(t *testing.T) {
@@ -134,13 +156,14 @@ func TestProjectAccessMatrix(t *testing.T) {
 		if err := svc.AddGroupMember(ctx, founder, "resolver", "plat", dual); err != nil {
 			t.Fatal(err)
 		}
+		// (dual holds no project grant in org B, so a leak would show as access.)
 		// Plant the row the service layer refuses to create (org A's group
 		// granted owner on org B's project): the resolver must ignore it.
 		if _, err := pool.Exec(ctx, `INSERT INTO group_project_roles (group_id, project_id, role)
 			SELECT id, $2, 'owner' FROM groups WHERE tenant_id = $1 AND slug = 'plat'`, tenant.ID, otherProject.ID); err != nil {
 			t.Fatal(err)
 		}
-		accessAll(t, svc, "dual in org B", dual, otherProject.ID, "member")
+		accessAll(t, svc, "dual in org B", dual, otherProject.ID, "")
 	})
 
 	t.Run("personal project needs no org membership", func(t *testing.T) {
@@ -243,7 +266,7 @@ func TestOffboardingRemovesAccess(t *testing.T) {
 			if err := st.AddTenantMember(ctx, db.AddTenantMemberParams{TenantID: tenant.ID, UserID: alice, Role: "member"}); err != nil {
 				t.Fatal(err)
 			}
-			accessAll(t, svc, "rejoined", alice, project.ID, "member")
+			accessAll(t, svc, "rejoined", alice, project.ID, "")
 		})
 	}
 }

@@ -207,6 +207,7 @@ export function GroupExplorer({
                           disabled={pending}
                           onChange={(e) => run(() => setGroupProjectRoleAction(org, selected.slug, p.project, e.target.value))}
                         >
+                          <option value="read">read</option>
                           <option value="member">member</option>
                           <option value="owner">owner</option>
                         </select>

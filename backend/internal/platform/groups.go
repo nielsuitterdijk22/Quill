@@ -224,7 +224,7 @@ func (s *Service) SetGroupProjectRole(ctx context.Context, actor Actor, orgSlug,
 	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return err
 	}
-	if role != "owner" && role != "member" {
+	if role != "owner" && role != "member" && role != "read" {
 		return ErrInvalidInput
 	}
 	project, err := s.tenantProject(ctx, tenant.ID, projectSlug)

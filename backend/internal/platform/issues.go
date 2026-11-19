@@ -60,7 +60,7 @@ func (s *Service) engineIssue(ctx context.Context, be gitBackend, number int) (s
 
 // ListIssues pages a repository's issues by state ("open" | "closed" | "all").
 func (s *Service) ListIssues(ctx context.Context, actor Actor, projectSlug, repoSlug, state string, page int) ([]forgejo.Issue, error) {
-	_, be, err := s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, true)
+	_, be, err := s.resolveCollabRepoRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s *Service) ListIssues(ctx context.Context, actor Actor, projectSlug, repo
 
 // GetIssue returns one issue with its comments.
 func (s *Service) GetIssue(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (forgejo.Issue, []forgejo.IssueComment, error) {
-	_, be, err := s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, true)
+	_, be, err := s.resolveCollabRepoRead(ctx, actor, projectSlug, repoSlug, true)
 	if err != nil {
 		return forgejo.Issue{}, nil, err
 	}

@@ -103,6 +103,18 @@ func TestFlatGroupsMigrationKeepsAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
+	// Re-applying 000044 also restores ITS version of project_access, which would
+	// leak into every later test: put the current definition (000045) back.
+	t.Cleanup(func() {
+		latest, err := migrations.FS.ReadFile("000045_explicit_access.up.sql")
+		if err != nil {
+			t.Errorf("read migration 45: %v", err)
+			return
+		}
+		if _, err := pool.Exec(context.Background(), string(latest)); err != nil {
+			t.Errorf("restore project_access: %v", err)
+		}
+	})
 	for i := 0; i < 2; i++ { // twice: re-running must be harmless
 		if _, err := pool.Exec(ctx, string(sqlBytes)); err != nil {
 			t.Fatalf("apply migration (run %d): %v", i+1, err)

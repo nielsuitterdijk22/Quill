@@ -254,7 +254,7 @@ func (s *Service) ListReposByProject(ctx context.Context, actor Actor, projectSl
 	if err != nil {
 		return db.Project{}, nil, err
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	if err := s.authorizeProjectRead(ctx, actor, project.ID); err != nil {
 		return db.Project{}, nil, err
 	}
 	if limit <= 0 || limit > 200 {

@@ -49,7 +49,7 @@ var validReviewEvents = map[string]bool{
 // ListPulls returns a repository's pull requests filtered by state ("open",
 // "closed", or "all").
 func (s *Service) ListPulls(ctx context.Context, actor Actor, projectSlug, repoSlug, state string) (db.Repository, []forgejo.PullRequest, error) {
-	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	repo, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -351,7 +351,7 @@ func (s *Service) ListOpenPulls(ctx context.Context, actor Actor, in ListOpenPul
 
 // GetPull returns a single pull request by number.
 func (s *Service) GetPull(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, forgejo.PullRequest, error) {
-	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	repo, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
@@ -432,7 +432,7 @@ func (s *Service) SetPullState(ctx context.Context, actor Actor, projectSlug, re
 
 // GetPullDiff returns a pull request's changes as parsed diff files.
 func (s *Service) GetPullDiff(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.DiffFile, error) {
-	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	repo, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -453,7 +453,7 @@ func (s *Service) GetPullDiff(ctx context.Context, actor Actor, projectSlug, rep
 
 // ListPullComments returns the conversation comments on a pull request.
 func (s *Service) ListPullComments(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) ([]forgejo.IssueComment, error) {
-	_, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	_, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return nil, err
 	}
@@ -561,7 +561,7 @@ func (s *Service) CreatePullComment(ctx context.Context, actor Actor, projectSlu
 
 // ListPullCommits returns the commits contained in a pull request.
 func (s *Service) ListPullCommits(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []forgejo.Commit, error) {
-	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	repo, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -593,7 +593,7 @@ type LineComment struct {
 // ListLineComments returns every line-anchored review comment on a pull request,
 // flattened across all of its reviews and ordered by creation time.
 func (s *Service) ListLineComments(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) (db.Repository, []LineComment, error) {
-	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	repo, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return db.Repository{}, nil, err
 	}
@@ -762,7 +762,7 @@ type ReviewState struct {
 // evaluated against its base branch — what the frontend needs to render review
 // status and the merge box in a single call.
 func (s *Service) ReviewsAndState(ctx context.Context, actor Actor, projectSlug, repoSlug string, number int) ([]forgejo.Review, ReviewState, error) {
-	repo, be, err := s.resolvePullRepo(ctx, actor, projectSlug, repoSlug)
+	repo, be, err := s.resolvePullRepoRead(ctx, actor, projectSlug, repoSlug)
 	if err != nil {
 		return nil, ReviewState{}, err
 	}

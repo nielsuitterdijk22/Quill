@@ -431,7 +431,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, slug string) (db.
 	if err != nil {
 		return db.Project{}, err
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	if err := s.authorizeProjectRead(ctx, actor, project.ID); err != nil {
 		return db.Project{}, err
 	}
 	return project, nil

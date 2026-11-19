@@ -108,7 +108,7 @@ func (s *Service) ListEnvironments(ctx context.Context, actor Actor, projectSlug
 	if err != nil {
 		return db.Project{}, nil, err
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	if err := s.authorizeProjectRead(ctx, actor, project.ID); err != nil {
 		return db.Project{}, nil, err
 	}
 	envs, err := s.store.ListEnvironmentsByProject(ctx, project.ID)
@@ -125,7 +125,7 @@ func (s *Service) GetEnvironment(ctx context.Context, actor Actor, projectSlug, 
 	if err != nil {
 		return db.Environment{}, err
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	if err := s.authorizeProjectRead(ctx, actor, project.ID); err != nil {
 		return db.Environment{}, err
 	}
 	env, err := s.store.GetEnvironmentBySlug(ctx, db.GetEnvironmentBySlugParams{

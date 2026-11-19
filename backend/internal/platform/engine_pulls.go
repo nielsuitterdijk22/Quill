@@ -34,10 +34,25 @@ func (s *Service) resolvePullRepo(ctx context.Context, actor Actor, projectSlug,
 	return s.resolveCollabRepo(ctx, actor, projectSlug, repoSlug, false)
 }
 
+// resolvePullRepoRead is resolvePullRepo for read-only operations.
+func (s *Service) resolvePullRepoRead(ctx context.Context, actor Actor, projectSlug, repoSlug string) (db.Repository, gitBackend, error) {
+	return s.resolveCollabRepoRead(ctx, actor, projectSlug, repoSlug, false)
+}
+
 // resolveCollabRepo is resolvePullRepo; publicOK additionally admits any
 // signed-in user to a PUBLIC repository (issue reading/filing/commenting,
 // GitHub-style — Quill's support link points at its own public tracker).
 func (s *Service) resolveCollabRepo(ctx context.Context, actor Actor, projectSlug, repoSlug string, publicOK bool) (db.Repository, gitBackend, error) {
+	return s.resolveCollab(ctx, actor, projectSlug, repoSlug, publicOK, true)
+}
+
+// resolveCollabRepoRead is resolveCollabRepo for read-only operations: the
+// read role and org-wide "internal" repositories pass.
+func (s *Service) resolveCollabRepoRead(ctx context.Context, actor Actor, projectSlug, repoSlug string, publicOK bool) (db.Repository, gitBackend, error) {
+	return s.resolveCollab(ctx, actor, projectSlug, repoSlug, publicOK, false)
+}
+
+func (s *Service) resolveCollab(ctx context.Context, actor Actor, projectSlug, repoSlug string, publicOK, write bool) (db.Repository, gitBackend, error) {
 	project, err := s.getProject(ctx, projectSlug)
 	if err != nil {
 		return db.Repository{}, gitBackend{}, err
@@ -51,7 +66,13 @@ func (s *Service) resolveCollabRepo(ctx context.Context, actor Actor, projectSlu
 	if err != nil {
 		return db.Repository{}, gitBackend{}, fmt.Errorf("lookup repo: %w", err)
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	var authErr error
+	if write {
+		authErr = s.authorizeProjectMember(ctx, actor, project.ID)
+	} else {
+		authErr = s.authorizeRepoRead(ctx, actor, project, repo)
+	}
+	if err := authErr; err != nil {
 		if !(publicOK && errors.Is(err, ErrForbidden) && repo.Visibility == "public" && actor.UserID != uuid.Nil) {
 			return db.Repository{}, gitBackend{}, err
 		}

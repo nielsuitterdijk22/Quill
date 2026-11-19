@@ -173,7 +173,7 @@ func (s *Service) ListProjectBranchPolicies(ctx context.Context, actor Actor, pr
 	if err != nil {
 		return db.Project{}, BranchPolicySet{}, err
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	if err := s.authorizeProjectRead(ctx, actor, project.ID); err != nil {
 		return db.Project{}, BranchPolicySet{}, err
 	}
 	own, err := s.listBranchPoliciesAt(ctx, policyScope{policy.ScopeProject, project.ID})

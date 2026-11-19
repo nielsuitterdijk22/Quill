@@ -158,7 +158,7 @@ func (s *Service) ListProjectEnvironmentPolicies(ctx context.Context, actor Acto
 	if err != nil {
 		return db.Project{}, EnvironmentPolicySet{}, err
 	}
-	if err := s.authorizeProjectMember(ctx, actor, project.ID); err != nil {
+	if err := s.authorizeProjectRead(ctx, actor, project.ID); err != nil {
 		return db.Project{}, EnvironmentPolicySet{}, err
 	}
 	own, err := s.listEnvironmentPoliciesAt(ctx, policyScope{policy.ScopeProject, project.ID})

@@ -34,7 +34,8 @@ func TestVisibleProjectsScopesToMemberships(t *testing.T) {
 	// An org founder, an invited org member, a personal-only user, and a
 	// platform admin with no project memberships at all.
 	founder := Actor{UserID: scopeMakeUser(t, st, "vfounder")}
-	if _, _, err := svc.CreateOrganization(ctx, founder, "vorg", "V Org"); err != nil {
+	_, vproject, err := svc.CreateOrganization(ctx, founder, "vorg", "V Org")
+	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
 	member := Actor{UserID: scopeMakeUser(t, st, "vmember")}
@@ -51,7 +52,16 @@ func TestVisibleProjectsScopesToMemberships(t *testing.T) {
 	}
 	adminNoMembers := Actor{UserID: scopeMakeUser(t, st, "vadmin"), IsAdmin: true}
 
-	// The org founder (tenant admin) and the invited member both see the org
+	// Org membership alone grants nothing: the invited member sees no project
+	// until they are given explicit access.
+	if got := visibleProjectSlugs(t, svc, member); len(got) != 0 {
+		t.Fatalf("org member without a grant: visible projects = %v, want none", got)
+	}
+	if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: vproject.ID, UserID: member.UserID, Role: "member"}); err != nil {
+		t.Fatalf("grant member: %v", err)
+	}
+
+	// The org founder (project owner) and the granted member both see the org
 	// project only.
 	for name, actor := range map[string]Actor{"founder": founder, "org member": member} {
 		got := visibleProjectSlugs(t, svc, actor)
@@ -120,7 +130,8 @@ func TestListMyProjectsIncludesOrgProjects(t *testing.T) {
 	ctx := context.Background()
 
 	founder := Actor{UserID: scopeMakeUser(t, st, "mfounder")}
-	if _, _, err := svc.CreateOrganization(ctx, founder, "morg", "M Org"); err != nil {
+	_, mproject, err := svc.CreateOrganization(ctx, founder, "morg", "M Org")
+	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
 	if err := svc.CreatePersonalProject(ctx, founder.UserID, "mfounder"); err != nil {
@@ -148,8 +159,14 @@ func TestListMyProjectsIncludesOrgProjects(t *testing.T) {
 		t.Fatalf("founder roles = %v, want owner on mfounder and morg", slugs)
 	}
 
-	// Invited member: the org project appears with the member role despite
-	// having no direct project_members row.
+	// Invited member: nothing until granted, then the org project appears with
+	// the granted role.
+	if rows, err := svc.ListMyProjects(ctx, member); err != nil || len(rows) != 0 {
+		t.Fatalf("member before grant: %+v (err %v), want none", rows, err)
+	}
+	if err := st.AddProjectMember(ctx, db.AddProjectMemberParams{ProjectID: mproject.ID, UserID: member.UserID, Role: "member"}); err != nil {
+		t.Fatalf("grant member: %v", err)
+	}
 	rows, err = svc.ListMyProjects(ctx, member)
 	if err != nil {
 		t.Fatalf("ListMyProjects (member): %v", err)

@@ -231,10 +231,24 @@ func (s *Service) forgejoEnabled() bool {
 	return s.forgejo != nil && s.forgejo.Enabled()
 }
 
-// authorizeProjectMember returns nil when the actor is a platform admin or has
-// any effective role on projectID — direct membership, a group grant or the
-// organization itself — and ErrForbidden otherwise.
+// authorizeProjectMember is the WRITE gate: it returns nil when the actor is a
+// platform admin or holds a member or owner role on projectID (direct or via a
+// group grant), and ErrForbidden otherwise — a read-only role does not pass.
+// Read-only call sites use authorizeProjectRead.
 func (s *Service) authorizeProjectMember(ctx context.Context, actor Actor, projectID uuid.UUID) error {
+	role, err := s.effectiveProjectRole(ctx, actor, projectID)
+	if err != nil {
+		return err
+	}
+	if role != "member" && role != "owner" {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// authorizeProjectRead is the READ gate: any effective role on projectID —
+// read, member or owner — passes.
+func (s *Service) authorizeProjectRead(ctx context.Context, actor Actor, projectID uuid.UUID) error {
 	role, err := s.effectiveProjectRole(ctx, actor, projectID)
 	if err != nil {
 		return err
@@ -243,6 +257,18 @@ func (s *Service) authorizeProjectMember(ctx context.Context, actor Actor, proje
 		return ErrForbidden
 	}
 	return nil
+}
+
+// authorizeRepoRead extends the project read gate with the repository's own
+// classification: an "internal" repository is readable by every member of the
+// project's organization, whatever their project role — and never writable by
+// that route. Public repositories are handled by the callers (anonymous reads).
+func (s *Service) authorizeRepoRead(ctx context.Context, actor Actor, project db.Project, repo db.Repository) error {
+	err := s.authorizeProjectRead(ctx, actor, project.ID)
+	if !errors.Is(err, ErrForbidden) || repo.Visibility != VisibilityInternal || actor.UserID == uuid.Nil {
+		return err
+	}
+	return s.authorizeTenantMember(ctx, actor, project.TenantID)
 }
 
 // authorizeProjectAdmin returns nil when the actor is a platform admin or an
