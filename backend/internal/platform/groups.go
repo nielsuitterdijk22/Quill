@@ -215,13 +215,10 @@ func (s *Service) ListGroupMembers(ctx context.Context, actor Actor, orgSlug, gr
 }
 
 // SetGroupProjectRole grants (or updates) a group's role on a project
-// (tenant admin only). role is 'owner' | 'member'.
+// (project owners only). role is 'owner' | 'member'.
 func (s *Service) SetGroupProjectRole(ctx context.Context, actor Actor, orgSlug, groupSlug, projectSlug, role string) error {
 	tenant, group, err := s.resolveGroup(ctx, actor, orgSlug, groupSlug)
 	if err != nil {
-		return err
-	}
-	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
 		return err
 	}
 	if role != "owner" && role != "member" && role != "read" {
@@ -229,6 +226,10 @@ func (s *Service) SetGroupProjectRole(ctx context.Context, actor Actor, orgSlug,
 	}
 	project, err := s.tenantProject(ctx, tenant.ID, projectSlug)
 	if err != nil {
+		return err
+	}
+	// Project owners decide who reaches their project; org admins run groups.
+	if err := s.authorizeProjectAdmin(ctx, actor, project.ID); err != nil {
 		return err
 	}
 	if err := s.store.SetGroupProjectRole(ctx, db.SetGroupProjectRoleParams{
@@ -247,11 +248,11 @@ func (s *Service) RemoveGroupProjectRole(ctx context.Context, actor Actor, orgSl
 	if err != nil {
 		return err
 	}
-	if err := s.authorizeTenantAdmin(ctx, actor, tenant.ID); err != nil {
-		return err
-	}
 	project, err := s.tenantProject(ctx, tenant.ID, projectSlug)
 	if err != nil {
+		return err
+	}
+	if err := s.authorizeProjectAdmin(ctx, actor, project.ID); err != nil {
 		return err
 	}
 	if err := s.store.RemoveGroupProjectRole(ctx, db.RemoveGroupProjectRoleParams{GroupID: group.ID, ProjectID: project.ID}); err != nil {

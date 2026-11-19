@@ -30,6 +30,15 @@ export default async function ProjectDetailPage({
             ? "You are not a member of this project."
             : result.message}
         </div>
+        {result.status === 403 && (
+          <p className="subtle">
+            Organization admins can{" "}
+            <Link href={`/projects/${params.project}/settings/access`}>
+              add themselves as an owner
+            </Link>
+            ; it is recorded in the audit log.
+          </p>
+        )}
       </>
     );
   }
@@ -46,6 +55,9 @@ export default async function ProjectDetailPage({
       <div className="top">
         <h1>{project.name}</h1>
         <div className="top-actions">
+          <Link className="btn ghost" href={`/projects/${project.slug}/settings/access`}>
+            Access
+          </Link>
           <Link className="btn ghost" href={`/projects/${project.slug}/settings`}>
             ⚙ Settings
           </Link>

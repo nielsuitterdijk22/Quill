@@ -26,6 +26,13 @@ organization. The person who creates a project is its first owner.
   organization (never writable through that route); **private** needs a role;
   **public** is world-readable.
 
+Project owners manage access under **Project → Access** (or
+`PUT /api/v1/projects/{project}/access/users/{username}` and
+`.../access/groups/{group}` with `{role}`). A project always keeps at least one
+owner. Organization admins have no standing access to projects; they can add
+themselves as an owner (`POST .../access/claim`), which is audited as
+`project.admin_self_grant`.
+
 Every mutation is written to the audit log (`group.*` actions).
 
 ## Billing

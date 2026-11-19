@@ -10,6 +10,7 @@ export * from "./api/auth";
 export * from "./api/projects";
 export * from "./api/organizations";
 export * from "./api/groups";
+export * from "./api/projectAccess";
 export * from "./api/billing";
 export * from "./api/contributions";
 export * from "./api/repos";

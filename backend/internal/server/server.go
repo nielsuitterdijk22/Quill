@@ -594,6 +594,14 @@ func (s *Server) setupRoutes() {
 				r.Post("/", s.handleCreateProject)
 				r.Route("/{slug}", func(r chi.Router) {
 					r.Get("/", s.handleGetProject)
+					r.Route("/access", func(r chi.Router) {
+						r.Get("/", s.handleListProjectAccess)
+						r.Post("/claim", s.handleClaimProjectOwnership)
+						r.Put("/users/{user}", s.handleSetProjectUserRole)
+						r.Delete("/users/{user}", s.handleRemoveProjectUser)
+						r.Put("/groups/{group}", s.handleSetProjectGroupRole)
+						r.Delete("/groups/{group}", s.handleRemoveProjectGroup)
+					})
 					r.Route("/policies", func(r chi.Router) {
 						r.Get("/", s.handleListProjectPolicies)
 						r.Put("/", s.handleSetProjectPolicy)

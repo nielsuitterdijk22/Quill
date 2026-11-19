@@ -1019,3 +1019,18 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   and two project-visibility tests now expect no access without a grant, and assert the granted
   state. The 000044 migration test restores the current `project_access` after re-applying its SQL
   (it otherwise leaked the old definition into later tests).
+
+## 2026-11-19 — Project access is managed by project owners
+
+- `GET/PUT/DELETE /api/v1/projects/{slug}/access/...` (owners only): direct grants to organization
+  members (by username) and role grants to groups. Granting a non-member is refused; personal
+  projects are not shareable (guests are out of scope). Removing or demoting the last owner is
+  refused (direct owners of current members plus owner groups are counted).
+- Group grants moved from "org admin" to "project owner" (`SetGroupProjectRole`/`Remove…`): org
+  admins run the organization and its groups, owners decide who reaches the project. Rejected:
+  leaving both, since an admin could otherwise give themselves access silently.
+- Org-admin break-glass: `POST .../access/claim` adds the calling org admin as owner and is audited
+  (`project.admin_self_grant`); the UI offers it on the project's no-access page. Rejected: standing
+  admin access (the owner wants least privilege) and a silent grant.
+- Tests changed: none weakened; new tests cover owner-only management, last-owner guard,
+  non-member refusal, and the claim path.
