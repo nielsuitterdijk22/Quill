@@ -1821,6 +1821,7 @@ select:focus {
 .merge-box {
   padding: 16px 18px;
   margin-bottom: 22px;
+  overflow: visible; /* the merge-method dropdown extends past the card */
 }
 .merge-box.merged {
   border-color: #34244f;
