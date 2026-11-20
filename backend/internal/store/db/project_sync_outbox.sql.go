@@ -169,3 +169,82 @@ func (q *Queries) MarkProjectSyncEventFailed(ctx context.Context, arg MarkProjec
 	_, err := q.db.Exec(ctx, markProjectSyncEventFailed, arg.ID, arg.NextAttemptAt)
 	return err
 }
+
+const countProjectLifecycleEvents = `-- name: CountProjectLifecycleEvents :one
+SELECT count(*) FROM project_sync_outbox WHERE project_id = $1 AND event_type <> 'access'
+`
+
+// Lifecycle events (create/rename/archive/delete) only; 'access' events do not
+// count, so the create backfill still reaches projects that predate the mirror.
+func (q *Queries) CountProjectLifecycleEvents(ctx context.Context, projectID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countProjectLifecycleEvents, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const markProjectSyncEventSnapshot = `-- name: MarkProjectSyncEventSnapshot :exec
+UPDATE project_sync_outbox SET snapshot_at = now() WHERE id = $1
+`
+
+// Record that a delivery attempt has read the data for an 'access' event, so the
+// triggers queue a fresh event for any later change instead of deduping into it.
+func (q *Queries) MarkProjectSyncEventSnapshot(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markProjectSyncEventSnapshot, id)
+	return err
+}
+
+const listProjectAccessSnapshot = `-- name: ListProjectAccessSnapshot :many
+SELECT u.id AS user_id, u.username, u.email, u.display_name, r.tenant_role,
+       COALESCE((SELECT a.role FROM project_access(u.id, $1::uuid) a LIMIT 1), '')::text AS role
+FROM (
+  SELECT tm.user_id, CASE tm.role WHEN 'admin' THEN 'owner' ELSE 'member' END AS tenant_role
+  FROM projects p
+  JOIN tenants t ON t.id = p.tenant_id AND t.kind = 'org'
+  JOIN tenant_members tm ON tm.tenant_id = t.id
+  WHERE p.id = $1::uuid
+  UNION ALL
+  SELECT pm.user_id, 'owner'
+  FROM projects p
+  JOIN tenants t ON t.id = p.tenant_id AND t.kind <> 'org'
+  JOIN project_members pm ON pm.project_id = p.id
+  WHERE p.id = $1::uuid
+) r
+JOIN users u ON u.id = r.user_id AND u.is_active
+ORDER BY u.username
+`
+
+type ListProjectAccessSnapshotRow struct {
+	UserID      uuid.UUID `json:"userId"`
+	Username    string    `json:"username"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"displayName"`
+	TenantRole  string    `json:"tenantRole"`
+	Role        string    `json:"role"`
+}
+
+// ListProjectAccessSnapshot is everything Tempo needs to mirror who can reach a
+// project: the tenant roster (with the tenant role) and each person's resolved
+// role from project_access(), the same single definition Quill authorizes with.
+// role is ” for a roster member with no access. Org admins have no standing
+// access, so they appear on the roster with role ”. Personal tenants have no
+// roster; their roster is the project's own members.
+func (q *Queries) ListProjectAccessSnapshot(ctx context.Context, projectID uuid.UUID) ([]ListProjectAccessSnapshotRow, error) {
+	rows, err := q.db.Query(ctx, listProjectAccessSnapshot, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectAccessSnapshotRow{}
+	for rows.Next() {
+		var i ListProjectAccessSnapshotRow
+		if err := rows.Scan(&i.UserID, &i.Username, &i.Email, &i.DisplayName, &i.TenantRole, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

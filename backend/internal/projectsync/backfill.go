@@ -15,7 +15,7 @@ import (
 type BackfillStore interface {
 	EventWriter
 	ListProjectsWithTenant(ctx context.Context) ([]db.ListProjectsWithTenantRow, error)
-	CountProjectSyncEventsByProject(ctx context.Context, projectID uuid.UUID) (int64, error)
+	CountProjectLifecycleEvents(ctx context.Context, projectID uuid.UUID) (int64, error)
 }
 
 // BackfillResult reports what a backfill run did.
@@ -40,7 +40,7 @@ func Backfill(ctx context.Context, s BackfillStore, logger *slog.Logger) (Backfi
 	}
 	res := BackfillResult{Total: len(projects)}
 	for _, p := range projects {
-		existing, err := s.CountProjectSyncEventsByProject(ctx, p.ID)
+		existing, err := s.CountProjectLifecycleEvents(ctx, p.ID)
 		if err != nil {
 			return res, fmt.Errorf("count events for project %s: %w", p.Slug, err)
 		}

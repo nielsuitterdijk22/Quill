@@ -1047,3 +1047,42 @@ Pro plan commercial call (PO, owner-sanctioned): EUR 5/user/month individual Pro
   group stay editable by project owners.
 - Delete-and-recreate of an IdP group in the IdP loses its grants (the group row is deleted); this
   is the accepted edge case.
+
+## 2026-11-20 — Project access is mirrored to Tempo (migration 000046)
+
+- Tempo mirrors Quill's project access so its permission checks stay local (a hot path; the
+  design doc's rule: mirror what is queried constantly). Access rides the project-sync outbox as
+  a new `access` event type, delivered to the same Tempo URL as the lifecycle events. The payload
+  is a **full snapshot**: the tenant roster (org admin → `owner`, else `member`) plus each
+  person's **resolved** role from `project_access()` (strongest of direct and group grants).
+  Org admins are on the roster with no grant (no standing access). Tempo needs no group tables.
+- **Triggers, not call sites:** AFTER triggers on `project_members`, `group_project_roles`,
+  `group_members` and `tenant_members` queue the event, so SCIM, offboarding, group edits and
+  every future write path are covered without anyone remembering. A group roster or tenant
+  roster change queues one event per affected project. Rejected: enqueueing from each service
+  method (the 2026-11-18 lesson: three queries disagreeing about access; this would be the same
+  mistake for events).
+- **The payload is built at delivery, not at write time** (`storeAdapter.ListPending`), so a retry
+  after a long Tempo outage sends today's access, never a stale roster. The stored row is `{}`.
+- **No lost update:** a burst of changes queues one event, but only against an event that has not
+  been read yet. `snapshot_at` is set before the data is read, and the trigger locks (`FOR UPDATE`)
+  the candidate row while it checks, so a change that lands while an event is in flight always
+  queues a fresh one. Rejected: dedupe against any undelivered row (loses a change that arrives
+  between the read and the delivery).
+- A project that no longer exists has its pending access events retired without a request.
+  Tempo answers 404 for a project it has not mirrored yet; the outbox retries until `create` lands.
+- The migration queues one `access` event per existing project. `Backfill` (create events) now
+  counts lifecycle events only (`CountProjectLifecycleEvents`), otherwise those access rows
+  would make it skip every pre-mirror project.
+- **Test changed:** `TestCreateProjectEnqueuesSyncEvent` expected exactly one pending event; a new
+  project now queues its `create` plus one `access` event (the creator's owner grant). It now
+  asserts both, and still asserts the create payload unchanged.
+- `sqlc generate` fails on `main` today (it reads the `.down.sql` files in the schema directory;
+  `000043…down` drops `project_access`, so `projects.sql:55` can't resolve `a.role`). The three
+  new queries are therefore hand-added to `internal/store/db/project_sync_outbox.sql.go` and
+  `querier.go` in sqlc's format, and mirrored in `queries/project_sync_outbox.sql` so a repaired
+  generator reproduces them. The `ProjectSyncOutbox` model does not list `snapshot_at`; the existing
+  generated queries name their columns, so they are unaffected.
+- Needs to go live: `TEMPO_SYNC` URL configured (unchanged) and a Zitadel machine user whose
+  subject is in Tempo's `TEMPO_ZITADEL_MACHINE_SUBJECTS`. With no URL the dispatcher is idle and
+  the rows simply wait.

@@ -136,6 +136,9 @@ type Querier interface {
 	MarkProjectSyncEventDelivered(ctx context.Context, id uuid.UUID) error
 	MarkProjectSyncEventFailed(ctx context.Context, arg MarkProjectSyncEventFailedParams) error
 	CountProjectSyncEventsByProject(ctx context.Context, projectID uuid.UUID) (int64, error)
+	CountProjectLifecycleEvents(ctx context.Context, projectID uuid.UUID) (int64, error)
+	MarkProjectSyncEventSnapshot(ctx context.Context, id uuid.UUID) error
+	ListProjectAccessSnapshot(ctx context.Context, projectID uuid.UUID) ([]ListProjectAccessSnapshotRow, error)
 	ListProjectsWithTenant(ctx context.Context) ([]ListProjectsWithTenantRow, error)
 	InsertWorkItemRefEvent(ctx context.Context, arg InsertWorkItemRefEventParams) (WorkItemRefOutbox, error)
 	ListPendingWorkItemRefEvents(ctx context.Context, limit int32) ([]WorkItemRefOutbox, error)

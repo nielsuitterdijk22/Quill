@@ -26,9 +26,11 @@ type Dispatcher = outbox.Dispatcher
 // Outbox is the generated-query surface for the project_sync_outbox table.
 // *store.Store satisfies it via its embedded *db.Queries; tests supply a fake.
 type Outbox interface {
+	SnapshotReader
 	ListPendingProjectSyncEvents(ctx context.Context, limit int32) ([]db.ProjectSyncOutbox, error)
 	MarkProjectSyncEventDelivered(ctx context.Context, id uuid.UUID) error
 	MarkProjectSyncEventFailed(ctx context.Context, arg db.MarkProjectSyncEventFailedParams) error
+	MarkProjectSyncEventSnapshot(ctx context.Context, id uuid.UUID) error
 }
 
 // storeAdapter maps the project_sync_outbox queries onto the generic
@@ -40,9 +42,32 @@ func (a storeAdapter) ListPending(ctx context.Context, limit int32) ([]outbox.Pe
 	if err != nil {
 		return nil, err
 	}
-	events := make([]outbox.PendingEvent, len(rows))
-	for i, r := range rows {
-		events[i] = outbox.PendingEvent{ID: r.ID, Payload: r.Payload, Attempts: r.Attempts}
+	events := make([]outbox.PendingEvent, 0, len(rows))
+	for _, r := range rows {
+		payload := r.Payload
+		if EventType(r.EventType) == EventAccess {
+			// Mark the row as read BEFORE reading the data: from here on the
+			// triggers queue a new event for any change instead of deduping into
+			// this one, so no change can slip between the read and the delivery.
+			if err := a.q.MarkProjectSyncEventSnapshot(ctx, r.ID); err != nil {
+				return nil, err
+			}
+			ev, found, err := BuildAccessEvent(ctx, a.q, r.ID, r.ProjectID, r.OccurredAt)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				// The project is gone; there is nothing to mirror. Retire the event.
+				if err := a.q.MarkProjectSyncEventDelivered(ctx, r.ID); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if payload, err = marshalAccessEvent(ev); err != nil {
+				return nil, err
+			}
+		}
+		events = append(events, outbox.PendingEvent{ID: r.ID, Payload: payload, Attempts: r.Attempts})
 	}
 	return events, nil
 }

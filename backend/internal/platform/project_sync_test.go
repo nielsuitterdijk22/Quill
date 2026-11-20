@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nielsuitterdijk22/quill/internal/platform"
+	"github.com/nielsuitterdijk22/quill/internal/store/db"
 )
 
 // TestCreateProjectEnqueuesSyncEvent verifies the real create path writes a
@@ -25,12 +26,25 @@ func TestCreateProjectEnqueuesSyncEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list pending sync events: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("expected 1 pending sync event, got %d", len(rows))
+	// Creating a project queues its create event, plus one access event: the
+	// creator becomes the first owner, and Tempo mirrors who can reach it.
+	var creates, accesses []db.ProjectSyncOutbox
+	for _, r := range rows {
+		switch r.EventType {
+		case "create":
+			creates = append(creates, r)
+		case "access":
+			accesses = append(accesses, r)
+		default:
+			t.Fatalf("unexpected event type %q", r.EventType)
+		}
 	}
-	row := rows[0]
-	if row.ProjectID != project.ID || row.EventType != "create" {
-		t.Fatalf("unexpected event row: %+v", row)
+	if len(creates) != 1 || len(accesses) != 1 {
+		t.Fatalf("expected 1 create and 1 access event, got %d create, %d access", len(creates), len(accesses))
+	}
+	row := creates[0]
+	if row.ProjectID != project.ID || accesses[0].ProjectID != project.ID {
+		t.Fatalf("unexpected event rows: %+v / %+v", row, accesses[0])
 	}
 	var payload struct {
 		Slug       string `json:"slug"`

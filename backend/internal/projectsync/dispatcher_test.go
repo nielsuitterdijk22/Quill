@@ -45,6 +45,10 @@ func (c *clock) advance(d time.Duration) {
 type fakeOutbox struct {
 	mu   sync.Mutex
 	rows []*db.ProjectSyncOutbox
+	// access snapshots by project (a project absent from the map no longer exists)
+	// and the events whose snapshot was marked as read.
+	snapshots map[uuid.UUID][]db.ListProjectAccessSnapshotRow
+	marked    []uuid.UUID
 }
 
 func (f *fakeOutbox) enqueue(ev Event) {

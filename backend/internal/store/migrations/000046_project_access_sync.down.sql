@@ -1,0 +1,10 @@
+BEGIN;
+DROP TRIGGER IF EXISTS tenant_members_access_sync ON tenant_members;
+DROP TRIGGER IF EXISTS group_members_access_sync ON group_members;
+DROP TRIGGER IF EXISTS group_project_roles_access_sync ON group_project_roles;
+DROP TRIGGER IF EXISTS project_members_access_sync ON project_members;
+DROP FUNCTION IF EXISTS trg_project_access_sync();
+DROP FUNCTION IF EXISTS enqueue_project_access_sync(uuid);
+DELETE FROM project_sync_outbox WHERE event_type = 'access';
+ALTER TABLE project_sync_outbox DROP COLUMN IF EXISTS snapshot_at;
+COMMIT;
