@@ -22,16 +22,19 @@ type Props = {
   notice?: string;
   // Where to land after login (a same-site path; default "/").
   callbackUrl?: string;
+  // Show Zitadel's account chooser even when an IdP session is live.
+  chooseAccount?: boolean;
 };
 
-export function ZitadelSignInButton({ label, auto = true, register = false, notice, callbackUrl = "/" }: Props) {
+export function ZitadelSignInButton({ label, auto = true, register = false, notice, callbackUrl = "/", chooseAccount = false }: Props) {
   const [pending, setPending] = useState(auto);
   const [slow, setSlow] = useState(false);
   const started = useRef(false);
 
-  function start() {
+  function start(chooser = chooseAccount) {
     setPending(true);
-    void signIn("zitadel", { callbackUrl }, register ? { prompt: "create" } : undefined);
+    const prompt = register ? "create" : chooser ? "select_account" : undefined;
+    void signIn("zitadel", { callbackUrl }, prompt ? { prompt } : undefined);
   }
 
   useEffect(() => {
@@ -60,9 +63,14 @@ export function ZitadelSignInButton({ label, auto = true, register = false, noti
             <p className="signin-sub">
               {notice ?? "Continue to your workspace — for individuals and teams alike."}
             </p>
-            <button className="signin-btn" disabled={pending && !slow} onClick={start}>
+            <button className="signin-btn" disabled={pending && !slow} onClick={() => start()}>
               {label}
             </button>
+            {!register && (
+              <button type="button" className="signin-alt" onClick={() => start(true)}>
+                Use a different account
+              </button>
+            )}
             <p className="signin-foot">Secured by your organization&apos;s single sign-on.</p>
           </>
         )}

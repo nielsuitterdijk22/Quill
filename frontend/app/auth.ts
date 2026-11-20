@@ -33,12 +33,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           authorization: {
             params: {
               scope: `openid profile email offline_access urn:zitadel:iam:org:project:id:${process.env.NEXT_PUBLIC_ZITADEL_PROJECT_ID ?? "zitadel"}:aud`,
-              // Sign-out only ends Quill's own session, not Zitadel's IdP
-              // session (see zitadel-bridge.tsx) — without this, a live
-              // Zitadel session silently re-authenticates on sign-in with no
-              // UI at all. select_account forces Zitadel's account chooser
-              // every time instead.
-              prompt: "select_account",
+              // No forced prompt: a live Zitadel session (the one Tempo or
+              // another suite app signed you in with) is reused silently, so
+              // moving between apps costs no click. Sign-out ends the IdP
+              // session (zitadel-bridge.tsx), so signing out still lands on
+              // the login form. The account chooser is opt-in: /sign-in?prompt=
+              // select_account, or "Use a different account" on the card.
             },
           },
         }),
