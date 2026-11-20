@@ -43,9 +43,12 @@ function workflowName(
 // user trigger a workflow manually.
 export default async function PipelinesPage({
   params,
+  searchParams,
 }: {
   params: { project: string; repo: string };
+  searchParams: { workflow?: string };
 }) {
+  const workflowFilter = (searchParams.workflow ?? "").trim();
   const token = await getToken();
   if (!token) notFound();
 
@@ -70,7 +73,7 @@ export default async function PipelinesPage({
 
   const repo = pipelinesRes.data.repository;
   const pipelines = pipelinesRes.data.pipelines;
-  const runs = runsRes.ok ? runsRes.data.runs : [];
+  const allRuns = runsRes.ok ? runsRes.data.runs : [];
   const branches = branchesRes.ok ? branchesRes.data.branches : [];
   const environments = environmentsRes.ok ? environmentsRes.data.environments : [];
   const defaultBranch = repo.defaultBranch;
@@ -83,6 +86,14 @@ export default async function PipelinesPage({
     if (p.lastRun) workflowByRunId.set(p.lastRun.id, p.workflowPath);
   }
 
+  // ?workflow=<path> narrows the run list to one pipeline (linked from the
+  // cross-repo Pipelines overview).
+  const runs = workflowFilter
+    ? allRuns.filter(
+        (r) => (workflowByRunId.get(r.id) ?? r.workflowPath ?? "") === workflowFilter,
+      )
+    : allRuns;
+
   return (
     <>
       <RepoHeader
@@ -93,7 +104,7 @@ export default async function PipelinesPage({
         active="pipelines"
       />
 
-      <AutoRefresh active={runs.some((r) => r.status === "pending" || r.status === "running")} />
+      <AutoRefresh active={allRuns.some((r) => r.status === "pending" || r.status === "running")} />
 
       <RunWorkflowForm
         project={params.project}
@@ -107,10 +118,19 @@ export default async function PipelinesPage({
       <div className="panel">
         <h2>
           <span>
-            Recent runs in <RepoChip project={params.project} repo={params.repo} showProject={false} />
+            {workflowFilter
+              ? `Runs of ${workflowName(workflowNameByPath, workflowFilter)} in `
+              : "Recent runs in "}
+            <RepoChip project={params.project} repo={params.repo} showProject={false} />
           </span>
           <span className="tag">{runs.length}</span>
         </h2>
+        {workflowFilter && (
+          <div className="sub run-filter-note">
+            Filtered to <span className="mono">{workflowFilter}</span> ·{" "}
+            <Link href={`${repoBase(params.project, params.repo)}/pipelines`}>Show all runs</Link>
+          </div>
+        )}
         {runs.length === 0 ? (
           <div className="empty">No runs yet. Run a workflow to get started.</div>
         ) : (

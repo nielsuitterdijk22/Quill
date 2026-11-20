@@ -78,8 +78,9 @@ export default async function PipelinesOverviewPage() {
           </div>
         ) : (
           groups.map((g) => (
-            <div key={g.key}>
-              <div className="pipeline-group-head">
+            <details className="pipeline-group" key={g.key} open>
+              <summary className="pipeline-group-head">
+                <span className="pipeline-group-caret" aria-hidden="true">▾</span>
                 <Link href={`/${encodeURIComponent(g.projectSlug)}/${encodeURIComponent(g.repoSlug)}/pipelines`}>
                   <RepoChip project={g.projectSlug} repo={g.repoSlug} />
                 </Link>
@@ -87,12 +88,12 @@ export default async function PipelinesOverviewPage() {
                 <span className="sub">
                   {g.rows.length} workflow{g.rows.length === 1 ? "" : "s"}
                 </span>
-              </div>
+              </summary>
               {g.rows.map((row) => (
                 <Link
                   className="row-item"
                   key={`${row.projectSlug}:${row.repoSlug}:${row.workflowPath}`}
-                  href={`/${encodeURIComponent(row.projectSlug)}/${encodeURIComponent(row.repoSlug)}/pipelines`}
+                  href={`/${encodeURIComponent(row.projectSlug)}/${encodeURIComponent(row.repoSlug)}/pipelines?workflow=${encodeURIComponent(row.workflowPath)}`}
                 >
                   <span className="tree-icon">◇</span>
                   <div className="pr-main">
@@ -114,7 +115,7 @@ export default async function PipelinesOverviewPage() {
                   )}
                 </Link>
               ))}
-            </div>
+            </details>
           ))
         )}
       </div>
