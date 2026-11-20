@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# Pipeline egress is allow-listed; Next.js telemetry (telemetry.nextjs.org) is
+# refused and the run is stopped, so turn it off.
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
 jobs:
   backend:
     name: backend (go)
