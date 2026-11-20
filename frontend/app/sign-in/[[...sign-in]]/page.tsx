@@ -10,11 +10,15 @@ import { getSession } from "../../lib/session";
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: { stale?: string; error?: string };
+  searchParams: { stale?: string; error?: string; redirect_url?: string };
 }) {
   // Don't strand an already-signed-in user on the sign-in screen: if a valid
   // session resolves, send them into the app instead of showing the button.
-  if (await getSession()) redirect("/");
+  // redirect_url (set by /beta/[code] and /invite/[token]) is where to land after
+  // login; only same-site paths are honoured so it can't become an open redirect.
+  const raw = searchParams?.redirect_url ?? "";
+  const returnTo = raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : "/";
+  if (await getSession()) redirect(returnTo);
   // An Auth.js error (?error=…) means the last attempt failed: show the card
   // with the reason and a button instead of auto-starting again (no loops).
   const failed = Boolean(searchParams?.error);
@@ -23,5 +27,5 @@ export default async function SignInPage({
     : searchParams?.stale === "1"
       ? "Your session expired — signing you in again…"
       : undefined;
-  return <ZitadelSignInButton label="Sign in" auto={!failed} notice={notice} />;
+  return <ZitadelSignInButton label="Sign in" auto={!failed} notice={notice} callbackUrl={returnTo} />;
 }

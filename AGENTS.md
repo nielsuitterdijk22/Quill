@@ -96,6 +96,14 @@ ones marked **(enforced)**: breaking them throws the work away.
 - When something is ambiguous, pick the option most consistent with MISSION.md and
   write the question in your summary instead of stalling.
 
+### Shipping a change (owner, 2026-11-20)
+
+Every change ships the same way, without waiting to be asked: commit on a feature branch
+(`agent/<topic>`, never directly on `main`), `git push quill agent/<topic>`, open a PR with the
+`quill` client (see the Git bullet above), and **merge it yourself (`pr merge <n> --method rebase`)
+once `./check` and the PR's pipeline are green**. If anything is red, fix it or report it; don't
+merge red. Then watch the deploy, sync the mirror, and revoke the token you issued.
+
 ### Finishing a session
 
 Write `.foundry/summary.md` with `## Done`, `## Questions`, and `## Follow-ups` sections.

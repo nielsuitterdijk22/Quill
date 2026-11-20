@@ -20,16 +20,18 @@ type Props = {
   register?: boolean;
   // Shown above the button: why the user is here (expired session, error…).
   notice?: string;
+  // Where to land after login (a same-site path; default "/").
+  callbackUrl?: string;
 };
 
-export function ZitadelSignInButton({ label, auto = true, register = false, notice }: Props) {
+export function ZitadelSignInButton({ label, auto = true, register = false, notice, callbackUrl = "/" }: Props) {
   const [pending, setPending] = useState(auto);
   const [slow, setSlow] = useState(false);
   const started = useRef(false);
 
   function start() {
     setPending(true);
-    void signIn("zitadel", { callbackUrl: "/" }, register ? { prompt: "create" } : undefined);
+    void signIn("zitadel", { callbackUrl }, register ? { prompt: "create" } : undefined);
   }
 
   useEffect(() => {
