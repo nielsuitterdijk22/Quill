@@ -69,6 +69,8 @@ resource "scaleway_container" "api" {
     QUILL_GIT_S3_BUCKET   = scaleway_object_bucket.repos.name
     QUILL_GIT_PUBLIC_URL  = local.git_public_url
     QUILL_GIT_HOST        = local.git_host
+    # Links in refs sent to Tempo (a pull request's page).
+    QUILL_WEB_URL = "https://${local.app_host}"
   }
   secret_environment_variables = {
     QUILL_DATABASE_URL             = local.db_url["quill"]

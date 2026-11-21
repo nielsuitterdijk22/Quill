@@ -19,6 +19,8 @@ import (
 type Config struct {
 	Env      string
 	HTTPAddr string
+	// WebURL is the public web app origin (links in cross-product refs).
+	WebURL string
 
 	LogLevel  string
 	LogFormat string
@@ -243,6 +245,7 @@ func Load() (*Config, error) {
 		LogFormat:    getenv("QUILL_LOG_FORMAT", "json"),
 		ReadTimeout:  getdur("QUILL_HTTP_READ_TIMEOUT", 15*time.Second),
 		WriteTimeout: getdur("QUILL_HTTP_WRITE_TIMEOUT", 30*time.Second),
+		WebURL:       strings.TrimRight(getenv("QUILL_WEB_URL", ""), "/"),
 		DatabaseURL:  getenv("QUILL_DATABASE_URL", "postgres://quill:quill@localhost:5432/quill?sslmode=disable"),
 		AuthProvider: strings.ToLower(getenv("QUILL_AUTH_PROVIDER", "zitadel")),
 		JWT: JWTConfig{

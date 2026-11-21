@@ -124,6 +124,7 @@ func New(cfg *config.Config, logger *slog.Logger, st *store.Store) *Server {
 		// D2: CI jobs clone engine repos from the public git base with a
 		// scoped run token signed by the dispatch secret (same trust group).
 		platformSvc.WithGitPublicURL(cfg.GitEngine.PublicURL).
+			WithWebURL(cfg.WebURL).
 			WithGitRunTokenSecret(cfg.Pipeline.DispatchSecret)
 		// SBOM per default-branch push: syft is baked into the image; a
 		// missing binary only fails individual generations (status: failed).

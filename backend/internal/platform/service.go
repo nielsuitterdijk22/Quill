@@ -93,6 +93,8 @@ type Service struct {
 	// gitPublicURL is the public smart-HTTP base engine repos are cloned
 	// from (e.g. https://git.<domain>); CI jobs and clone widgets use it.
 	gitPublicURL string
+	// webURL is the public web app base, used for links in refs sent to Tempo.
+	webURL string
 	// gitRunTokenSecret signs the scoped, expiring qgr_ tokens CI jobs use
 	// to read engine repos (never an admin credential).
 	gitRunTokenSecret string

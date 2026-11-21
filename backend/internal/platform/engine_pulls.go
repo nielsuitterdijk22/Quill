@@ -371,6 +371,7 @@ func (s *Service) engineCreatePull(ctx context.Context, repo db.Repository, be g
 	}
 	// Workflows that listen for pull_request run for the new pull request.
 	s.triggerPullRequestRuns(ctx, repo, pr, "opened")
+	s.enqueuePullRefs(ctx, repo, pr)
 	dto, err := s.enginePullDTO(ctx, repo, be, dir, pr, true)
 	return dto, err
 }
@@ -527,7 +528,10 @@ func (s *Service) engineMergePull(ctx context.Context, repo db.Repository, be gi
 	}); err != nil {
 		s.logger.Warn("merge push event failed", "repo", be.projectSlug+"/"+be.repoSlug, "pull", number, "error", err)
 	}
-	_, merged, err := s.engineGetPull(ctx, repo, be, number)
+	mergedPR, merged, err := s.engineGetPull(ctx, repo, be, number)
+	if err == nil {
+		s.enqueuePullRefs(ctx, repo, mergedPR)
+	}
 	return merged, err
 }
 

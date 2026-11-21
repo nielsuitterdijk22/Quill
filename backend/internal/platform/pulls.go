@@ -399,7 +399,10 @@ func (s *Service) EditPull(ctx context.Context, actor Actor, projectSlug, repoSl
 	if _, err := s.store.UpdatePull(ctx, pr.ID, title, body); err != nil {
 		return db.Repository{}, forgejo.PullRequest{}, fmt.Errorf("update pull: %w", err)
 	}
-	_, dto, err := s.engineGetPull(ctx, repo, be, number)
+	updated, dto, err := s.engineGetPull(ctx, repo, be, number)
+	if err == nil {
+		s.enqueuePullRefs(ctx, repo, updated)
+	}
 	return repo, dto, err
 }
 
@@ -426,7 +429,10 @@ func (s *Service) SetPullState(ctx context.Context, actor Actor, projectSlug, re
 		}
 		return db.Repository{}, forgejo.PullRequest{}, err
 	}
-	_, dto, err := s.engineGetPull(ctx, repo, be, number)
+	updated, dto, err := s.engineGetPull(ctx, repo, be, number)
+	if err == nil {
+		s.enqueuePullRefs(ctx, repo, updated)
+	}
 	return repo, dto, err
 }
 

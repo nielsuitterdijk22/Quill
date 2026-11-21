@@ -427,6 +427,7 @@ type forgejoPushPayload struct {
 		Title   string `json:"title"`
 		Body    string `json:"body"`
 		State   string `json:"state"`
+		Merged  bool   `json:"merged"`
 		HTMLURL string `json:"html_url"`
 		User    struct {
 			Login    string `json:"login"`
@@ -550,7 +551,7 @@ func (s *Server) enqueueWorkItemRefs(ctx context.Context, owner, name, branch, e
 			Number: payload.PullRequest.Number,
 			Title:  payload.PullRequest.Title,
 			Body:   payload.PullRequest.Body,
-			State:  payload.PullRequest.State,
+			State:  webhookPullState(payload.PullRequest.State, payload.PullRequest.Merged),
 			URL:    payload.PullRequest.HTMLURL,
 			Branch: branch,
 			Author: author,
@@ -590,4 +591,14 @@ func (s *Server) verifyWebhookSignature(r *http.Request, body []byte) bool {
 	mac.Write(body)
 	expected := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(expected), []byte(sig))
+}
+
+// webhookPullState is the state Tempo is told for a Forgejo pull request: Forgejo
+// reports a merged pull request as "closed" with merged=true, so merged is
+// folded into the state.
+func webhookPullState(state string, merged bool) string {
+	if merged {
+		return "merged"
+	}
+	return state
 }
