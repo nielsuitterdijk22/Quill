@@ -6,7 +6,17 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// cloneAttempts bounds retries of a failed clone: the git endpoint sits behind
+// an edge proxy and a freshly booted worker, and a single refused request
+// (seen as "could not read Username … terminal prompts disabled") should not
+// fail a whole run. Backoff grows 2s, 4s.
+const cloneAttempts = 3
+
+// cloneBackoff is a var so tests do not sleep.
+var cloneBackoff = func(attempt int) time.Duration { return time.Duration(attempt) * 2 * time.Second }
 
 // Checkout clones the repository into dest so act has the repo files to run
 // against (act skips actions/checkout and uses the local workspace instead).
@@ -24,8 +34,24 @@ func Checkout(ctx context.Context, cloneURL, ref, sha, dest, authHeader string) 
 	}
 	args = append(args, cloneURL, dest)
 
-	if out, err := runGit(ctx, "", args...); err != nil {
-		return fmt.Errorf("clone repository: %w%s", err, sanitizeGitOutput(out, cloneURL))
+	var out string
+	var err error
+	for attempt := 1; attempt <= cloneAttempts; attempt++ {
+		if out, err = runGit(ctx, "", args...); err == nil {
+			break
+		}
+		// A failed clone can leave a partial directory that blocks the retry.
+		_ = os.RemoveAll(dest)
+		if attempt == cloneAttempts || ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(cloneBackoff(attempt)):
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("clone repository: %w%s%s", err, sanitizeGitOutput(out, cloneURL), credentialHint(out, authHeader))
 	}
 
 	if strings.TrimSpace(sha) != "" {
@@ -73,4 +99,17 @@ func cloneBranchName(ref string) string {
 		}
 	}
 	return ref
+}
+
+// credentialHint says which side of a refused clone to look at. git reports a
+// rejected credential and a missing one identically ("could not read Username"),
+// so the run record has to say whether one was sent at all.
+func credentialHint(out, authHeader string) string {
+	if !strings.Contains(out, "could not read Username") && !strings.Contains(out, "Authentication failed") {
+		return ""
+	}
+	if strings.TrimSpace(authHeader) == "" {
+		return "\n(no clone credential was supplied for this run: the repository's git URL or run token was not configured when the run was queued)"
+	}
+	return "\n(a clone credential was supplied and the git server refused it after " + fmt.Sprint(cloneAttempts) + " attempts)"
 }

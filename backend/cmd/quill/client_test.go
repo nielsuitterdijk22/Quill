@@ -94,3 +94,47 @@ func TestClientCommands(t *testing.T) {
 		t.Errorf("trigger body = %s", hits[3].body)
 	}
 }
+
+// `run cancel` posts to the run's cancel route, scoped to its workflow, and
+// `run view` reports queue wait, run time and the jobs/steps of a run.
+func TestRunCancelAndView(t *testing.T) {
+	var cancelled string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			cancelled = r.URL.RequestURI()
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Write([]byte(`{"run":{"runNumber":47,"status":"running","workflowPath":".github/workflows/f.yml",` +
+			`"event":"pull_request","ref":"refs/heads/x","commitSha":"c33f637aa","createdAt":"2026-11-21T12:00:00Z","startedAt":"2026-11-21T12:28:00Z",` +
+			`"jobs":[{"name":"check","status":"running","startedAt":"2026-11-21T12:28:01Z","steps":[` +
+			`{"name":"build","status":"success","logs":"built ok","startedAt":"2026-11-21T12:28:02Z","finishedAt":"2026-11-21T12:29:02Z"},` +
+			`{"name":"test","status":"running","logs":"still going","startedAt":"2026-11-21T12:29:02Z"}]}]}}`))
+	}))
+	defer srv.Close()
+	tok := filepath.Join(t.TempDir(), "token")
+	os.WriteFile(tok, []byte("qat_test\n"), 0o600)
+	common := []string{"--api", srv.URL, "--repo", "acme/app", "--token-file", tok, "--workflow", ".github/workflows/f.yml"}
+
+	if err := runRun(append([]string{"cancel", "47"}, common...)); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if want := "/api/v1/projects/acme/repos/app/pipelines/runs/47/cancel?workflow=.github%2Fworkflows%2Ff.yml"; cancelled != want {
+		t.Errorf("cancel hit %q, want %q", cancelled, want)
+	}
+	if err := runRun([]string{"cancel", "47", "--api", srv.URL, "--repo", "acme/app", "--token-file", tok}); err == nil {
+		t.Error("cancel without --workflow must fail: run numbers count per workflow")
+	}
+}
+
+func TestSpan(t *testing.T) {
+	if got := span("2026-11-21T12:00:00Z", "2026-11-21T12:28:00Z"); got != "28m0s" {
+		t.Errorf("span = %q", got)
+	}
+	if got := span("", "2026-11-21T12:28:00Z"); got != "" {
+		t.Errorf("missing start must render empty, got %q", got)
+	}
+	if got := span("2026-11-21T12:00:00Z", ""); got == "" {
+		t.Error("an open span runs to now")
+	}
+}

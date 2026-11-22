@@ -363,3 +363,42 @@ func TestQueueSpecCarriesInstanceAuth(t *testing.T) {
 		t.Fatalf("spec.Token = %q, want the clone token for act's fetches", job.Spec.Token)
 	}
 }
+
+// One pull request update starts a workflow once, however many paths deliver
+// it ("opened", a synchronize push, a duplicate hook); pushes and manual runs
+// are never merged, and a finished run no longer blocks a new one.
+func TestQueueModeDedupesPullRequestRuns(t *testing.T) {
+	svc, st := newService(t)
+	svc = svc.WithQueueMode()
+	ctx := context.Background()
+	repo := makeProjectWithRepo(t, st, "qdup")
+	in := func(event string) platform.TriggerInput {
+		return platform.TriggerInput{WorkflowPath: ".github/workflows/test.yml", Ref: "feature", Event: event}
+	}
+	enqueue := func(event, sha string) db.PipelineRun {
+		t.Helper()
+		run, err := svc.EnqueuePipelineRun(ctx, repo, in(event), queueWorkflowYAML, sha, uuid.NullUUID{})
+		if err != nil {
+			t.Fatalf("enqueue %s: %v", event, err)
+		}
+		return run
+	}
+
+	first := enqueue("pull_request", "abc123")
+	if again := enqueue("pull_request", "abc123"); again.ID != first.ID {
+		t.Errorf("a second pull_request event for the same commit queued run %v, want %v", again.ID, first.ID)
+	}
+	if next := enqueue("pull_request", "def456"); next.ID == first.ID {
+		t.Error("a new commit on the PR must queue a new run")
+	}
+	if push := enqueue("push", "abc123"); push.ID == first.ID {
+		t.Error("a push is not a pull_request event and must not be merged into it")
+	}
+
+	if _, err := st.UpdatePipelineRunStatus(ctx, db.UpdatePipelineRunStatusParams{ID: first.ID, Status: pipeline.StatusSuccess}); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	if rerun := enqueue("pull_request", "abc123"); rerun.ID == first.ID {
+		t.Error("once the run finished, the same commit may be queued again")
+	}
+}

@@ -1103,3 +1103,37 @@ cleared Quill's cookie, so a live IdP session re-authenticated silently) no long
 still lands on the login form.
 
 **Rejected:** a shared JWT secret between apps (cookies are per-domain; re-couples the apps).
+
+## 2026-11-22 — CI runner hardening: reaper, clone retry, PR dedupe, run cancel/logs
+
+**Decision:** Four changes after Tempo's CI kept stalling.
+
+- **Stuck runs fail on their own.** `Service.ReapStuckRuns` fails a run whose queue row was
+  claimed three times and lost its heartbeat each time, and a run no worker picked up within
+  90 minutes. It records why on the run (a "Workflow / Load workflow" step) so `quill run view`
+  explains it. It runs lazily — on every worker claim and run listing, throttled to once per
+  30 seconds — because the api scales to zero and has no loop to host a reaper.
+- **Clone retries.** `pipeline.Checkout` retries a failed clone three times (2 s, 4 s
+  backoff), and the error now says whether a credential was sent. Git prints "could not read
+  Username" for both a missing and a rejected credential, so the run record has to say which.
+  The token logic itself looks correct (4 h HMAC, stateless), so the intermittent rejection
+  is not yet explained; the retry absorbs it, the hint will show what is left.
+- **One PR update, one run.** An in-flight `pull_request` run for the same workflow, ref and
+  commit is returned instead of queueing another, and a new PR run supersedes older waiting PR
+  runs on the ref (as pushes already did). Push and manual runs are never merged.
+- **`quill run cancel` and richer `run view`.** `cancel` calls the existing cancel route;
+  `view` shows queue wait versus run time, per-job and per-step durations, "no jobs yet" for a
+  run that started but never loaded its workflow, and `--logs` prints the tail of every step.
+
+**Why:** Tempo runs sat "running" with no jobs for hours, duplicates doubled the queue on a
+single worker, and the CLI could neither cancel nor show timing.
+
+**Rejected:**
+
+- Deduplicating push runs: existing queue tests (and re-pushing a commit on purpose) rely on
+  several runs of one commit.
+- A background reaper loop in the api: it scales to zero, so the loop would not run when it
+  is needed; lazy reaping runs exactly when someone looks or a worker polls.
+- Failing the enqueue when no clone credential can be built: a missing run-token secret
+  fails every run and is already logged; the clearer error message covers it without
+  blocking runs of public repositories.

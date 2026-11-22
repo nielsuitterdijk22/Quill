@@ -70,8 +70,8 @@ func (s *Store) CommitDeployFacts(ctx context.Context, repoID uuid.UUID, sha str
 // are still waiting for a worker (queue row unclaimed), keeping keep. A burst of
 // pushes/merges to one branch then runs only its newest commit, instead of
 // queueing one deploy per merge. Returns the cancelled run numbers.
-// SupersedePendingRuns cancels older waiting push runs of the pipeline on
-// ref. With includeSameCommit false, only runs of a different (older) commit
+// SupersedePendingRuns cancels older waiting runs of the pipeline on ref that
+// came from the same event as the kept run (push or pull_request). With includeSameCommit false, only runs of a different (older) commit
 // than the kept run go: a re-run of the same commit is deliberate.
 func (s *Store) SupersedePendingRuns(ctx context.Context, pipelineID uuid.UUID, ref string, keep uuid.UUID, includeSameCommit ...bool) ([]int64, error) {
 	same := len(includeSameCommit) == 0 || includeSameCommit[0]
@@ -79,7 +79,8 @@ func (s *Store) SupersedePendingRuns(ctx context.Context, pipelineID uuid.UUID, 
 		WITH old AS (
 			SELECT r.id FROM pipeline_runs r
 			JOIN pipeline_queue q ON q.run_id = r.id AND q.status = 'pending'
-			WHERE r.pipeline_id = $1 AND r.ref = $2 AND r.id <> $3 AND r.status = 'pending' AND r.event = 'push'
+			WHERE r.pipeline_id = $1 AND r.ref = $2 AND r.id <> $3 AND r.status = 'pending'
+			  AND r.event = (SELECT event FROM pipeline_runs WHERE id = $3)
 			  AND r.created_at <= (SELECT created_at FROM pipeline_runs WHERE id = $3)
 			  AND ($4 OR r.commit_sha <> (SELECT commit_sha FROM pipeline_runs WHERE id = $3))
 		), withdrawn AS (

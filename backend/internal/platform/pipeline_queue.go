@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,48 @@ import (
 // queueVisibilityTimeout is how long a claim survives without a heartbeat
 // before another worker may reclaim the job.
 const queueVisibilityTimeout = 10 * time.Minute
+
+const (
+	// maxClaimAttempts is how many times a job may be claimed and lost (worker
+	// died or stopped heartbeating) before its run is failed instead of retried.
+	maxClaimAttempts = 3
+	// queuePendingTimeout is how long a job may wait for any worker before its
+	// run fails, rather than sitting "pending" forever.
+	queuePendingTimeout = 90 * time.Minute
+	// reapEvery throttles the reaper: it runs lazily on worker claims and run
+	// listings (the api scales to zero, so there is no loop to host it).
+	reapEvery = 30 * time.Second
+)
+
+var lastReap atomic.Int64 // unix nanos of the last reap pass
+
+// ReapStuckRuns fails runs stuck in the queue forever (see store.ReapStuckPipelineRuns)
+// and records why on each, so the run page and `quill run view` say what
+// happened instead of showing "running" with no jobs. Cheap and throttled:
+// callers invoke it freely.
+func (s *Service) ReapStuckRuns(ctx context.Context) {
+	now := time.Now().UnixNano()
+	last := lastReap.Load()
+	if now-last < int64(reapEvery) || !lastReap.CompareAndSwap(last, now) {
+		return
+	}
+	abandoned, unclaimed, err := s.store.ReapStuckPipelineRuns(ctx, queueVisibilityTimeout, maxClaimAttempts, queuePendingTimeout)
+	if err != nil {
+		s.logger.Warn("reap stuck runs failed", "error", err)
+		return
+	}
+	fail := func(ids []uuid.UUID, cause string) {
+		for _, id := range ids {
+			s.recordStartupFailure(ctx, id, errors.New(cause))
+			if err := s.store.DeleteLiveLogs(ctx, id); err != nil {
+				s.logger.Warn("could not drop live logs", "run", id, "error", err)
+			}
+			s.logger.Warn("failed a stuck run", "run", id, "cause", cause)
+		}
+	}
+	fail(abandoned, fmt.Sprintf("the CI worker stopped responding %d times in a row (no heartbeat for %s); the run was abandoned. Re-run it.", maxClaimAttempts, queueVisibilityTimeout))
+	fail(unclaimed, fmt.Sprintf("no CI worker picked this run up within %s; it was cancelled. Re-run it.", queuePendingTimeout))
+}
 
 // QueuedJob is a claim handed to a worker: the queue row identity plus the
 // decoded JobSpec to execute.
@@ -126,6 +169,19 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("upsert pipeline: %w", err)
 	}
+	// One pull request update starts a workflow once: the same pull_request
+	// event for a commit that is already waiting or running is returned instead
+	// of queued again (the "opened" and "synchronize" paths, or a duplicate
+	// delivery, otherwise double every PR run). Push and manual triggers always
+	// run: re-pushing a commit is deliberate.
+	if event == "pull_request" && commitSHA != "" {
+		if dup, derr := s.store.FindInflightRun(ctx, pl.ID, event, ref, commitSHA); derr == nil {
+			s.logger.Info("skipped duplicate run", "workflow", path, "event", event, "ref", ref, "existing", dup.RunNumber)
+			return dup, nil
+		} else if !errors.Is(derr, pgx.ErrNoRows) {
+			s.logger.Warn("duplicate-run check failed; queueing anyway", "workflow", path, "error", derr)
+		}
+	}
 	next, err := s.store.NextRunNumber(ctx, pl.ID)
 	if err != nil {
 		return db.PipelineRun{}, fmt.Errorf("next run number: %w", err)
@@ -176,7 +232,7 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	// A `concurrency:` group also drops waiting runs of the same commit, as on
 	// GitHub; `env: QUILL_KEEP_SUPERSEDED_RUNS: "true"` opts out.
 	group := pipeline.HasConcurrency(yaml)
-	if event == "push" && (group || !pipeline.KeepsSupersededRuns(yaml)) {
+	if (event == "push" || event == "pull_request") && (group || !pipeline.KeepsSupersededRuns(yaml)) {
 		if gone, err := s.store.SupersedePendingRuns(ctx, pl.ID, ref, run.ID, group); err != nil {
 			s.logger.Warn("supersede pending runs failed", "run", run.ID, "error", err)
 		} else if len(gone) > 0 {
@@ -294,6 +350,7 @@ func wakeOnce(ctx context.Context, url, secret string, logger *slog.Logger) {
 // ClaimQueuedJob claims the oldest claimable queue row for workerID and flips
 // its run to running. A nil job with a nil error means the queue is empty.
 func (s *Service) ClaimQueuedJob(ctx context.Context, workerID string) (*QueuedJob, error) {
+	s.ReapStuckRuns(ctx)
 	row, err := s.store.ClaimPipelineJob(ctx, workerID, queueVisibilityTimeout)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -322,6 +379,7 @@ func (s *Service) ClaimQueuedJob(ctx context.Context, workerID string) (*QueuedJ
 // repository it is bound to (bound by its first claim), so a job that breaks
 // out of its container on that instance can reach nothing beyond that repo.
 func (s *Service) ClaimQueuedJobScoped(ctx context.Context, workerID string) (*QueuedJob, error) {
+	s.ReapStuckRuns(ctx)
 	row, _, err := s.store.ClaimPipelineJobScoped(ctx, workerID, queueVisibilityTimeout)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

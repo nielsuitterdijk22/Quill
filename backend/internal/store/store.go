@@ -484,6 +484,69 @@ func (s *Store) FinishPipelineJob(ctx context.Context, id uuid.UUID, worker stri
 	return ct.RowsAffected() == 1, nil
 }
 
+// FindInflightRun returns an already pending or running run of the same
+// workflow for the same event, ref and commit (pgx.ErrNoRows when none). The
+// trigger paths use it so one push or pull request starts a workflow once even
+// when the same event is delivered or handled twice.
+func (s *Store) FindInflightRun(ctx context.Context, pipelineID uuid.UUID, event, ref, sha string) (db.PipelineRun, error) {
+	const q = `
+		SELECT id, pipeline_id, run_number, status, event, ref, commit_sha,
+		       triggered_by, started_at, finished_at, created_at, updated_at
+		FROM pipeline_runs
+		WHERE pipeline_id = $1 AND event = $2 AND ref = $3 AND commit_sha = $4
+		  AND commit_sha <> '' AND status IN ('pending', 'running')
+		ORDER BY created_at LIMIT 1`
+	var r db.PipelineRun
+	err := s.pool.QueryRow(ctx, q, pipelineID, event, ref, sha).Scan(
+		&r.ID, &r.PipelineID, &r.RunNumber, &r.Status, &r.Event, &r.Ref,
+		&r.CommitSha, &r.TriggeredBy, &r.StartedAt, &r.FinishedAt,
+		&r.CreatedAt, &r.UpdatedAt,
+	)
+	return r, err
+}
+
+// ReapStuckPipelineRuns ends runs that can never finish on their own and
+// returns their ids: queue rows whose claim lapsed maxAttempts times (the
+// workers kept dying or losing their heartbeat), and rows no worker picked up
+// within pendingTimeout. The queue row is closed (secrets dropped, like a
+// normal finish) and its run fails; runs that already finished are untouched.
+func (s *Store) ReapStuckPipelineRuns(ctx context.Context, staleAfter time.Duration, maxAttempts int, pendingTimeout time.Duration) (abandoned, unclaimed []uuid.UUID, err error) {
+	const tmpl = `
+		WITH dead AS (
+			UPDATE pipeline_queue SET status = 'done', updated_at = now(), spec = spec - 'Secrets'
+			WHERE %s
+			RETURNING run_id
+		)
+		UPDATE pipeline_runs r SET status = 'failure', finished_at = now(), updated_at = now()
+		FROM dead
+		WHERE r.id = dead.run_id AND r.status IN ('pending', 'running')
+		RETURNING r.id`
+	collect := func(cond string, args ...any) ([]uuid.UUID, error) {
+		rows, err := s.pool.Query(ctx, fmt.Sprintf(tmpl, cond), args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var ids []uuid.UUID
+		for rows.Next() {
+			var id uuid.UUID
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, rows.Err()
+	}
+	abandoned, err = collect(`status = 'claimed' AND attempts >= $1
+			AND claimed_at < now() - make_interval(secs => $2::double precision)`, maxAttempts, staleAfter.Seconds())
+	if err != nil {
+		return nil, nil, err
+	}
+	unclaimed, err = collect(`status = 'pending'
+			AND created_at < now() - make_interval(secs => $1::double precision)`, pendingTimeout.Seconds())
+	return abandoned, unclaimed, err
+}
+
 // SetPipelineRunRunning flips a pending queued run to running, stamping
 // started_at only on the first claim (a reclaimed run keeps its start time).
 // Rows already running are left untouched (idempotent).

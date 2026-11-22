@@ -430,14 +430,42 @@ type cliRun struct {
 	Ref           string `json:"ref"`
 	CommitSha     string `json:"commitSha"`
 	BlockedReason string `json:"blockedReason"`
+	CreatedAt     string `json:"createdAt"`
+	StartedAt     string `json:"startedAt"`
+	FinishedAt    string `json:"finishedAt"`
 	Jobs          []struct {
-		Name  string `json:"name"`
-		Steps []struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-			Logs   string `json:"logs"`
+		Name       string `json:"name"`
+		Status     string `json:"status"`
+		StartedAt  string `json:"startedAt"`
+		FinishedAt string `json:"finishedAt"`
+		Steps      []struct {
+			Name       string `json:"name"`
+			Status     string `json:"status"`
+			Logs       string `json:"logs"`
+			StartedAt  string `json:"startedAt"`
+			FinishedAt string `json:"finishedAt"`
 		} `json:"steps"`
 	} `json:"jobs"`
+}
+
+// span renders the time between two RFC3339 stamps ("" when the start is
+// missing or unparseable). An empty end means "still going": measured to now.
+func span(from, to string) string {
+	a, err := time.Parse(time.RFC3339Nano, from)
+	if err != nil {
+		return ""
+	}
+	b := time.Now()
+	if to != "" {
+		if b, err = time.Parse(time.RFC3339Nano, to); err != nil {
+			return ""
+		}
+	}
+	d := b.Sub(a).Round(time.Second)
+	if d < 0 {
+		d = 0
+	}
+	return d.String()
 }
 
 func runDone(status string) bool {
@@ -450,7 +478,7 @@ func runDone(status string) bool {
 
 func runRun(args []string) error {
 	if len(args) == 0 {
-		return errors.New("run: missing subcommand (list, view, trigger, watch)")
+		return errors.New("run: missing subcommand (list, view, cancel, trigger, watch)")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("run "+sub, flag.ContinueOnError)
@@ -461,7 +489,7 @@ func runRun(args []string) error {
 	ref := fs.String("ref", "main", "trigger: branch to run on")
 	env := fs.String("environment", "", "trigger: target environment (optional)")
 	limit := fs.Int("limit", 15, "list: number of runs")
-	logs := fs.Bool("logs", false, "view: print the logs of failed steps")
+	logs := fs.Bool("logs", false, "view: print step logs (every step that ran; also while the run is going)")
 	interval := fs.Duration("interval", 15*time.Second, "watch: poll interval")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
@@ -487,18 +515,33 @@ func runRun(args []string) error {
 		err := c.call(http.MethodGet, fmt.Sprintf("/pipelines/runs/%d?workflow=%s", n, url.QueryEscape(*workflow)), nil, &resp)
 		return resp.Run, err
 	}
-	printRun := func(r cliRun, withLogs bool) {
+	printRun := func(r cliRun, withLogs, every bool) {
 		fmt.Fprintf(c.out, "#%d %s · %s · %s %s @ %s\n", r.RunNumber, r.WorkflowPath, r.Status, r.Event, strings.TrimPrefix(r.Ref, "refs/heads/"), short(r.CommitSha))
 		if r.BlockedReason != "" {
 			fmt.Fprintf(c.out, "  blocked: %s\n", r.BlockedReason)
 		}
+		// Queue wait vs. run time tells a slow run from one that never started.
+		switch {
+		case r.StartedAt == "" && !runDone(r.Status):
+			fmt.Fprintf(c.out, "  queued for %s, not started\n", span(r.CreatedAt, ""))
+		case r.StartedAt != "":
+			fmt.Fprintf(c.out, "  queued %s, ran %s\n", span(r.CreatedAt, r.StartedAt), span(r.StartedAt, r.FinishedAt))
+		}
+		if r.StartedAt != "" && !runDone(r.Status) && len(r.Jobs) == 0 {
+			fmt.Fprintln(c.out, "  no jobs yet (the workflow has not loaded)")
+		}
 		for _, j := range r.Jobs {
+			fmt.Fprintf(c.out, "  job %s: %s %s\n", j.Name, j.Status, span(j.StartedAt, j.FinishedAt))
 			for _, s := range j.Steps {
-				if s.Status != "success" && s.Status != "skipped" {
-					fmt.Fprintf(c.out, "  %s / %s: %s\n", j.Name, s.Name, s.Status)
-					if withLogs && s.Status == "failure" {
-						fmt.Fprintln(c.out, indent(tail(s.Logs, 60)))
-					}
+				notOK := s.Status != "success" && s.Status != "skipped"
+				if !notOK && !every {
+					continue
+				}
+				fmt.Fprintf(c.out, "    %s: %s %s\n", s.Name, s.Status, span(s.StartedAt, s.FinishedAt))
+				// --logs shows the tail of every step that ran, so a slow step
+				// can be told from a hung one while the run is still going.
+				if withLogs && (every || s.Status == "failure") && s.Status != "skipped" && strings.TrimSpace(s.Logs) != "" {
+					fmt.Fprintln(c.out, indent(indent(tail(s.Logs, 60))))
 				}
 			}
 		}
@@ -533,7 +576,19 @@ func runRun(args []string) error {
 			return err
 		}
 		if !c.asJSON {
-			printRun(r, *logs)
+			printRun(r, *logs, *logs)
+		}
+		return nil
+	case "cancel":
+		n, err := runNumber()
+		if err != nil {
+			return err
+		}
+		if err := c.call(http.MethodPost, fmt.Sprintf("/pipelines/runs/%d/cancel?workflow=%s", n, url.QueryEscape(*workflow)), nil, nil); err != nil {
+			return err
+		}
+		if !c.asJSON {
+			fmt.Fprintf(c.out, "cancelled %s #%d\n", *workflow, n)
 		}
 		return nil
 	case "trigger":
@@ -572,7 +627,7 @@ func runRun(args []string) error {
 			}
 			if runDone(r.Status) {
 				if r.Status != "success" {
-					printRun(r, true)
+					printRun(r, true, false)
 					return fmt.Errorf("run #%d %s", n, r.Status)
 				}
 				return nil
@@ -580,7 +635,7 @@ func runRun(args []string) error {
 			time.Sleep(*interval)
 		}
 	default:
-		return fmt.Errorf("run: unknown subcommand %q (list, view, trigger, watch)", sub)
+		return fmt.Errorf("run: unknown subcommand %q (list, view, cancel, trigger, watch)", sub)
 	}
 }
 

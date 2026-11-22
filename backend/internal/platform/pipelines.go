@@ -130,6 +130,7 @@ func (s *Service) ListRuns(ctx context.Context, actor Actor, projectSlug, repoSl
 	if err != nil {
 		return db.Repository{}, nil, nil, err
 	}
+	s.ReapStuckRuns(ctx)
 	runs, err := s.store.ListRunsByRepo(ctx, db.ListRunsByRepoParams{RepoID: repo.ID, Limit: maxRunsListed})
 	if err != nil {
 		return db.Repository{}, nil, nil, fmt.Errorf("list runs: %w", err)
