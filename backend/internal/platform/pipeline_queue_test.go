@@ -3,6 +3,7 @@ package platform_test
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -400,5 +401,40 @@ func TestQueueModeDedupesPullRequestRuns(t *testing.T) {
 	}
 	if rerun := enqueue("pull_request", "abc123"); rerun.ID == first.ID {
 		t.Error("once the run finished, the same commit may be queued again")
+	}
+}
+
+// Two handlers firing together for one pull request update (seen 0.36 s apart
+// in production) must still queue the workflow once.
+func TestQueueModeDedupesConcurrentPullRequestRuns(t *testing.T) {
+	svc, st := newService(t)
+	svc = svc.WithQueueMode()
+	ctx := context.Background()
+	repo := makeProjectWithRepo(t, st, "qdupconc")
+	in := platform.TriggerInput{WorkflowPath: ".github/workflows/test.yml", Ref: "feature", Event: "pull_request"}
+
+	const n = 8
+	ids := make(chan uuid.UUID, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			run, err := svc.EnqueuePipelineRun(ctx, repo, in, queueWorkflowYAML, "race123", uuid.NullUUID{})
+			if err != nil {
+				t.Errorf("enqueue: %v", err)
+				return
+			}
+			ids <- run.ID
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	distinct := map[uuid.UUID]bool{}
+	for id := range ids {
+		distinct[id] = true
+	}
+	if len(distinct) != 1 {
+		t.Errorf("%d concurrent pull_request events queued %d runs, want 1", n, len(distinct))
 	}
 }

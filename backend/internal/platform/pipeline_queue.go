@@ -174,29 +174,54 @@ func (s *Service) enqueuePipelineRun(ctx context.Context, repo db.Repository, sr
 	// of queued again (the "opened" and "synchronize" paths, or a duplicate
 	// delivery, otherwise double every PR run). Push and manual triggers always
 	// run: re-pushing a commit is deliberate.
-	if event == "pull_request" && commitSHA != "" {
-		if dup, derr := s.store.FindInflightRun(ctx, pl.ID, event, ref, commitSHA); derr == nil {
-			s.logger.Info("skipped duplicate run", "workflow", path, "event", event, "ref", ref, "existing", dup.RunNumber)
-			return dup, nil
-		} else if !errors.Is(derr, pgx.ErrNoRows) {
-			s.logger.Warn("duplicate-run check failed; queueing anyway", "workflow", path, "error", derr)
+	// The check and the insert run under one advisory lock per (workflow, event,
+	// ref, commit): two handlers firing together (opened + synchronize, or the
+	// push hook + PR creation, seen 0.36 s apart) would otherwise both pass the
+	// check before either inserted.
+	var run db.PipelineRun
+	create := func() (bool, error) {
+		if event == "pull_request" && commitSHA != "" {
+			if dup, derr := s.store.FindInflightRun(ctx, pl.ID, event, ref, commitSHA); derr == nil {
+				s.logger.Info("skipped duplicate run", "workflow", path, "event", event, "ref", ref, "existing", dup.RunNumber)
+				run = dup
+				return true, nil
+			} else if !errors.Is(derr, pgx.ErrNoRows) {
+				s.logger.Warn("duplicate-run check failed; queueing anyway", "workflow", path, "error", derr)
+			}
 		}
+		next, err := s.store.NextRunNumber(ctx, pl.ID)
+		if err != nil {
+			return false, fmt.Errorf("next run number: %w", err)
+		}
+		run, err = s.store.CreatePipelineRun(ctx, db.CreatePipelineRunParams{
+			PipelineID:  pl.ID,
+			RunNumber:   int64(next),
+			Status:      pipeline.StatusPending,
+			Event:       event,
+			Ref:         ref,
+			CommitSha:   commitSHA,
+			TriggeredBy: triggeredBy,
+		})
+		if err != nil {
+			return false, fmt.Errorf("create run: %w", err)
+		}
+		return false, nil
 	}
-	next, err := s.store.NextRunNumber(ctx, pl.ID)
-	if err != nil {
-		return db.PipelineRun{}, fmt.Errorf("next run number: %w", err)
+	var dup bool
+	if event == "pull_request" && commitSHA != "" {
+		err = s.store.WithAdvisoryLock(ctx, "run:"+pl.ID.String()+"|"+event+"|"+ref+"|"+commitSHA, func() error {
+			var cerr error
+			dup, cerr = create()
+			return cerr
+		})
+	} else {
+		dup, err = create()
 	}
-	run, err := s.store.CreatePipelineRun(ctx, db.CreatePipelineRunParams{
-		PipelineID:  pl.ID,
-		RunNumber:   int64(next),
-		Status:      pipeline.StatusPending,
-		Event:       event,
-		Ref:         ref,
-		CommitSha:   commitSHA,
-		TriggeredBy: triggeredBy,
-	})
 	if err != nil {
-		return db.PipelineRun{}, fmt.Errorf("create run: %w", err)
+		return db.PipelineRun{}, err
+	}
+	if dup {
+		return run, nil
 	}
 	if blocked, err := s.recordGate(ctx, run, gate); err != nil || blocked {
 		return run, err

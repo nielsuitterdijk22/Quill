@@ -1136,3 +1136,18 @@ single worker, and the CLI could neither cancel nor show timing.
 - Failing the enqueue when no clone credential can be built: a missing run-token secret
   fails every run and is already logged; the clearer error message covers it without
   blocking runs of public repositories.
+
+## 2026-11-23: pull_request run dedupe is race-free
+
+**Decision:** The in-flight check and the insert of a `pull_request` run now run under one
+Postgres advisory lock keyed on pipeline, event, ref and commit (`Store.WithAdvisoryLock`).
+
+**Why:** Tempo saw two runs of one commit created 0.36 s apart: both handlers passed the
+check before either inserted, so the dedupe from the CI hardening never applied. The second
+run also doubled the wait on the single worker.
+
+**Rejected:**
+
+- A partial unique index on pending/running runs: needs a migration and turns every other
+  legitimate double-create into an insert error.
+- Locking every event type: push and manual re-runs of one commit are deliberate.

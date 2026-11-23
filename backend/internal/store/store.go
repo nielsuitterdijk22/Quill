@@ -626,3 +626,27 @@ func (s *Store) UpdateStepLogs(ctx context.Context, stepID uuid.UUID, logs strin
 	_, err := s.pool.Exec(ctx, "UPDATE pipeline_steps SET logs = $2 WHERE id = $1", stepID, logs)
 	return err
 }
+
+// WithAdvisoryLock runs fn while holding a Postgres session advisory lock named
+// by key, so concurrent callers (across api instances) with the same key run
+// one at a time. The lock is released when fn returns.
+func (s *Store) WithAdvisoryLock(ctx context.Context, key string, fn func() error) error {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, key); err != nil {
+		return err
+	}
+	defer func() {
+		// Own context: the caller's may be cancelled, and a lock left on a
+		// pooled connection would block later callers.
+		uctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := conn.Exec(uctx, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, key); err != nil {
+			conn.Conn().Close(uctx) // drops the session, which frees the lock
+		}
+	}()
+	return fn()
+}
